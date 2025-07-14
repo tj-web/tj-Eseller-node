@@ -2,12 +2,21 @@ import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import authRoutes from "./routes/auth.routes.js";
+import sequelize from './db/connection.js';
 const app = express()
 
 
 app.use(cors())
 const PORT=3000;
 
+
+// Database connection 
+try {
+  await sequelize.authenticate();
+  console.log("Database connected successfully");
+} catch (error) {
+  console.error("Database connection failed:", error);
+}
 
 //cors related 
 app.use(express.json());
