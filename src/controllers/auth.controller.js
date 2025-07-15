@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
-
-
+import VendorAuth from '../models/vendorAuth.js';
+import authValidation from "../validation/authValidation.js";
 let users = [];
 
 export const signup = async (req, res) => {
@@ -50,35 +50,55 @@ export const signup = async (req, res) => {
   }
 };
 
+import crypto from 'crypto'; 
+ 
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  const { frmtype, username, userpassword } = req.body;
+
+  console.log(" Received login payload:", req.body);
+
+
+  if (frmtype !== 'vendor_login') {
+    return res.status(400).json({ message: "Invalid form type" });
+  }
 
   try {
-    const user = users.find((u) => u.email === email);
+   
+    const user = await VendorAuth.findOne({ where: { email: username } });
+
     if (!user) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return res.status(400).json({ message: "Invalid credentials: user not found" });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+
+    const hashedPassword = crypto.createHash('md5').update(userpassword).digest('hex');
+    
+    if (user.password !== hashedPassword) {
+      return res.status(400).json({ message: "Invalid credentials: wrong password" });
     }
 
-    console.log("User logged in:", user.email);
+    const fullName = `${user.first_name} ${user.last_name}`;
 
-    res.status(200).json({
-      message: "Login successful",
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-      },
-    });
+       console.log(`Login successful for: ${user.email}`);
+
+     const token = authValidation(res, user.id);
+
+  res.status(200).json({
+    message: 'Login successful',
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+    },
+  });
+
   } catch (error) {
-    console.error("Error in login controller:", error.message);
+    console.error("Error during login:", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
+
 
 export const logout = (req, res) => {
   try {

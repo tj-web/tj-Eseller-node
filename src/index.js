@@ -10,6 +10,14 @@ app.use(cors())
 const PORT=3000;
 
 
+//cors enable 
+app.use(cors({
+  origin: 'http://localhost:5000',
+  credentials: true, // if you're sending cookies or authorization headers
+}));
+
+app.use(express.urlencoded({ extended: true }));
+
 // Database connection 
 try {
   await sequelize.authenticate();
