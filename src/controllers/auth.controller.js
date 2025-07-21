@@ -1,118 +1,11 @@
-import bcrypt from "bcryptjs";
-import VendorAuth from "../models/vendorAuth.js";
-import authValidation from "../validation/authValidation.js";
-let users = [];
-
-export const signup = async (req, res) => {
-  const { fullName, email, password } = req.body;
-
-  try {
-    if (!fullName || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
-
-    if (password.length < 6) {
-      return res
-        .status(400)
-        .json({ message: "Password must be at least 6 characters" });
-    }
-
-    const existingUser = users.find((u) => u.email === email);
-    if (existingUser) {
-      return res.status(400).json({ message: "Email already exists" });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const newUser = {
-      id: users.length + 1,
-      fullName,
-      email,
-      password: hashedPassword,
-    };
-
-    users.push(newUser); // Save to in-memory array
-
-    console.log("New user created:", newUser);
-
-    res.status(201).json({
-      message: "User created successfully",
-      user: {
-        id: newUser.id,
-        fullName: newUser.fullName,
-        email: newUser.email,
-      },
-    });
-  } catch (error) {
-    console.error("Error in signup controller:", error.message);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-};
-
-// import crypto from "crypto";
-
-// export const login = async (req, res) => {
-//   const { frmtype, username, userpassword, rememberme } = req.body;
-
-//   console.log(" Received login payload:", req.body);
-
-//   if (rememberme==0) {
-//     return res.status(400).json({ message: "please add remember me" });
-//   }
-
-//   if (frmtype !== "vendor_login") {
-//     return res.status(400).json({ message: "Invalid form type" });
-//   }
-
-//   try {
-//     const user = await VendorAuth.findOne({ where: { email: username } });
-
-//     if (!user) {
-//       return res
-//         .status(400)
-//         .json({ message: "Invalid credentials: user not found" });
-//     }
-
-//     const hashedPassword = crypto
-//       .createHash("md5")
-//       .update(userpassword)
-//       .digest("hex");
-
-//     if (user.password !== hashedPassword) {
-//       return res
-//         .status(400)
-//         .json({ message: "Invalid credentials: wrong password", status: 2 });
-//     }
-
-//     console.log(`Login successful for: ${user.email}`);
-
-//     const token = authValidation(res, user);
-
-//     res.status(200).json({
-//       message: "Login successful",
-//       token,
-//       status: 1,
-//       user: {
-//         id: user.id,
-//         email: user.email,
-//         name: `${user.first_name} ${user.last_name}`,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error during login:", error.message);
-//     res.status(500).json({ message: "Internal Server Error" });
-//   }
-// };
-
 
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import redis from '../db/redisService.js'; // make sure redisService is correctly set up
+import VendorAuth from '../models/vendorAuth.js';
+import redis from '../db/redisService.js'; // Make sure this points to the Redis client on port 6397
 
 export const login = async (req, res) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
-  console.log(">>>>",req.body)
 
   console.log("Received login payload:", req.body);
 
@@ -142,7 +35,6 @@ export const login = async (req, res) => {
 
     console.log(`Login successful for: ${user.email}`);
 
-    // ✅ Create a session ID and store session data in Redis
     const sessionId = uuidv4();
 
     const sessionData = {
@@ -160,17 +52,21 @@ export const login = async (req, res) => {
       v_email_verified: user.email_verified,
     };
 
-    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData), 'EX', 7 * 24 * 60 * 60); // 7 days
+    // Store session in Redis (on port 6397) for 7 days
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData), {
+      EX: 7 * 24 * 60 * 60,
+    });
+    const check = await redis.get(`session:${sessionId}`);
+console.log(' Session stored in Redis:', check);
 
-    // ✅ Set session token in cookie
+    // Set session cookie
     res.cookie('session_token', sessionId, {
       httpOnly: true,
-      secure: false, // set to true if using HTTPS
+      secure: false, // Change to true if using HTTPS
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send success response
     res.status(200).json({
       message: "Login successful",
       status: 1,
@@ -183,18 +79,6 @@ export const login = async (req, res) => {
 
   } catch (error) {
     console.error("Error during login:", error.message);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-};
-
-
-
-export const logout = (req, res) => {
-  try {
-    res.clearCookie("jwt");
-    res.status(200).json({ message: "Logged out successfully" });
-  } catch (error) {
-    console.error("Error in logout controller:", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };

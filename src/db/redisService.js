@@ -1,12 +1,18 @@
-import { createClient } from "redis";
+import { createClient } from 'redis';
 
-const redis = await createClient()
-  .on("error", (err) => console.log("Redis Client Error", err))
-  .connect();
+const redis = createClient({
+  socket: {
+    host: '127.0.0.1',
+    port: 6379,
+  }
+});
 
-await redis.set("varun", "tirkha");
-const value = await redis.get("varun");
-console.log(value);
-// client.destroy();
+redis.on('error', (err) => console.error(' Redis Client Error:', err));
+
+await redis.connect();
+
+// Check connectivity
+const pong = await redis.ping();
+console.log(' Redis Ping Response:', pong); 
 
 export default redis;
