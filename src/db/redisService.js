@@ -11,7 +11,6 @@ redis.on('error', (err) => console.error(' Redis Client Error:', err));
 
 await redis.connect();
 
-// Check connectivity
 const pong = await redis.ping();
 console.log(' Redis Ping Response:', pong); 
 

@@ -2,7 +2,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import VendorAuth from '../models/vendorAuth.js';
-import redis from '../db/redisService.js'; // Make sure this points to the Redis client on port 6397
+import redis from '../db/redisService.js'; 
 
 export const login = async (req, res) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
@@ -52,7 +52,6 @@ export const login = async (req, res) => {
       v_email_verified: user.email_verified,
     };
 
-    // Store session in Redis (on port 6397) for 7 days
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData), {
       EX: 7 * 24 * 60 * 60,
     });
@@ -62,7 +61,7 @@ console.log(' Session stored in Redis:', check);
     // Set session cookie
     res.cookie('session_token', sessionId, {
       httpOnly: true,
-      secure: false, // Change to true if using HTTPS
+      secure: false, 
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
