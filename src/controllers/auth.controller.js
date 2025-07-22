@@ -1,13 +1,13 @@
+import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
+import VendorAuth from "../models/vendorAuth.js";
+import Vendor from "../models/vendor.js";
+import redis from "../db/redisService.js";
 
-import { v4 as uuidv4 } from 'uuid';
-import crypto from 'crypto';
-import VendorAuth from '../models/vendorAuth.js';
-import redis from '../db/redisService.js'; 
+VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
 export const login = async (req, res) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
-
-  console.log("Received login payload:", req.body);
 
   if (rememberme == 0) {
     return res.status(400).json({ message: "Please select 'remember me'" });
@@ -18,10 +18,15 @@ export const login = async (req, res) => {
   }
 
   try {
-    const user = await VendorAuth.findOne({ where: { email: username } });
+    const user = await VendorAuth.findOne({
+      where: { email: username },
+      include: [{ model: Vendor }],
+    });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid credentials: user not found" });
+      return res
+        .status(400)
+        .json({ message: "Invalid credentials: user not found" });
     }
 
     const hashedPassword = crypto
@@ -30,10 +35,16 @@ export const login = async (req, res) => {
       .digest("hex");
 
     if (user.password !== hashedPassword) {
-      return res.status(400).json({ message: "Invalid credentials: wrong password", status: 2 });
+      return res
+        .status(400)
+        .json({ message: "Invalid credentials: wrong password", status: 2 });
     }
 
-    console.log(`Login successful for: ${user.email}`);
+    if (user.vendor.status === 0 || user.vendor.auth_status === 0) {
+      return res
+        .status(403)
+        .json({ message: "Account disabled. Contact admin.", status: 2 });
+    }
 
     const sessionId = uuidv4();
 
@@ -45,24 +56,24 @@ export const login = async (req, res) => {
       v_email: user.email,
       v_dial_code: user.dial_code,
       v_number: user.phone,
-      is_temp_account: user.is_temp,
-      vendor_mode: user.vendor_mode,
+      is_temp_account: user.vendor.is_temp,
+      vendor_mode: user.vendor.vendor_mode,
       v_created: user.created_at,
-      v_current_plan_data: user.show_current_plan_data,
-      v_email_verified: user.email_verified,
+      v_current_plan_data: user.vendor.show_current_plan_data,
+      v_email_verified: user.vendor.email_verified,
     };
 
-    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData), {
-      EX: 7 * 24 * 60 * 60,
+    await redis.set(`ci_session:${sessionId}`, JSON.stringify(sessionData), {
+      EX: 7 * 24 * 60 * 60, // 7 days
     });
-    const check = await redis.get(`session:${sessionId}`);
-console.log(' Session stored in Redis:', check);
 
-    // Set session cookie
-    res.cookie('session_token', sessionId, {
+    const check = await redis.get(`ci_session:${sessionId}`);
+    console.log("Session stored in Redis:", check);
+    console.log(`ci_session:${sessionId}`);
+    res.cookie("session_token", sessionId, {
       httpOnly: true,
-      secure: false, 
-      sameSite: 'lax',
+      secure: false,
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -75,7 +86,6 @@ console.log(' Session stored in Redis:', check);
         name: `${user.first_name} ${user.last_name}`,
       },
     });
-
   } catch (error) {
     console.error("Error during login:", error.message);
     res.status(500).json({ message: "Internal Server Error" });
