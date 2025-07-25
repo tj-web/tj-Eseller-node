@@ -1,9 +1,7 @@
 import { Sequelize } from "sequelize";
 import { configDotenv } from "dotenv";
 
-
 configDotenv();
-
 
 const sequelize = new Sequelize(
   process.env.MYSQL_DB,
@@ -15,7 +13,6 @@ const sequelize = new Sequelize(
     logging: false,
   }
 );
-
 
 sequelize
   .authenticate()
