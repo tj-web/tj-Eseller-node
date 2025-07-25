@@ -5,6 +5,10 @@ import authRoutes from "./routes/auth.routes.js";
 import sequelize from './db/connection.js';
 const app = express()
 
+app.get("/", (req,res)=>{
+  return res.status(200).send(`${Math.floor(Date.now()/1000)}`);
+})
+
 
 app.use(cors())
 const PORT=3000;
@@ -39,11 +43,6 @@ app.use((err,req,res,next)=>{
 
 //routes for the authentication 
 app.use("/api/auth", authRoutes); 
-
-
-app.get('/',(req,res)=>{
-  res.send("lets learn something from the scratch")
-})
 
 app.listen(PORT,()=>{
   console.log(`app is listening on the port ${PORT}`)
