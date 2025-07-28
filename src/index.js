@@ -1,3 +1,5 @@
+import { configDotenv } from "dotenv";
+configDotenv();
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -5,6 +7,8 @@ import authRoutes from "./routes/auth.routes.js";
 import sequelize from "./db/connection.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 const app = express();
+
+
 
 app.use(cors());
 const PORT = 3000;

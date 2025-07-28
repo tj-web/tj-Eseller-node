@@ -1,8 +1,6 @@
 import { Sequelize } from "sequelize";
 import { configDotenv } from "dotenv";
-
 configDotenv();
-
 const sequelize = new Sequelize(
   process.env.MYSQL_DB,
   process.env.MYSQL_USER,
@@ -16,9 +14,9 @@ const sequelize = new Sequelize(
 
 sequelize
   .authenticate()
-  .then(() => console.log(" Connected to MySQL database"))
+  .then(() => console.log("Connected to MySQL database"))
   .catch((err) =>
-    console.error(" Error while connecting to MySQL database:", err)
+    console.error("Error while connecting to MySQL database. Error:", err)
   );
 
 export default sequelize;
