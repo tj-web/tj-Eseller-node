@@ -1,0 +1,21 @@
+services:
+  # Node.js App Service
+  server:
+    build: .
+    container_name: eseller-node-server
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    volumes:
+      # Syncs your local code with the container for live-reloading
+      - .:/src
+      # Prevents local node_modules from overwriting the container's node_modules
+      - /src/node_modules
+
+    networks:
+      - tj-net
+
+networks:
+  tj-net:
+    name: tj-net
