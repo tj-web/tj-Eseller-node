@@ -7,17 +7,19 @@ import authRoutes from "./routes/auth.routes.js";
 import sequelize from "./db/connection.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 const app = express();
+import morgan from 'morgan'
 
 
 
 app.use(cors());
 const PORT = 3000;
+app.use(morgan('dev'));
 
 //cors enable
 app.use(
   cors({
     origin: "http://localhost:5000",
-    credentials: true, // if you're sending cookies or authorization headers
+    credentials: true, 
   })
 );
 
