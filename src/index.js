@@ -20,7 +20,7 @@ app.use(cors());
 const PORT = 3000;
 app.use(morgan('dev'));
 
-//cors enable
+
 app.use(
   cors({
     origin: "http://localhost:5000",
@@ -30,7 +30,7 @@ app.use(
 
 app.use(express.urlencoded({ extended: true }));
 
-// Database connection
+
 try {
   await sequelize.authenticate();
   console.log("Database connected successfully");
