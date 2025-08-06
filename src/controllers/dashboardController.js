@@ -1,4 +1,4 @@
-import { oemTotalLeadsCountInfo } from "../utilis/dashboard.js";
+import { oemTotalLeadsCountInfo } from "../utilis/Dashboard/dashboard.js";
 //sniih eovehiv eaybevbe
 import sequelize from "../db/connection.js";
 export const totalLeadsCountInfo = async (req, res) => {
@@ -23,14 +23,15 @@ export const totalLeadsCountInfo = async (req, res) => {
   }
 };
 
-// complete profile overview with the manager data 
+// complete profile overview with the manager data
 export const getVendorOverview = async (req, res) => {
   try {
     const { vendor_id } = req.query;
 
     if (!vendor_id) {
       return res.status(400).json({ message: "vendor_id is required" });
-    }`+-`
+    }
+    `+-`;
 
     // Get Manager Data
     const [managerData] = await sequelize.query(
@@ -49,7 +50,7 @@ export const getVendorOverview = async (req, res) => {
         type: sequelize.QueryTypes.SELECT,
       }
     );
-    
+
     const manager_data = {
       manager_name: managerData?.name ?? null,
       manager_email: managerData?.email ?? null,
@@ -85,9 +86,9 @@ export const getVendorOverview = async (req, res) => {
   }
 };
 
-//analytics data function 
+//analytics data function
 
-import { analyticsInfo } from "../utilis/analytics.js";
+import { analyticsInfo } from "../utilis/Dashboard/analytics.js";
 
 export const analyticsCount = async (req, res) => {
   try {
@@ -104,10 +105,8 @@ export const analyticsCount = async (req, res) => {
   }
 };
 
-
-
-import { getOemPlansWithRawSQL } from '../utilis/oemService.js';
-import { prepareOemPlansData } from '../helpers/oemHelper.js';
+import { getOemPlansWithRawSQL } from "../utilis/Dashboard/oemService.js";
+import { prepareOemPlansData } from "../helpers/oemHelper.js";
 
 export const fetchPlansInfo = async (req, res) => {
   const { fetch_plans_info, vendor_id } = req.query;
@@ -119,9 +118,9 @@ export const fetchPlansInfo = async (req, res) => {
       return res.json({ plans: preparedPlans });
     } catch (error) {
       console.error(error);
-      return res.status(500).json({ error: 'Failed to fetch plans data' });
+      return res.status(500).json({ error: "Failed to fetch plans data" });
     }
   }
 
-  return res.status(400).json({ message: 'fetch_plans_info is not set to 1' });
+  return res.status(400).json({ message: "fetch_plans_info is not set to 1" });
 };

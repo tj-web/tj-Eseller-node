@@ -1,11 +1,11 @@
 import { Sequelize } from "sequelize";
-import sequelize from "../db/connection.js";
+import sequelize from "../../db/connection.js";
 
 export const oemTotalLeadsCountInfo = async ({
   filter_start_date,
   filter_end_date,
   vendor_id,
-show_current_plan_data,
+  show_current_plan_data,
 }) => {
   try {
     const params = [vendor_id];

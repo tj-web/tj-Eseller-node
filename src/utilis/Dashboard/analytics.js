@@ -1,6 +1,6 @@
-import sequelize from "../db/connection.js";
-import { analyticsConfig } from "../config/analytics.config.js";
-import { thousandsCurrencyFormat, formatTime } from "../helpers/format.js";
+import sequelize from "../../db/connection.js";
+import { analyticsConfig } from "../../config/analytics.config.js";
+import { thousandsCurrencyFormat, formatTime } from "../../helpers/format.js";
 
 // Get OMS PI data (only if show_current_plan_data == 1)
 const getOmsPiData = async (vendor_id) => {
@@ -43,14 +43,13 @@ const getAnalyticsData = async (filter) => {
   WHERE vendor_id = :vendor_id
 `;
 
-
     const replacements = { vendor_id: filter.vendor_id };
 
     if (filter.days_filter && Number(filter.days_filter) > 0) {
       query += ` AND DATE(logic_date) >= :date_condition`;
       const date = new Date();
       date.setDate(date.getDate() - Number(filter.days_filter));
-      replacements.date_condition = date.toISOString().split('T')[0]; // YYYY-MM-DD
+      replacements.date_condition = date.toISOString().split("T")[0]; // YYYY-MM-DD
     }
 
     const [result] = await sequelize.query(query, {
@@ -65,7 +64,6 @@ const getAnalyticsData = async (filter) => {
   }
 };
 
-
 // Main function
 export const analyticsInfo = async (filter) => {
   try {
@@ -78,10 +76,10 @@ export const analyticsInfo = async (filter) => {
       }
     }
 
-const analytics_data = await getAnalyticsData({
-  vendor_id: filter.vendor_id,
-  days_filter: filter.days_filter, // pass from req.query if applicable
-});
+    const analytics_data = await getAnalyticsData({
+      vendor_id: filter.vendor_id,
+      days_filter: filter.days_filter, // pass from req.query if applicable
+    });
 
     const response = [
       {

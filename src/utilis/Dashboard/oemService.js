@@ -1,6 +1,6 @@
 import { Sequelize } from "sequelize";
-import sequelize from "../db/connection.js";
-import { QueryTypes } from 'sequelize';
+import sequelize from "../../db/connection.js";
+import { QueryTypes } from "sequelize";
 
 export const getOemPlansWithRawSQL = async (vendor_id) => {
   const query = `
