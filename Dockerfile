@@ -3,7 +3,7 @@
 FROM node:18-alpine
 
 # Set the working directory inside the container
-WORKDIR /src
+WORKDIR /app
 
 # Copy package.json and package-lock.json
 # This is done separately to take advantage of Docker's layer caching.
@@ -14,6 +14,9 @@ COPY package*.json ./
 # as it's faster and safer than `npm install`. It requires a package-lock.json.
 RUN npm ci
 
+RUN npm install -g nodemon
+
+
 # Copy the rest of your application's source code
 COPY . .
 
@@ -23,4 +26,5 @@ EXPOSE 3000
 
 # The command to start your application.
 # This directly starts your index.js file.
-CMD [ "node", "src/index.js" ]
+# Start the app using nodemon
+CMD ["nodemon", "src/index.js"]

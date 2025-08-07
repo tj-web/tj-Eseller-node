@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import VendorAuth from "../models/vendorAuth.js";
 import Vendor from "../models/vendor.js";
-import redis from "../db/redisService.js";
+// import redis from "../db/redisService.js";
 
 VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
