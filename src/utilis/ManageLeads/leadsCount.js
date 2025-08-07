@@ -21,9 +21,7 @@
 //   return rows?.total || 0;
 // };
 
-
-
-import sequelize from '../../db/connection.js';
+import sequelize from "../../db/connection.js";
 
 export const getLeadsCount = async (vendor_id) => {
   const query = `
@@ -89,7 +87,7 @@ export const getLeadsCount = async (vendor_id) => {
 
   const result = await sequelize.query(query, {
     replacements: [vendor_id],
-    type: sequelize.QueryTypes.SELECT
+    type: sequelize.QueryTypes.SELECT,
   });
 
   return result;
