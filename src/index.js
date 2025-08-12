@@ -72,7 +72,7 @@ app.use("/api/v6/manage",manageLeads)
 //routes for the authentication 
 app.use("/api/auth", authRoutes); 
 app.use("/api/v6/orders", orderRoutes)
-app.use("/api/v6/brand-list", brandRoutes)
+app.use("/api/v6/brands", brandRoutes)
 
 app.listen(PORT,()=>{
   console.log(`app is listening on the port ${PORT}`)

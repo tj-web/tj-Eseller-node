@@ -1,10 +1,9 @@
 import { Sequelize } from "sequelize";
 import sequelize from "../db/connection.js";
-export async function get_vendor_brands({vendor_id,  orderby, order, srch_brand_name, srch_status, limit = 10, pagenumber = 0}) {
+export async function get_vendor_brands({vendor_id,  orderby, order, srch_brand_name, srch_status, limit = 10   , pagenumber = 1}) {
     let whereCondition = '';
-    let offset = pagenumber*limit;
+    let offset = (pagenumber-1)*limit;
     // whereCondition = `vbr.vendor_id = ${vendor_id} AND vbr.tbl_brand_id != 0`;
-    
     switch (orderby) {
         case "s_id" :
             orderby = "tb.id";
@@ -23,13 +22,13 @@ export async function get_vendor_brands({vendor_id,  orderby, order, srch_brand_
     }
 
     order=order|| 'desc';
-    whereCondition = `vbr.vendor_id = ${vendor_id} AND vbr.tbl_brand_id != 0`;
+    whereCondition = `vbr.vendor_id = :vendor_id AND vbr.tbl_brand_id != 0`;
     
     if(srch_brand_name)
-        whereCondition += ` AND tb.brand_name LIKE '${srch_brand_name}'`;
+        whereCondition += ` AND tb.brand_name LIKE :srch_brand_name`;
     
     if(srch_status)
-        whereCondition += ` AND vbr.status = ${srch_status}`;
+        whereCondition += ` AND vbr.status = :srch_status`;
     
 
 
@@ -49,18 +48,21 @@ ON
     tb.brand_id = vbr.tbl_brand_id
 WHERE
     ${whereCondition}
-ORDER BY 
-    ${orderby}
+ORDER BY :orderby :order
 
-${order}
-
-LIMIT ${offset}, ${limit};`
+LIMIT :offset, :limit;`
     
     
 
     const results = await sequelize.query(sql, {
         replacements: {
             vendor_id,
+            limit:+limit, 
+            offset,
+            orderby,
+            order,
+            srch_brand_name,
+            srch_status
         },
         type: sequelize.QueryTypes.SELECT
     });
