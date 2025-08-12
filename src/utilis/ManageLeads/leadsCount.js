@@ -1,29 +1,51 @@
-// import sequelize from '../../db/connection.js';
-
-// export const getLeadsCount = async (vendor_id) => {
-//   const query = `
-//     SELECT COUNT(tl.id) AS total
-//     FROM tbl_leads AS tl
-//     WHERE tl.vendor_id = ?
-//       AND tl.phone <> ''
-//       AND tl.email <> ''
-//       AND (
-//             tl.lead_visibility = 1
-//             OR (tl.lead_visibility = 0 AND tl.is_trashed = 1)
-//           )
-//   `;
-
-//   const [rows] = await sequelize.query(query, {
-//     replacements: [vendor_id],
-//     type: sequelize.QueryTypes.SELECT,
-//   });
-
-//   return rows?.total || 0;
-// };
 
 import sequelize from "../../db/connection.js";
 
-export const getLeadsCount = async (vendor_id) => {
+export const getLeadsCount = async (vendor_id, filters = {}) => {
+  const { date_from, date_to, srch_value, srch_by, action, status } = filters;
+
+  let whereConditions = `
+    tl.vendor_id = ?
+    AND tl.phone <> ''
+    AND tl.email <> ''
+  `;
+  const replacements = [vendor_id];
+
+  if (date_from) {
+    whereConditions += ` AND DATE(tl.created_at) >= ?`;
+    replacements.push(date_from);
+  }
+
+  if (date_to) {
+    whereConditions += ` AND DATE(tl.created_at) <= ?`;
+    replacements.push(date_to);
+  }
+
+  if (srch_value && srch_by) {
+    if (['email', 'phone', 'name','product_name'].includes(srch_by)) {
+      whereConditions += ` AND tl.${srch_by} LIKE ?`;
+      replacements.push(`%${srch_value}%`);
+    }
+  } else if (srch_value) {
+    whereConditions += ` AND (
+      tl.name LIKE ?
+      OR tl.email LIKE ?
+      OR tl.phone LIKE ?
+    )`;
+    const likeSearch = `%${srch_value}%`;
+    replacements.push(likeSearch, likeSearch, likeSearch);
+  }
+
+  if (action) {
+    whereConditions += ` AND tl.lead_action = ?`;
+    replacements.push(action);
+  }
+
+  if (status) {
+    whereConditions += ` AND tl.status = ?`;
+    replacements.push(status);
+  }
+
   const query = `
     SELECT 
       tl.*,
@@ -73,9 +95,7 @@ export const getLeadsCount = async (vendor_id) => {
         tl.is_duplicate, 
         tl.user_intent 
       FROM tbl_leads AS tl 
-      WHERE tl.vendor_id = ?
-        AND tl.phone <> ''
-        AND tl.email <> ''
+      WHERE ${whereConditions}
       ORDER BY tl.id DESC
       LIMIT 10 OFFSET 0
     ) AS tl
@@ -86,7 +106,7 @@ export const getLeadsCount = async (vendor_id) => {
   `;
 
   const result = await sequelize.query(query, {
-    replacements: [vendor_id],
+    replacements,
     type: sequelize.QueryTypes.SELECT,
   });
 
