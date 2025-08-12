@@ -3,6 +3,7 @@ import { get_vendor_brands } from "../utilis/brand.utility.js";
 export const getBrands = async (req, res) => {
   try {
     const { vendor_id, orderby, order, srch_brand_name = "", srch_status = "", limit, pagenumber } = req.query;
+
     const result = await get_vendor_brands({
       vendor_id,
       orderby,
