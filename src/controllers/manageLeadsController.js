@@ -1,6 +1,6 @@
 
 import { getLeadsCount } from '../utilis/ManageLeads/leadsCount.js';
-
+import {getLeadHistory} from '../utilis/ManageLeads/leadsHistory.js'
 export const manageLeads = async (req, res) => {
   try {
     const vendor_id = req.query.vendor_id;
@@ -29,4 +29,43 @@ export const manageLeads = async (req, res) => {
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+export const getLeadHistoryPost = async (req, res) => {
+  const params = req.body; 
+  try {
+
+    if (!params.profile_id) {
+      throw new Error("Profile Id field is required.");
+    }
+
+    if (!params.vendor_id) {
+      throw new Error("Vendor Id field is required.");
+    }
+
+    if (!params.lead_id) {
+      throw new Error("Lead Id is required.");
+    }
+
+    const history = await getLeadHistory(params.lead_id);
+    if (history.length > 0) {
+      return res.status(200).json({
+        status: true,
+        message: "Leads History fetched successfully",
+        data: history
+      });
+    } else {
+      return res.status(200).json({
+        status: false,
+        message: "No history found",
+        data: ""
+      });
+    }
+  } catch (error) {
+    return res.status(200).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
  

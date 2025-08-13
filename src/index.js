@@ -1,6 +1,6 @@
 import { configDotenv } from "dotenv";
 configDotenv();
-import {decodeTokenMiddleware} from '../src/middlewares/middleware.js'
+import { decodeTokenMiddleware } from "../src/middlewares/middleware.js";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -15,8 +15,7 @@ global.CONSTANTS = AWS_paths();
 
 const app = express();
 import dashboardRoutes from "./routes/dashboard.routes.js";
-import { manageLeads } from "./controllers/manageLeadsController.js";
-
+import manageLeads from "./routes/manageLeads.routes.js";
 app.get("/", (req, res) => {
   // console.log(CONSTANTS);
   return res.status(200).send(`test`);
@@ -63,6 +62,8 @@ app.use("/api/v6/dashboard", dashboardRoutes);
 //ManageLeads Routes
 app.use("/api/v6/manage", manageLeads);
 
+
+
 //routes for the authentication
 app.use("/api/auth", authRoutes);
 app.use("/api/v6/orders", orderRoutes);
@@ -71,4 +72,3 @@ app.use("/api/v6/brand-list", brandRoutes);
 app.listen(PORT, () => {
   console.log(`app is listening on the port ${PORT}`);
 });
-
