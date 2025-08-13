@@ -98,6 +98,7 @@ npm run dev
 | 👤 Contributor | 🚀 Contributions |
 |----------------|---------------------------------------------------------------|
 | **Varun Trikha** | 📊 Dashboard API, 📋 ManageLeads, ✅ Profile Completion, 🔢 LeadsCount |
-| **Prashant**     | ✨ (To be updated) |
+| **Prashant**     | ✅Manage orders API complete, ✨Manage Brands API(Brand listing and filters completed) |
+
 
 
