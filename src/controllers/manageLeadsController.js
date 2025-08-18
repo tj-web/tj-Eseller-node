@@ -68,4 +68,30 @@ export const getLeadHistoryPost = async (req, res) => {
   }
 };
 
+
+
+import { addRemarkReminderUtil } from "../utilis/ManageLeads/remarkReminderUtil.js";
+
+export const addRemarkReminder = async (req, res) => {
+  try {
+    const { lead_id, remark } = req.body;
+    if (!lead_id || !remark) {
+      return res.status(404).json({
+        status: false,
+        message: "lead_id and remark are required"
+      });
+    }
+
+    const save = await addRemarkReminderUtil({ lead_id, remark });
+
+    return res.status(200).json(save);
+
+  } catch (error) {
+    return res.status(200).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
  
