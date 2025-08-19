@@ -1,6 +1,6 @@
 
-import { getLeadsCount } from '../utilis/ManageLeads/leadsCount.js';
-import {getLeadHistory} from '../utilis/ManageLeads/leadsHistory.js'
+import { getLeadsCount } from '../models/ManageLeads/leadsCount.js';
+import {getLeadHistory} from '../models/ManageLeads/leadsHistory.js'
 export const manageLeads = async (req, res) => {
   try {
     const vendor_id = req.query.vendor_id;
@@ -70,7 +70,7 @@ export const getLeadHistoryPost = async (req, res) => {
 
 
 
-import { addRemarkReminderUtil } from "../utilis/ManageLeads/remarkReminderUtil.js";
+import { addRemarkReminderUtil } from "../models/ManageLeads/remarkReminderUtil.js";
 
 export const addRemarkReminder = async (req, res) => {
   try {

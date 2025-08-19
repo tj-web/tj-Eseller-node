@@ -4,7 +4,7 @@ import { decodeTokenMiddleware } from "../src/middlewares/middleware.js";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import authRoutes from "./routes/auth.routes.js";
+// import authRoutes from "./routes/auth.routes.js";
 import sequelize from "./db/connection.js";
 import { AWS_paths } from "./config/constants.js";
 import orderRoutes from "./routes/orders.routes.js";
@@ -54,7 +54,7 @@ app.use((err, req, res, next) => {
 });
 
 // Authentication routes
-app.use("/api/auth", authRoutes);
+// app.use("/api/auth", authRoutes);
 
 //dasboard routes
 app.use("/api/v6/dashboard", dashboardRoutes);
@@ -63,7 +63,7 @@ app.use("/api/v6/dashboard", dashboardRoutes);
 app.use("/api/v6/manage", manageLeads);
 
 //routes for the authentication
-app.use("/api/auth", authRoutes);
+// app.use("/api/auth", authRoutes);
 app.use("/api/v6/orders", orderRoutes);
 app.use("/api/v6/brands", brandRoutes);
 
