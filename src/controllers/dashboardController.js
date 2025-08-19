@@ -1,4 +1,4 @@
-import { oemTotalLeadsCountInfo } from "../utilis/Dashboard/dashboard.js";
+import { oemTotalLeadsCountInfo } from "../models/Dashboard/dashboard.js";
 //sniih eovehiv eaybevbe
 import sequelize from "../db/connection.js";
 export const totalLeadsCountInfo = async (req, res) => {
@@ -88,7 +88,7 @@ export const getVendorOverview = async (req, res) => {
 
 //analytics data function
 
-import { analyticsInfo } from "../utilis/Dashboard/analytics.js";
+import { analyticsInfo } from "../models/Dashboard/analytics.js";
 
 export const analyticsCount = async (req, res) => {
   try {
@@ -105,7 +105,7 @@ export const analyticsCount = async (req, res) => {
   }
 };
 
-import { getOemPlansWithRawSQL } from "../utilis/Dashboard/oemService.js";
+import { getOemPlansWithRawSQL } from "../models/Dashboard/oemService.js";
 import { prepareOemPlansData } from "../helpers/oemHelper.js";
 
 export const fetchPlansInfo = async (req, res) => {

@@ -1,6 +1,6 @@
 
-import { getLeadsCount } from '../utilis/ManageLeads/leadsCount.js';
-import {getLeadHistory} from '../utilis/ManageLeads/leadsHistory.js'
+import { getLeadsCount } from '../models/ManageLeads/leadsCount.js';
+import {getLeadHistory} from '../models/ManageLeads/leadsHistory.js'
 export const manageLeads = async (req, res) => {
   try {
     const vendor_id = req.query.vendor_id;
@@ -60,6 +60,32 @@ export const getLeadHistoryPost = async (req, res) => {
         data: ""
       });
     }
+  } catch (error) {
+    return res.status(200).json({
+      status: false,
+      message: error.message
+    });
+  }
+};
+
+
+
+import { addRemarkReminderUtil } from "../models/ManageLeads/remarkReminderUtil.js";
+
+export const addRemarkReminder = async (req, res) => {
+  try {
+    const { lead_id, remark } = req.body;
+    if (!lead_id || !remark) {
+      return res.status(404).json({
+        status: false,
+        message: "lead_id and remark are required"
+      });
+    }
+
+    const save = await addRemarkReminderUtil({ lead_id, remark });
+
+    return res.status(200).json(save);
+
   } catch (error) {
     return res.status(200).json({
       status: false,
