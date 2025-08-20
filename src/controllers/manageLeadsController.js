@@ -1,39 +1,39 @@
-
-import { getLeadsCount } from '../models/ManageLeads/leadsCount.js';
-import {getLeadHistory} from '../models/ManageLeads/leadsHistory.js'
+import { getLeadsCount } from "../models/ManageLeads/leadsCount.js";
+import { getLeadHistory } from "../models/ManageLeads/leadsHistory.js";
 export const manageLeads = async (req, res) => {
   try {
     const vendor_id = req.query.vendor_id;
 
     if (!vendor_id) {
-      return res.status(400).json({ error: 'vendor_id is required' });
+      return res.status(400).json({ error: "vendor_id is required" });
     }
 
     const filters = {
       date_from: req.query.date_from,
       date_to: req.query.date_to,
-      srch_value: req.query.srch_value,  
+      srch_value: req.query.srch_value,
       srch_by: req.query.srch_by,
       action: req.query.action,
-      status: req.query.status
+      status: req.query.status,
+      // limit: req.query.limit,
+      // pageNumber: req.query.pageNumber,
     };
 
-    const leadsData = await getLeadsCount(vendor_id, filters);
+    const leadsData = await getLeadsCount(vendor_id, filters, req.query.limit,req.query.pageNumber);
 
     return res.status(200).json({
       success: true,
-      data: leadsData
+      data: leadsData,
     });
   } catch (error) {
-    console.error('Error in manageLeads controller:', error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error("Error in manageLeads controller:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 export const getLeadHistoryPost = async (req, res) => {
-  const params = req.body; 
+  const params = req.body;
   try {
-
     if (!params.profile_id) {
       throw new Error("Profile Id field is required.");
     }
@@ -51,24 +51,22 @@ export const getLeadHistoryPost = async (req, res) => {
       return res.status(200).json({
         status: true,
         message: "Leads History fetched successfully",
-        data: history
+        data: history,
       });
     } else {
       return res.status(200).json({
         status: false,
         message: "No history found",
-        data: ""
+        data: "",
       });
     }
   } catch (error) {
     return res.status(200).json({
       status: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
-
-
 
 import { addRemarkReminderUtil } from "../models/ManageLeads/remarkReminderUtil.js";
 
@@ -78,20 +76,17 @@ export const addRemarkReminder = async (req, res) => {
     if (!lead_id || !remark) {
       return res.status(404).json({
         status: false,
-        message: "lead_id and remark are required"
+        message: "lead_id and remark are required",
       });
     }
 
     const save = await addRemarkReminderUtil({ lead_id, remark });
 
     return res.status(200).json(save);
-
   } catch (error) {
     return res.status(200).json({
       status: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
-
- 
