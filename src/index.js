@@ -4,7 +4,6 @@ import { decodeTokenMiddleware } from "../src/middlewares/middleware.js";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-// import authRoutes from "./routes/auth.routes.js";
 import sequelize from "./db/connection.js";
 import { AWS_paths } from "./config/constants.js";
 import orderRoutes from "./routes/orders.routes.js";
@@ -25,7 +24,6 @@ app.use(cors());
 const PORT = 3000;
 app.use(morgan("dev"));
 
-// morgan package
 app.use(express.json());
 
 app.use(
@@ -53,8 +51,6 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ message: "Something went wrong" });
 });
 
-// Authentication routes
-// app.use("/api/auth", authRoutes);
 
 //dasboard routes
 app.use("/api/v6/dashboard", dashboardRoutes);
@@ -65,9 +61,11 @@ app.use("/api/v6/manage", manageLeads);
 // ManageProduct Routes
 app.use("/api/v6/product",manageProduct)
 
-//routes for the authentication
-// app.use("/api/auth", authRoutes);
+//orders routes
+
 app.use("/api/v6/orders", orderRoutes);
+
+//brands routes 
 app.use("/api/v6/brands", brandRoutes);
 
 app.listen(PORT, () => {

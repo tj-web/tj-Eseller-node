@@ -18,7 +18,8 @@ export const fetchVendorProducts = async (req, res) => {
     const pageNumber=req.query.pageNumber;
 
     
-    const brand_arr = await getVendorBrands(vendor_id);
+    // const brand_arr = await getVendorBrands(vendor_id);
+   
 
     const products = await getProductList(brand_arr, search_filter, order_by, order,limit,pageNumber);
 
@@ -26,9 +27,39 @@ export const fetchVendorProducts = async (req, res) => {
       status: true,
       message: "Products fetched successfully",
       products,
+      brand_arr
     });
   } catch (error) {
     console.error("Error fetching vendor products:", error);
     res.status(500).json({ status: false, message: "Internal Server Error" });
   }
 };
+
+
+ 
+export const brand_arr = async (req, res) => {
+  try {
+    const { vendor_id } = req.query;
+
+    if (!vendor_id) {
+      return res.status(400).json({ status: false, message: "vendor_id is required" });
+    }
+
+    const brand = await getVendorBrands(vendor_id);
+
+    return res.status(200).json({
+      status: true,
+      message: "Brands fetched successfully",
+      data: brand,
+    });
+  } catch (error) {
+    console.error("Error fetching brands:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
+

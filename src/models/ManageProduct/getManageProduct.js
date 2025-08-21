@@ -41,7 +41,6 @@ export const getProductList = async (
     return [];
   }
 
-  // Order mapping like in CI switch-case
   let orderByColumn;
   switch (order_by) {
     case "s_id":
@@ -70,7 +69,6 @@ export const getProductList = async (
 
   const replacements = { brand_arr };
 
-  // Filters
   if (search_filter.srch_product_name) {
     sql += " AND tp.product_name LIKE :product_name";
     replacements.product_name = `%${search_filter.srch_product_name}%`;
