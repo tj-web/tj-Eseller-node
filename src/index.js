@@ -10,12 +10,12 @@ import { AWS_paths } from "./config/constants.js";
 import orderRoutes from "./routes/orders.routes.js";
 import brandRoutes from "./routes/brands.routes.js";
 import morgan from "morgan";
-
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import manageLeads from "./routes/manageLeads.routes.js";
+import manageProduct from "./routes/manageProduct.routes.js"
 global.CONSTANTS = AWS_paths();
 
 const app = express();
-import dashboardRoutes from "./routes/dashboard.routes.js";
-import manageLeads from "./routes/manageLeads.routes.js";
 app.get("/", (req, res) => {
   // console.log(CONSTANTS);
   return res.status(200).send(`test`);
@@ -61,6 +61,9 @@ app.use("/api/v6/dashboard", dashboardRoutes);
 
 //ManageLeads Routes
 app.use("/api/v6/manage", manageLeads);
+
+// ManageProduct Routes
+app.use("/api/v6/product",manageProduct)
 
 //routes for the authentication
 // app.use("/api/auth", authRoutes);

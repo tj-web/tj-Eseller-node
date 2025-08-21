@@ -1,5 +1,8 @@
 import { getLeadsCount } from "../models/ManageLeads/leadsCount.js";
 import { getLeadHistory } from "../models/ManageLeads/leadsHistory.js";
+import { getDemosCount } from "../models/ManageLeads/myDemos.js";
+//--------------------Manage Lead History-----------------------------------------------------
+
 export const manageLeads = async (req, res) => {
   try {
     const vendor_id = req.query.vendor_id;
@@ -14,9 +17,7 @@ export const manageLeads = async (req, res) => {
       srch_value: req.query.srch_value,
       srch_by: req.query.srch_by,
       action: req.query.action,
-      status: req.query.status,
-      // limit: req.query.limit,
-      // pageNumber: req.query.pageNumber,
+      status: req.query.status
     };
 
     const leadsData = await getLeadsCount(vendor_id, filters, req.query.limit,req.query.pageNumber);
@@ -30,6 +31,8 @@ export const manageLeads = async (req, res) => {
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+// -----------------------------get Lead History API--------------------------------------
 
 export const getLeadHistoryPost = async (req, res) => {
   const params = req.body;
@@ -68,6 +71,8 @@ export const getLeadHistoryPost = async (req, res) => {
   }
 };
 
+//---------------------------add Remark API --------------------------------------
+
 import { addRemarkReminderUtil } from "../models/ManageLeads/remarkReminderUtil.js";
 
 export const addRemarkReminder = async (req, res) => {
@@ -90,3 +95,68 @@ export const addRemarkReminder = async (req, res) => {
     });
   }
 };
+
+
+// ----------------------------My_Demos API -----------------------------------------------
+
+
+// export const getDemosCountController = async (req, res) => {
+//   try {
+//     const { vendor_id, flg, acd_uuid, ...search_filter } = req.query;
+
+//     if (!vendor_id) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "vendor_id is required",
+//       });
+//     }
+
+//     const total = await getDemosCount(vendor_id, search_filter, flg, acd_uuid);
+
+//     return res.json({
+//       status: true,
+//       message: "Demos count fetched successfully",
+//       data: {
+//         vendor_id,
+//         total,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error in getDemosCountController:", error);
+//     return res.status(500).json({
+//       status: false,
+//       message: "Internal Server Error",
+//     });
+//   }
+// };
+
+// import { getDemosCount } from "../models/ManageLeads/myDemos.js";
+
+export const getDemosCountController = async (req, res) => {
+  try {
+    const { vendor_id, flg, acd_uuid, limit ,pageNumber,...search_filter } = req.query;
+
+    if (!vendor_id) {
+      return res.status(400).json({
+        status: false,
+        message: "vendor_id is required",
+      });
+    }
+
+    const data = await getDemosCount(vendor_id, search_filter, flg, acd_uuid,limit,pageNumber);
+
+    return res.json({
+      status: true,
+      message: "Demos fetched successfully",
+      data,
+    });
+  } catch (error) {
+    console.error("Error in getDemosCountController:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+

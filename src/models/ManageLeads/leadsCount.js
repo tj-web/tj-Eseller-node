@@ -270,7 +270,6 @@ export const getLeadsCount = async (
 ) => {
   const { date_from, date_to, srch_value, srch_by, action, status } = filters;
   let offset = (pageNumber - 1) * limit;
-  console.log(limit, offset);
   let whereConditions = `
     tl.vendor_id = ?
     AND tl.phone <> ''
