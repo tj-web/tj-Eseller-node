@@ -23,7 +23,7 @@ app.get("/", (req, res) => {
 });
 
 app.use(cors());
-const PORT = 3000;
+const PORT = process.env.BASE_PORT;
 app.use(morgan("dev"));
 
 // morgan package
@@ -58,15 +58,15 @@ app.use((err, req, res, next) => {
 app.use("/api/auth", authRoutes);
 
 //dasboard routes
-app.use("/api/v6/dashboard", dashboardRoutes);
+app.use(process.env.API_VERSION_PATH + "/dashboard", dashboardRoutes);
 
 //ManageLeads Routes
-app.use("/api/v6/manage", manageLeads);
+app.use(process.env.API_VERSION_PATH + "/manage", manageLeads);
 
 //routes for the authentication 
 app.use("/api/auth", authRoutes); 
-app.use("/api/v6/orders", orderRoutes)
-app.use("/api/v6/brands", brandRoutes)
+app.use(process.env.API_VERSION_PATH + "/orders", orderRoutes)
+app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes)
 
 app.listen(PORT, () => {
   console.log(`app is listening on the port ${PORT}`);
