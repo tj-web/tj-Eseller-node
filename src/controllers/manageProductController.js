@@ -154,3 +154,40 @@ export const basicDetails = async (req, res) => {
   }
 };
 
+
+// ------------Product Specification -------------------------------------------
+import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
+
+export const ProductSpecification = async (req, res) => {
+  try {
+    const { id, deployment, device, operating_system, organization_type, languages } = req.query;
+
+    // ✅ Basic validation
+    if (!deployment || !device || !operating_system || !organization_type) {
+      return res.status(400).json({ error: "Required fields are missing" });
+    }
+
+    // ✅ Format arrays into CSV
+    const productData = {
+      deployment: Array.isArray(deployment) ? deployment.join(",") : deployment,
+      device: Array.isArray(device) ? device.join(",") : device,
+      operating_system: Array.isArray(operating_system) ? operating_system.join(",") : operating_system,
+      organization_type: Array.isArray(organization_type) ? organization_type.join(",") : organization_type,
+      languages: Array.isArray(languages) ? languages.join(",") : languages,
+    };
+
+    // ✅ Call model function
+    const result = await saveOrUpdateProductSpecification(id, productData);
+
+    return res.status(200).json({
+      message: "Changes have been recorded successfully!",
+      data: result,
+    });
+
+  } catch (error) {
+    console.error("Error updating product specification:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+
