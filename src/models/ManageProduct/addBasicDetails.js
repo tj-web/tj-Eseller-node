@@ -30,6 +30,8 @@ export const getSelectedColumns = async (table, columns = [], where = {}) => {
 
 
 export const saveProduct = async (save, productId = null) => {
+  let newProductId;
+
   if (productId) {
     // Update existing product
     const setClause = Object.keys(save)
@@ -43,7 +45,7 @@ export const saveProduct = async (save, productId = null) => {
       type: QueryTypes.UPDATE,
     });
 
-    return productId;
+    newProductId = productId;
   } else {
     // Insert new product
     const keys = Object.keys(save);
@@ -56,7 +58,10 @@ export const saveProduct = async (save, productId = null) => {
       type: QueryTypes.INSERT,
     });
 
-    return result; // insert_id
+    newProductId = result;
   }
+
+  return newProductId;
 };
+
 
