@@ -61,8 +61,6 @@ export const saveProduct = async (save, productId = null) => {
     newProductId = result;
   }
 
-  await anotherFunction(newProductId);
-
   return newProductId;
 };
 

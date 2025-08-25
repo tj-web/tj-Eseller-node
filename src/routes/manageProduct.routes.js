@@ -1,5 +1,5 @@
 import express from "express";
-import { fetchVendorProducts ,brand_arr,basicDetails,ProductSpecification,saveProductFeature } from "../controllers/manageProductController.js";
+import { fetchVendorProducts ,brand_arr,basicDetails,ProductSpecification,saveProductFeature,getProductFeatures } from "../controllers/manageProductController.js";
 const router = express.Router();
 
 
@@ -9,6 +9,7 @@ router.get('/leadId',brand_arr)
 router.post('/adddetail',basicDetails)
 router.post('/specification',ProductSpecification)
 router.post('/features',saveProductFeature)
+router.get('/ff',getProductFeatures)
 
 
 export default router;
