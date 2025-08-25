@@ -191,3 +191,30 @@ export const ProductSpecification = async (req, res) => {
 };
 
 
+//--------------------------------------------features part of the form--------------
+
+import { saveOrUpdateProductFeature } from "../models/ManageProduct/getFeatures.js";
+
+export const saveProductFeature = async (req, res) => {
+  try {
+    const post = req.query; // or req.body if using JSON
+
+    // Validate required field
+    if (!post.product_id) {
+      return res.status(400).json({ error: "product_id is required" });
+    }
+
+    // Call model to handle DB operation
+    const result = await saveOrUpdateProductFeature(post);
+
+    if (result.action === "update") {
+      return res.status(200).json({ message: "Feature updated", id: result.id });
+    } else {
+      return res.status(201).json({ message: "Feature inserted", id: result.id });
+    }
+  } catch (error) {
+    console.error("Error saving product feature (controller):", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
