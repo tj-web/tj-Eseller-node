@@ -162,12 +162,12 @@ export const ProductSpecification = async (req, res) => {
   try {
     const { id, deployment, device, operating_system, organization_type, languages } = req.query;
 
-    // ✅ Basic validation
+    //  Basic validation
     if (!deployment || !device || !operating_system || !organization_type) {
       return res.status(400).json({ error: "Required fields are missing" });
     }
 
-    // ✅ Format arrays into CSV
+    //  Format arrays into CSV
     const productData = {
       deployment: Array.isArray(deployment) ? deployment.join(",") : deployment,
       device: Array.isArray(device) ? device.join(",") : device,
@@ -176,7 +176,7 @@ export const ProductSpecification = async (req, res) => {
       languages: Array.isArray(languages) ? languages.join(",") : languages,
     };
 
-    // ✅ Call model function
+    //  Call model function
     const result = await saveOrUpdateProductSpecification(id, productData);
 
     return res.status(200).json({

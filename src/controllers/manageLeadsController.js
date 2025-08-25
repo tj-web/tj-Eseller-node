@@ -48,6 +48,7 @@ export const getLeadHistoryPost = async (req, res) => {
     if (!params.lead_id) {
       throw new Error("Lead Id is required.");
     }
+    console.log(">>>>",params)
 
     const history = await getLeadHistory(params.lead_id);
     if (history.length > 0) {
