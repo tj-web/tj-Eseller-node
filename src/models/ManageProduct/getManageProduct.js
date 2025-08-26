@@ -22,8 +22,6 @@ export const getVendorBrands = async (vendor_id) => {
 // ----------------------------------------GetProductList----------------------------
 
 
-
-
 export const getProductList = async (
   brand_arr,
   search_filter = {},
@@ -32,10 +30,10 @@ export const getProductList = async (
   limit,
   pageNumber
 ) => {
-  const limitNum = limit ? parseInt(limit, 10) : 3;
+  const limitNum = limit ? parseInt(limit, 10) : null;
   const pageNum = pageNumber ? parseInt(pageNumber, 10) : 1;
 
-  const offset = (pageNum - 1) * limitNum;
+  const offset = limitNum ? (pageNum - 1) * limitNum : 0;
 
   if (!brand_arr || brand_arr.length === 0) {
     return [];
@@ -57,7 +55,6 @@ export const getProductList = async (
       order = "desc";
   }
 
-  // Base query
   let sql = `
     SELECT tp.product_id, tp.product_name, tp.status, tb.brand_name, tpi.image
     FROM tbl_product AS tp
@@ -79,7 +76,11 @@ export const getProductList = async (
     replacements.status = search_filter.srch_status;
   }
 
-  sql += ` GROUP BY tp.product_id ORDER BY ${orderByColumn} ${order} LIMIT ${limitNum} OFFSET ${offset}`;
+  sql += ` GROUP BY tp.product_id ORDER BY ${orderByColumn} ${order}`;
+
+  if (limitNum) {
+    sql += ` LIMIT ${limitNum} OFFSET ${offset}`;
+  }
 
   const results = await sequelize.query(sql, {
     replacements,
@@ -88,6 +89,7 @@ export const getProductList = async (
 
   return results;
 };
+
 
 
 
