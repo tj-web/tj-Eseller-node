@@ -15,13 +15,17 @@ import manageProduct from "./routes/manageProduct.routes.js"
 global.CONSTANTS = AWS_paths();
 
 const app = express();
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import { manageLeads } from "./controllers/manageLeadsController.js";
+import { s3 } from "./config/aws.config.js";
+
 app.get("/", (req, res) => {
   // console.log(CONSTANTS);
   return res.status(200).send(`test`);
 });
 
 app.use(cors());
-const PORT = 3000;
+const PORT = process.env.BASE_PORT;
 app.use(morgan("dev"));
 
 app.use(express.json());
@@ -42,6 +46,7 @@ try {
   console.error("Database connection failed:", error);
 }
 
+
 //cors related
 app.use(express.json());
 app.use(cookieParser());
@@ -53,20 +58,15 @@ app.use((err, req, res, next) => {
 
 
 //dasboard routes
-app.use("/api/v6/dashboard", dashboardRoutes);
+app.use(process.env.API_VERSION_PATH + "/dashboard", dashboardRoutes);
 
 //ManageLeads Routes
-app.use("/api/v6/manage", manageLeads);
+app.use(process.env.API_VERSION_PATH + "/manage", manageLeads);
 
-// ManageProduct Routes
-app.use("/api/v6/product",manageProduct)
-
-//orders routes
-
-app.use("/api/v6/orders", orderRoutes);
-
-//brands routes 
-app.use("/api/v6/brands", brandRoutes);
+//routes for the authentication 
+app.use("/api/auth", authRoutes); 
+app.use(process.env.API_VERSION_PATH + "/orders", orderRoutes)
+app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes)
 
 app.listen(PORT, () => {
   console.log(`app is listening on the port ${PORT}`);

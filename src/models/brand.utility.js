@@ -1,71 +1,64 @@
-import { Sequelize } from "sequelize";
+import { get_brand_by_id } from "../models/brand.model.js";
+import { uploadFile } from "../config/aws.config.js";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { objectKeyDiff } from "../General_Function/general_helper.js";
 import sequelize from "../db/connection.js";
-export async function get_vendor_brands({vendor_id,  orderby, order, srch_brand_name, srch_status, limit = 10   , pagenumber = 1}) {
-    let whereCondition = '';
-    let offset = (pagenumber-1)*limit;
-    // whereCondition = `vbr.vendor_id = ${vendor_id} AND vbr.tbl_brand_id != 0`;
-    switch (orderby) {
-        case "s_id" :
-            orderby = "tb.id";
-            
-            break;
-        case "s_brand_name" :
-            orderby = "tb.brand_name";
-            
-            break;
-        case "s_status" :
-            orderby = "vbr.status";
-            
-            break;
-        default:
-            orderby = "tb.brand_id";
+// import { AWS_paths } from "../config/constants.js";
+// global.CONSTANTS = AWS_paths();
+
+// /********************HANDLE IMAGE UPLOADS********************** */
+
+
+/********************CLEAN UPLOAD FILE NAME VALIDATOR************* */
+function cleanUploadFileName(input) {
+  return input.replace(/[^a-zA-Z0-9._]+/g, "");
+}
+
+
+
+/********************8save brand image utility. */
+export const saveBrandImage = async (imageName, brand_id) => {
+  try {
+    let fileName;
+    let awsObjectUrl = "";
+    
+    if (imageName) {
+      
+      const file = imageName;
+
+      const filePath = `${CONSTANTS.AWS_BRAND_IMAGES}${brand_id}_`;
+      fileName = `${brand_id}_${file.originalname}`;
+
+      // upload file to S3
+      const params = {
+        Key: `${filePath}${file.originalname}`, // path inside bucket
+        Body: file.buffer, // multer gives buffer
+        ContentType: file.mimetype,
+      };
+
+      const uploadResult = await uploadFile(params);
+      awsObjectUrl = uploadResult.Location; // same as $aws_object_url
+    } else {
+      // If no new file uploaded, keep old one
+      fileName = req.body.old_image;
     }
 
-    order=order|| 'desc';
-    whereCondition = `vbr.vendor_id = :vendor_id AND vbr.tbl_brand_id != 0`;
-    
-    if(srch_brand_name)
-        whereCondition += ` AND tb.brand_name LIKE :srch_brand_name`;
-    
-    if(srch_status)
-        whereCondition += ` AND vbr.status = :srch_status`;
-    
+    // update DB record
+    const query = `
+      UPDATE tbl_brand 
+      SET image = :image 
+      WHERE brand_id = :brand_id
+    `;
 
-
-    const sql = `SELECT
-    vbr.id,
-    vbr.vendor_id,
-    vbr.tbl_brand_id,
-    vbr.status,
-    tb.brand_name,
-    tb.description,
-    tb.image,
-    tb.status AS brand_status
-FROM
-    vendor_brand_relation AS vbr
-LEFT JOIN tbl_brand AS tb
-ON
-    tb.brand_id = vbr.tbl_brand_id
-WHERE
-    ${whereCondition}
-ORDER BY :orderby :order
-
-LIMIT :offset, :limit;`
-    
-    
-
-    const results = await sequelize.query(sql, {
-        replacements: {
-            vendor_id,
-            limit:+limit, 
-            offset,
-            orderby,
-            order,
-            srch_brand_name,
-            srch_status
-        },
-        type: sequelize.QueryTypes.SELECT
+    await sequelize.query(query, {
+      replacements: { image: fileName, brand_id },
+      type: sequelize.QueryTypes.UPDATE,
     });
 
-    return results;
-}
+    return awsObjectUrl;
+  } catch (error) {
+    console.error("Error in saveBrandImage:", error);
+    throw error;
+  }
+};
+
