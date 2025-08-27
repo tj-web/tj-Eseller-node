@@ -1,6 +1,14 @@
 import { getCurrentDateTime } from "../General_Function/general_helper.js";
-import { get_vendor_brands, saveBrand } from "../models/brand.model.js";
+import {
+  get_vendor_brands,
+  saveBrand,
+  saveBrandInfo,
+  saveVendorRelationBrand,
+  tbl_brand_Cols,
+  updateVendorLogs,
+} from "../models/brand.model.js";
 import { checkBrandName } from "../models/brand.model.js";
+import { saveBrandImage } from "../utilis/brand.utility.js";
 export const getBrands = async (req, res) => {
   try {
     const {
@@ -46,41 +54,16 @@ export const checkBrand = async (req, res) => {
   }
 };
 
-const allCols = {
-
-  "image_name": "",
-  "banner":"",
-  "banner_name":"",
-  "description":"",
-  "slug":"",
-  "website_url":"",
-  "tags":"",
-  "page_title":"",
-  "page_heading":"",
-  "page_keyword":"",
-  "page_description":"",
-  "oem_onboarded_by":"",
-  "agreement_attach":"",
-  "lead_url":"",
-  "lead_username":"",
-  "lead_password":"",
-  "commission_type":0,
-  "commission":0,
-  "commission_comment":"",
-  "renewal_terms":0.0,
-  "renewal_terms_comment":"",
-  "payment_terms":"",
-  "payment_terms_comment":"",
-  "remarks":"",
-  "vendor_sheet":""
-};
-
-
 export const addBrand = async (req, res) => {
   try {
-      const is_available = await checkBrandName(req.body.brand_name);
-      if(!is_available){return res.status(300).json({success:false,message:"Brand name already exists"})}
-
+    console.log(req.body);
+    console.log(req.query);return;
+    const is_available = await checkBrandName(req.body.brand_name);
+    if (!is_available) {
+      return res
+        .status(300)
+        .json({ success: false, message: "Brand name already exists" });
+    }
 
     let save_brand_data = {
       brand_name: req.body.brand_name,
@@ -92,25 +75,57 @@ export const addBrand = async (req, res) => {
       image_name: "",
       brand_onboarded: 0,
       part_agree_date: getCurrentDateTime(),
-      vendor_sheet_rec:0,
+      vendor_sheet_rec: 0,
       tj_agree_by_oem: 0,
       oem_agree_by_tj: 0,
-      lead_locking:0,
+      lead_locking: 0,
       onboard_last_updated: getCurrentDateTime(),
       oem_onboarded_date: getCurrentDateTime(),
-      declined_by:1
+      declined_by: 1,
     };
 
-    const save = {...save_brand_data,...allCols};
+    const save = { ...save_brand_data, ...tbl_brand_Cols };
 
     const result = await saveBrand(save);
-    if (result) {
-      return res
-        .status(200)
-        .json({ success: true, message: "Brand added successfully" });
-    } else
-      return res
-        .status(200)
-        .json({ success: false, message: "Brand not added" });
-  } catch (error) {}
+
+    let save_brand_info_data = {
+      tbl_brand_id: result ?? req.body.brand_id,
+      location: req.body.location,
+      founded_on: req.body.founded_on,
+      founders: req.body.founders,  
+      company_size: req.body.company_size,
+      information: req.body.information,
+      industry: req.body.industry,
+      created_at: getCurrentDateTime(),
+    };
+    await saveBrandInfo(save_brand_info_data);
+    const brand_image = await saveBrandImage(req.body.image, save_brand_info_data.tbl_brand_id );
+    await saveVendorRelationBrand(req.body.vendor_id, save_brand_info_data.tbl_brand_id);
+
+    save_brand_data.brand_image = `${save_brand_info_data.tbl_brand_id}_${save_brand_data.image}`;
+    
+    // 2. Remove unwanted keys
+    delete save_brand_data.date_added;
+    delete save_brand_data.status;
+    delete save_brand_data.added_by;
+    delete save_brand_data.added_by_id;
+    delete save_brand_data.image;
+
+    // 3. Remove tbl_brand_id from brand info
+    delete save_brand_data.tbl_brand_id;
+
+    // 4. Prepare update object
+    const updateArr = {
+      tbl_brand: save_brand_data,
+      tbl_brand_info: save_brand_info_data,
+    };
+
+    updateVendorLogs(updateArr,  save_brand_info_data.tbl_brand_id, req.body.profile_id, 1, 0, "insert", "brand");
+    save_brand_info_data["Brand Name"] = req.body.brand_name;
+    save_brand_info_data["Brand Image"] = brand_image;
+
+    return res.status(200).json({ success: true, message:"Brand Saved Successfully." });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
 };

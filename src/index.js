@@ -16,6 +16,7 @@ global.CONSTANTS = AWS_paths();
 const app = express();
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import { manageLeads } from "./controllers/manageLeadsController.js";
+import { s3 } from "./config/aws.config.js";
 
 app.get("/", (req, res) => {
   // console.log(CONSTANTS);
@@ -44,6 +45,7 @@ try {
 } catch (error) {
   console.error("Database connection failed:", error);
 }
+
 
 //cors related
 app.use(express.json());

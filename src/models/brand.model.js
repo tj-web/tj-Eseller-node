@@ -134,14 +134,41 @@ export const checkBrandName = async (brand_name, brand_id) => {
     throw error;
   }
 };
+/**********default values for tbl_brands*********** */
+export const tbl_brand_Cols = {
 
-
+  "image_name": "",
+  "banner":"",
+  "banner_name":"",
+  "description":"",
+  "slug":"",
+  "website_url":"",
+  "tags":"",
+  "page_title":"",
+  "page_heading":"",
+  "page_keyword":"",
+  "page_description":"",
+  "oem_onboarded_by":"",
+  "agreement_attach":"",
+  "lead_url":"",
+  "lead_username":"",
+  "lead_password":"",
+  "commission_type":0,
+  "commission":0,
+  "commission_comment":"",
+  "renewal_terms":0.0,
+  "renewal_terms_comment":"",
+  "payment_terms":"",
+  "payment_terms_comment":"",
+  "remarks":"",
+  "vendor_sheet":""
+};
 
 export async function saveBrand(save, brand_id = "") {
   try {
 
     if (brand_id) {
-      // ✅ Update existing brand
+      //  Update existing brand
       const setClause = Object.keys(save)
         .map((key) => `${key} = :${key}`)
         .join(", ");
@@ -158,7 +185,7 @@ export async function saveBrand(save, brand_id = "") {
 
       return brand_id;
     } else {
-      // ✅ Insert new brand
+      //  Insert new brand
       const keys = Object.keys(save).join(", ");
       const values = Object.keys(save)
         .map((key) => `:${key}`)
@@ -180,3 +207,202 @@ export async function saveBrand(save, brand_id = "") {
     return null;
   }
 }
+
+
+
+
+
+/*****************save brand info ********************* */
+
+export const saveBrandInfo = async (save) => {
+  try {
+    // Build keys and values dynamically
+    const keys = Object.keys(save).join(", ");
+    const values = Object.keys(save).map((key) => `:${key}`).join(", ");
+
+    const query = `INSERT INTO tbl_brand_info (${keys}) VALUES (${values})`;
+
+    const [result] = await sequelize.query(query, {
+      replacements: save,
+      type: sequelize.QueryTypes.INSERT,
+    });
+
+    // Sequelize raw INSERT returns [result, metadata]
+    // result = insertId in MySQL
+    return result; 
+  } catch (error) {
+    console.error("Error in saveBrandInfo:", error);
+    throw error;
+  }
+};
+
+
+
+
+export const saveVendorRelationBrand = async (vendorId, brandId) => {
+  try {
+    const vendorBrandRelation = {
+      vendor_id: vendorId,
+      tbl_brand_id: brandId,
+      status: 0,
+      is_requested: 0,
+      created_at: new Date(), // JS auto formats datetime
+    };
+
+    const keys = Object.keys(vendorBrandRelation).join(", ");
+    const values = Object.keys(vendorBrandRelation)
+      .map((key) => `:${key}`)
+      .join(", ");
+
+    const query = `
+      INSERT INTO vendor_brand_relation (${keys}) 
+      VALUES (${values})
+    `;
+
+    await sequelize.query(query, {
+      replacements: vendorBrandRelation,
+      type: sequelize.QueryTypes.INSERT,
+    });
+
+    console.log(" Vendor-brand relation saved!");
+  } catch (error) {
+    console.error(" Error in saveVendorRelationBrand:", error);
+    throw error;
+  }
+};
+
+
+export const updateVendorLogs = async (
+  updateArr,
+  itemId,
+  profileId,
+  status,
+  updateId,
+  action,
+  module
+) => {
+  try {
+    let insertArray = [];
+    let updateArray = [];
+
+    // 1. Fetch existing vendor log details
+    const vendorLogDetails = await sequelize.query(
+      `
+      SELECT id, column_name, linked_attribute
+      FROM vendor_logs
+      WHERE item_id = :itemId AND status = 0 AND module = :module
+      `,
+      {
+        replacements: { itemId, module },
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
+
+    // vendorLogDetails = array of rows
+    const unacceptedChanges = {};
+    const unacceptedChangesIds = {};
+
+    vendorLogDetails.forEach((row) => {
+      unacceptedChanges[row.id] = row.column_name;
+      unacceptedChangesIds[row.column_name] = row.id;
+    });
+
+    const allowedDuplicateColumns = [
+      "video_title",
+      "video_url",
+      "gallery_title",
+      "gallery_description",
+      "gallery_image",
+      "screenshot",
+      "screenshot_img_alt",
+      "enrichment_image",
+      "type",
+    ];
+
+    // 2. Iterate through updateArr
+    for (const [tableName, columns] of Object.entries(updateArr)) {
+      const pKey = columns.p_key || "";
+      const updateIdVal = columns.update_id || "";
+
+      // linked_attr logic
+      let linkedAttr = "";
+      if (vendorLogDetails.length > 0 && vendorLogDetails[0].linked_attribute) {
+        linkedAttr = vendorLogDetails[0].linked_attribute;
+      } else if (action === "updated" && module !== "brand") {
+        linkedAttr = `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+      }
+
+      for (const [columnName, updatedValue] of Object.entries(columns)) {
+        if (columnName !== "p_key" && columnName !== "update_id") {
+          if (
+            !Object.values(unacceptedChanges).includes(columnName) ||
+            (!updateIdVal && allowedDuplicateColumns.includes(columnName))
+          ) {
+            insertArray.push({
+              item_id: itemId,
+              module,
+              action_performed: action,
+              action_by: profileId,
+              table_name: tableName,
+              column_name: columnName,
+              p_key: pKey,
+              updated_column_value: updatedValue,
+              linked_attribute: linkedAttr,
+              item_updated_id: updateIdVal,
+              reject_reason: "",
+              status,
+              created_at: new Date(),
+              updated_at: new Date(),
+            });
+          } else {
+            updateArray.push({
+              id: unacceptedChangesIds[columnName],
+              column_name: columnName,
+              updated_column_value: updatedValue,
+            });
+          }
+        }
+      }
+    }
+
+    // 3. Insert batch if needed
+    if (insertArray.length > 0) {
+      const keys = Object.keys(insertArray[0]);
+      const values = insertArray
+        .map(
+          (row) =>
+            `(${keys.map((key) => sequelize.escape(row[key])).join(", ")})`
+        )
+        .join(", ");
+
+      const query = `
+        INSERT INTO vendor_logs (${keys.join(", ")})
+        VALUES ${values}
+      `;
+      await sequelize.query(query);
+    }
+
+    // 4. Update batch if needed
+    if (updateArray.length > 0) {
+      for (const row of updateArray) {
+        await sequelize.query(
+          `
+          UPDATE vendor_logs
+          SET column_name = :column_name,
+              updated_column_value = :updated_column_value
+          WHERE id = :id
+          `,
+          {
+            replacements: row,
+            type: sequelize.QueryTypes.UPDATE,
+          }
+        );
+      }
+    }
+
+    console.log(" updateVendorLogs executed successfully!");
+  } catch (error) {
+    console.error(" Error in updateVendorLogs:", error);
+    throw error;
+  }
+};
