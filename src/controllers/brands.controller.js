@@ -57,8 +57,6 @@ export const checkBrand = async (req, res) => {
 
 export const addBrand = async (req, res) => {
   try {
-    console.log(req.body);
-    console.log(req.query);return;
     const is_available = await checkBrandName(req.body.brand_name);
     if (!is_available) {
       return res
