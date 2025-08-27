@@ -1,16 +1,17 @@
 import { configDotenv } from "dotenv";
 configDotenv();
-import {decodeTokenMiddleware} from '../src/middlewares/middleware.js'
+import { decodeTokenMiddleware } from "../src/middlewares/middleware.js";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import authRoutes from "./routes/auth.routes.js";
 import sequelize from "./db/connection.js";
 import { AWS_paths } from "./config/constants.js";
 import orderRoutes from "./routes/orders.routes.js";
 import brandRoutes from "./routes/brands.routes.js";
 import morgan from "morgan";
-
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import manageLeads from "./routes/manageLeads.routes.js";
+import manageProduct from "./routes/manageProduct.routes.js"
 global.CONSTANTS = AWS_paths();
 
 const app = express();
@@ -27,7 +28,6 @@ app.use(cors());
 const PORT = process.env.BASE_PORT;
 app.use(morgan("dev"));
 
-// morgan package
 app.use(express.json());
 
 app.use(
@@ -56,8 +56,6 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ message: "Something went wrong" });
 });
 
-// Authentication routes
-app.use("/api/auth", authRoutes);
 
 //dasboard routes
 app.use(process.env.API_VERSION_PATH + "/dashboard", dashboardRoutes);
@@ -73,5 +71,3 @@ app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes)
 app.listen(PORT, () => {
   console.log(`app is listening on the port ${PORT}`);
 });
-
-

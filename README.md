@@ -91,4 +91,14 @@ cp .env.example .env
 
 # Start in development
 npm run dev
+## Contributions Till Now
+
+## 📌 Contributions Till Now
+
+| 👤 Contributor | 🚀 Contributions |
+|----------------|---------------------------------------------------------------|
+| **Varun Trikha** | 📊 Dashboard API, 📋 ManageLeads, ✅ Profile Completion, 🔢 LeadsCount |
+| **Prashant**     | ✅Manage orders API complete, ✨Manage Brands API(Brand listing and filters completed) |
+
+
 
