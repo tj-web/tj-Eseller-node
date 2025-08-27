@@ -12,15 +12,11 @@ import morgan from "morgan";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import manageLeads from "./routes/manageLeads.routes.js";
 import manageProduct from "./routes/manageProduct.routes.js"
+
 global.CONSTANTS = AWS_paths();
 
 const app = express();
-import dashboardRoutes from "./routes/dashboard.routes.js";
-import { manageLeads } from "./controllers/manageLeadsController.js";
-import { s3 } from "./config/aws.config.js";
-
 app.get("/", (req, res) => {
-  // console.log(CONSTANTS);
   return res.status(200).send(`test`);
 });
 
@@ -64,9 +60,9 @@ app.use(process.env.API_VERSION_PATH + "/dashboard", dashboardRoutes);
 app.use(process.env.API_VERSION_PATH + "/manage", manageLeads);
 
 //routes for the authentication 
-app.use("/api/auth", authRoutes); 
 app.use(process.env.API_VERSION_PATH + "/orders", orderRoutes)
 app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes)
+app.use( process.env.API_VERSION_PATH +"/product",manageProduct)
 
 app.listen(PORT, () => {
   console.log(`app is listening on the port ${PORT}`);

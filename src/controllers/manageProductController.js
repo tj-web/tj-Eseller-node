@@ -157,39 +157,30 @@ export const basicDetails = async (req, res) => {
 };
 
 // ------------Product Specification -------------------------------------------
+
 import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
 
 export const ProductSpecification = async (req, res) => {
   try {
-    const {
-      id,
-      deployment,
-      device,
-      operating_system,
-      organization_type,
-      languages,
-    } = req.query;
+    const { product_id, deployment, device, operating_system, organization_type, languages } = req.query;
 
-    //  Basic validation
+    // Validation
     if (!deployment || !device || !operating_system || !organization_type) {
       return res.status(400).json({ error: "Required fields are missing" });
     }
 
-    //  Format arrays into CSV
+    // Convert arrays → CSV
+    const toCSV = (val) => (Array.isArray(val) ? val.join(",") : val);
     const productData = {
-      deployment: Array.isArray(deployment) ? deployment.join(",") : deployment,
-      device: Array.isArray(device) ? device.join(",") : device,
-      operating_system: Array.isArray(operating_system)
-        ? operating_system.join(",")
-        : operating_system,
-      organization_type: Array.isArray(organization_type)
-        ? organization_type.join(",")
-        : organization_type,
-      languages: Array.isArray(languages) ? languages.join(",") : languages,
+      product_id,
+      deployment: toCSV(deployment),
+      device: toCSV(device),
+      operating_system: toCSV(operating_system),
+      organization_type: toCSV(organization_type),
+      languages: toCSV(languages),
     };
 
-    //  Call model function
-    const result = await saveOrUpdateProductSpecification(id, productData);
+    const result = await saveOrUpdateProductSpecification("", productData);
 
     return res.status(200).json({
       message: "Changes have been recorded successfully!",
@@ -197,9 +188,10 @@ export const ProductSpecification = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating product specification:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 //--------------------------------------------features part of the form--------------
 
