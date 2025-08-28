@@ -79,13 +79,40 @@ import {
   getSelectedColumns,
   saveProduct,
 } from "../models/ManageProduct/addBasicDetails.js";
+import { uploadfile2 } from "../utilis/s3Uploader.js";
 
 export const basicDetails = async (req, res) => {
   try {
     const post = req.query;
-    const vendorId = req.user?.vendor_id || 0; // assuming vendor_id comes from auth middleware
+    const vendorId = req.user?.vendor_id || 0;
 
-    // Prepare save object
+    let imageurl = "";
+    
+  if (req.file) {
+  
+  let originalName = req.file.originalname.replace(/\s+/g, "-");
+
+
+  const ext = originalName.split(".").pop().toLowerCase();
+
+  const allowedTypes = ["png", "jpg", "jpeg", "gif"];
+
+  if (!allowedTypes.includes(ext)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid file type. Allowed types: png, jpg, jpeg, gif",
+    });
+  }
+
+  const sanitizedFile = {
+    ...req.file,
+    originalname: originalName,
+  };
+
+  imageurl = await uploadfile2(sanitizedFile);
+}
+
+
     const save = {
       product_name: post.product_name,
       brand_id: post.brand_id,
@@ -93,7 +120,7 @@ export const basicDetails = async (req, res) => {
       trial_available: post.trial_available,
       free_downld_available: post.free_downld_available,
       status: 0,
-      date_added: new Date(), // MySQL DATETIME auto handled
+      date_added: new Date(),
       added_by: "vendor",
       added_by_id: vendorId,
       product_code: post.product_code,
@@ -132,7 +159,6 @@ export const basicDetails = async (req, res) => {
       manual_reviews: post.manual_reviews,
     };
 
-    // Fetch MAX_SLUG_ID
     const maxSlug = await getSelectedColumns(
       "tbl_website_settings",
       ["setting_value"],
@@ -143,12 +169,13 @@ export const basicDetails = async (req, res) => {
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
     // Insert product
-    const productId = await saveProduct(save);
+    const productId = await saveProduct(save,imageurl);
 
     res.status(201).json({
       success: true,
       message: "Product saved successfully",
       product_id: productId,
+      imageSavedAt: imageurl, 
     });
   } catch (error) {
     console.error("Error saving product:", error);
@@ -162,7 +189,14 @@ import { saveOrUpdateProductSpecification } from "../models/ManageProduct/produc
 
 export const ProductSpecification = async (req, res) => {
   try {
-    const { product_id, deployment, device, operating_system, organization_type, languages } = req.query;
+    const {
+      product_id,
+      deployment,
+      device,
+      operating_system,
+      organization_type,
+      languages,
+    } = req.query;
 
     // Validation
     if (!deployment || !device || !operating_system || !organization_type) {
@@ -191,7 +225,6 @@ export const ProductSpecification = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
 
 //--------------------------------------------features part of the form--------------
 
@@ -238,7 +271,6 @@ export const getProductFeatures = async (req, res) => {
       // Get brand array
       const brand = await getVendorBrands(vendor_id);
       brand.push(9868);
-      console.log(">>>>>>>", brand);
 
       // Check if vendor owns this product
       const check = await isVendorProduct(product_id, brand);
