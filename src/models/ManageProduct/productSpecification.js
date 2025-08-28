@@ -20,7 +20,7 @@ const defaultCols = {
 };
 
 export const saveOrUpdateProductSpecification = async (id, productData) => {
-  const data = { ...defaultCols, ...productData }; // merge defaults + incoming
+  const data = { ...defaultCols, ...productData }; 
 
   if (id) {
     // Build dynamic SET clause
