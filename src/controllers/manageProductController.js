@@ -79,13 +79,40 @@ import {
   getSelectedColumns,
   saveProduct,
 } from "../models/ManageProduct/addBasicDetails.js";
+import { uploadfile2 } from "../utilis/s3Uploader.js";
 
 export const basicDetails = async (req, res) => {
   try {
     const post = req.query;
-    const vendorId = req.user?.vendor_id || 0; // assuming vendor_id comes from auth middleware
+    const vendorId = req.user?.vendor_id || 0;
 
-    // Prepare save object
+    let imageurl = "";
+    
+  if (req.file) {
+  
+  let originalName = req.file.originalname.replace(/\s+/g, "-");
+
+
+  const ext = originalName.split(".").pop().toLowerCase();
+
+  const allowedTypes = ["png", "jpg", "jpeg", "gif"];
+
+  if (!allowedTypes.includes(ext)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid file type. Allowed types: png, jpg, jpeg, gif",
+    });
+  }
+
+  const sanitizedFile = {
+    ...req.file,
+    originalname: originalName,
+  };
+
+  imageurl = await uploadfile2(sanitizedFile);
+}
+
+
     const save = {
       product_name: post.product_name,
       brand_id: post.brand_id,
@@ -93,7 +120,7 @@ export const basicDetails = async (req, res) => {
       trial_available: post.trial_available,
       free_downld_available: post.free_downld_available,
       status: 0,
-      date_added: new Date(), // MySQL DATETIME auto handled
+      date_added: new Date(),
       added_by: "vendor",
       added_by_id: vendorId,
       product_code: post.product_code,
@@ -132,7 +159,6 @@ export const basicDetails = async (req, res) => {
       manual_reviews: post.manual_reviews,
     };
 
-    // Fetch MAX_SLUG_ID
     const maxSlug = await getSelectedColumns(
       "tbl_website_settings",
       ["setting_value"],
@@ -143,12 +169,13 @@ export const basicDetails = async (req, res) => {
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
     // Insert product
-    const productId = await saveProduct(save);
+    const productId = await saveProduct(save,imageurl);
 
     res.status(201).json({
       success: true,
       message: "Product saved successfully",
       product_id: productId,
+      imageSavedAt: imageurl, 
     });
   } catch (error) {
     console.error("Error saving product:", error);
@@ -157,12 +184,13 @@ export const basicDetails = async (req, res) => {
 };
 
 // ------------Product Specification -------------------------------------------
+
 import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
 
 export const ProductSpecification = async (req, res) => {
   try {
     const {
-      id,
+      product_id,
       deployment,
       device,
       operating_system,
@@ -170,26 +198,23 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.query;
 
-    //  Basic validation
+    // Validation
     if (!deployment || !device || !operating_system || !organization_type) {
       return res.status(400).json({ error: "Required fields are missing" });
     }
 
-    //  Format arrays into CSV
+    // Convert arrays → CSV
+    const toCSV = (val) => (Array.isArray(val) ? val.join(",") : val);
     const productData = {
-      deployment: Array.isArray(deployment) ? deployment.join(",") : deployment,
-      device: Array.isArray(device) ? device.join(",") : device,
-      operating_system: Array.isArray(operating_system)
-        ? operating_system.join(",")
-        : operating_system,
-      organization_type: Array.isArray(organization_type)
-        ? organization_type.join(",")
-        : organization_type,
-      languages: Array.isArray(languages) ? languages.join(",") : languages,
+      product_id,
+      deployment: toCSV(deployment),
+      device: toCSV(device),
+      operating_system: toCSV(operating_system),
+      organization_type: toCSV(organization_type),
+      languages: toCSV(languages),
     };
 
-    //  Call model function
-    const result = await saveOrUpdateProductSpecification(id, productData);
+    const result = await saveOrUpdateProductSpecification("", productData);
 
     return res.status(200).json({
       message: "Changes have been recorded successfully!",
@@ -197,7 +222,7 @@ export const ProductSpecification = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating product specification:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -246,7 +271,6 @@ export const getProductFeatures = async (req, res) => {
       // Get brand array
       const brand = await getVendorBrands(vendor_id);
       brand.push(9868);
-      console.log(">>>>>>>", brand);
 
       // Check if vendor owns this product
       const check = await isVendorProduct(product_id, brand);

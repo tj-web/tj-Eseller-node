@@ -11,7 +11,7 @@ import {
   viewBrand,
 } from "../models/brand.model.js";
 import { checkBrandName } from "../models/brand.model.js";
-import { saveBrandImage } from "../utilis/brand.utility.js";
+import { saveBrandImage } from "../models/brand.utility.js";
 
 export const getBrands = async (req, res) => {
   try {
