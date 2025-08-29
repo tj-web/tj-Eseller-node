@@ -95,7 +95,7 @@ export const get_brand_by_id = async (vendor_id, brand_id) => {
     LEFT JOIN tbl_brand_info AS tbi
       ON tbi.tbl_brand_id = b.brand_id
     WHERE b.brand_id = :brand_id
-      AND vbr.vendor_id = :vendor_id
+      AND vbr.vendor_id = :vendor_id 
     LIMIT 1
   `;
 
@@ -107,6 +107,7 @@ export const get_brand_by_id = async (vendor_id, brand_id) => {
   return results || null;
 };
 /************************CHECK BRAND METHOD*************************/
+
 
 export const checkBrandName = async (brand_name, brand_id) => {
   try {
@@ -403,6 +404,92 @@ export const updateVendorLogs = async (
     console.log(" updateVendorLogs executed successfully!");
   } catch (error) {
     console.error(" Error in updateVendorLogs:", error);
+    throw error;
+  }
+};
+
+
+
+/*******************view brand details ********************/
+
+
+export const viewBrand = async (brand_id) => {
+  try {
+    if (!brand_id) {
+      return false;
+    }
+
+    // Get brand details
+    const [brandDetail] = await sequelize.query(
+      `
+      SELECT brand_name, description, image, status
+      FROM tbl_brand
+      WHERE brand_id = :brand_id
+      AND is_deleted = 0
+      LIMIT 1
+      `,
+      {
+        replacements: { brand_id },
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
+
+    if (!brandDetail) {
+      return false;
+    }
+
+    const brandLoc = await sequelize.query(
+      `
+      SELECT  location_id
+      FROM tbl_brand_location
+      WHERE brand_id = :brand_id
+      `,
+      {
+        replacements: { brand_id },
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
+
+    
+    const locArr = brandLoc.map(loc => loc.location_id);
+
+    
+    const data = {
+      active_tab: "view_brand",
+      brand_name: brandDetail.brand_name,
+      description: brandDetail.description,
+      image: brandDetail.image,
+      status: brandDetail.status,
+      brand_location: brandLoc,  
+      location_ids: locArr       
+    };
+    return  data;
+
+  } catch (error) {
+    console.error("Error in viewBrand:", error);
+    return false;
+  }
+};
+
+
+export const getBrandLocation = async (brand_id) => {
+  try {
+    const brandLocations = await sequelize.query(
+      `
+      SELECT tbl.id, tbl.location_id, tc.city_name
+      FROM tbl_brand_location AS tbl
+      LEFT JOIN tbl_city AS tc ON tc.city_id = tbl.location_id
+      WHERE tbl.brand_id = :brand_id
+      `,
+      {
+        replacements: { brand_id },
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
+
+    return brandLocations;
+  } catch (error) {
+    console.error("Error in getBrandLocation:", error);
     throw error;
   }
 };

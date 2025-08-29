@@ -1,11 +1,14 @@
 import { getCurrentDateTime } from "../General_Function/general_helper.js";
 import {
+  get_brand_by_id,
   get_vendor_brands,
+  getBrandLocation,
   saveBrand,
   saveBrandInfo,
   saveVendorRelationBrand,
   tbl_brand_Cols,
   updateVendorLogs,
+  viewBrand,
 } from "../models/brand.model.js";
 import { checkBrandName } from "../models/brand.model.js";
 import { saveBrandImage } from "../utilis/brand.utility.js";
@@ -57,8 +60,6 @@ export const checkBrand = async (req, res) => {
 
 export const addBrand = async (req, res) => {
   try {
-    console.log(req.body);
-    console.log(req.query);return;
     const is_available = await checkBrandName(req.body.brand_name);
     if (!is_available) {
       return res
@@ -93,18 +94,24 @@ export const addBrand = async (req, res) => {
       tbl_brand_id: result ?? req.body.brand_id,
       location: req.body.location,
       founded_on: req.body.founded_on,
-      founders: req.body.founders,  
+      founders: req.body.founders,
       company_size: req.body.company_size,
       information: req.body.information,
       industry: req.body.industry,
       created_at: getCurrentDateTime(),
     };
     await saveBrandInfo(save_brand_info_data);
-    const brand_image = await saveBrandImage(req.body.image, save_brand_info_data.tbl_brand_id );
-    await saveVendorRelationBrand(req.body.vendor_id, save_brand_info_data.tbl_brand_id);
+    const brand_image = await saveBrandImage(
+      req.body.image,
+      save_brand_info_data.tbl_brand_id
+    );
+    await saveVendorRelationBrand(
+      req.body.vendor_id,
+      save_brand_info_data.tbl_brand_id
+    );
 
     save_brand_data.brand_image = `${save_brand_info_data.tbl_brand_id}_${save_brand_data.image}`;
-    
+
     // 2. Remove unwanted keys
     delete save_brand_data.date_added;
     delete save_brand_data.status;
@@ -121,12 +128,66 @@ export const addBrand = async (req, res) => {
       tbl_brand_info: save_brand_info_data,
     };
 
-    updateVendorLogs(updateArr,  save_brand_info_data.tbl_brand_id, req.body.profile_id, 1, 0, "insert", "brand");
+    updateVendorLogs(
+      updateArr,
+      save_brand_info_data.tbl_brand_id,
+      req.body.profile_id,
+      1,
+      0,
+      "insert",
+      "brand"
+    );
     save_brand_info_data["Brand Name"] = req.body.brand_name;
     save_brand_info_data["Brand Image"] = brand_image;
 
-    return res.status(200).json({ success: true, message:"Brand Saved Successfully." });
+    return res
+      .status(200)
+      .json({ success: true, message: "Brand Saved Successfully." });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
+};
+
+
+// export const updatebrandinfo= async (req, res)=>{
+//   const {brand_id} = req.params ; 
+//   const brandDetails = await get_brand_by_id(brand_id);
+//   if(brandDetails){
+//     const data={
+//       brand_id : brand_id,
+//       brand_name : brandDetails.brand_name,
+//       image : brandDetails.brand_image,
+//       information : brandDetails.information,
+//       founded_on : brandDetails.founded_on,
+//       founders : brandDetails.founders,
+//       company_size : brandDetails.company_size,
+//       location : brandDetails.location,
+//       industry : brandDetails.industry,
+//     }
+//   }else{
+//     return res.status(200).json({success: "true", message:"Brand Not Found"});
+//   }
+//   const post  = req.body;
+//   if(req.body.id){
+    
+//   }
+
+// }
+
+
+
+
+
+
+
+export const view_brand = async (req, res) => {
+  const { brand_id } = req.params;
+  const brandDetails = await viewBrand(brand_id);
+  const location = await getBrandLocation(brand_id);
+  const result = { ...brandDetails, brand_location: location };
+  if (!result)
+    return res
+      .status(200)
+      .json({ success: false, message: "INVALID BRAND ID" });
+  return res.status(200).json({ success: true, data: result });
 };
