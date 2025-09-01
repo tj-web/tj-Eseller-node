@@ -83,20 +83,19 @@ import { uploadfile2 } from "../utilis/s3Uploader.js";
 
 export const basicDetails = async (req, res) => {
   try {
-    const post = req.query;
+    const post = req.body;
     const vendorId = req.user?.vendor_id || 0;
 
     let imageurl = "";
-    
-  if (req.file) {
-  
-  let originalName = req.file.originalname.replace(/\s+/g, "-");
 
+if (req.files?.file) {
+  const file = req.files.file[0]; // array of files
+  console.log("File received:", file);
 
+  let originalName = file.originalname.replace(/\s+/g, "-");
   const ext = originalName.split(".").pop().toLowerCase();
 
   const allowedTypes = ["png", "jpg", "jpeg", "gif"];
-
   if (!allowedTypes.includes(ext)) {
     return res.status(400).json({
       success: false,
@@ -105,59 +104,76 @@ export const basicDetails = async (req, res) => {
   }
 
   const sanitizedFile = {
-    ...req.file,
+    ...file,
     originalname: originalName,
   };
 
   imageurl = await uploadfile2(sanitizedFile);
 }
 
+// handle second image field
+let secondImageUrl = "";
+if (req.files?.image) {
+  const img = req.files.image[0];
+  console.log("Second image received:", img);
+
+  let originalName = img.originalname.replace(/\s+/g, "-");
+  const sanitizedImg = {
+    ...img,
+    originalname: originalName,
+  };
+
+  secondImageUrl = await uploadfile2(sanitizedImg);
+}
+
+
 
     const save = {
-      product_name: post.product_name,
-      brand_id: post.brand_id,
-      website_url: post.website_url,
-      trial_available: post.trial_available,
-      free_downld_available: post.free_downld_available,
-      status: 0,
-      date_added: new Date(),
-      added_by: "vendor",
-      added_by_id: vendorId,
-      product_code: post.product_code,
-      similar_product: post.similar_product,
-      price: post.price,
-      special_price: post.special_price,
-      duration: post.duration,
-      duration_mode: post.duration_mode,
-      discount: post.discount,
-      price_text: post.price_text,
-      brochure: post.brochure,
-      slug: post.slug,
-      search_keyword: post.search_keyword,
-      page_title: post.page_title,
-      meta_title: post.meta_title,
-      page_keyword: post.page_keyword,
-      page_description: post.page_description,
-      cano_url: post.cano_url,
-      featured_start_date: post.featured_start_date,
-      featured_end_date: post.featured_end_date,
-      downld_file_path: post.downld_file_path,
-      trial_duration: post.trial_duration,
-      trial_duration_in: post.trial_duration_in,
-      free_downld_path: post.free_downld_path,
-      show_in_peripherals: post.show_in_peripherals,
-      price_type: post.price_type,
-      commission_type: post.commission_type,
-      commission: post.commission,
-      tp_comment: post.tp_comment,
-      discount_factor: post.discount_factor,
-      discount_value: post.discount_value,
-      rebate: post.rebate,
-      renewable_term: post.renewable_term,
-      custom_search_order: post.custom_search_order,
-      recommended: post.recommended,
-      manual_reviews: post.manual_reviews,
-    };
+  product_name: post?.product_name ?? '',
+  brand_id: post?.brand_id ?? '',
+  website_url: post?.website_url ?? '',
+  trial_available: post?.trial_available ?? '',
+  free_downld_available: post?.free_downld_available ?? '',
+  status: 0,
+  date_added: new Date(),
+  added_by: "vendor",
+  added_by_id: vendorId ?? '',
+  product_code: post?.product_code ?? '',
+  similar_product: post?.similar_product ?? '',
+  price: post?.price ?? '',
+  special_price: post?.special_price ?? '',
+  duration: post?.duration ?? '',
+  duration_mode: post?.duration_mode ?? '',
+  discount: post?.discount ?? '',
+  price_text: post?.price_text ?? '',
+  brochure: post?.brochure ?? '',
+  slug: post?.slug ?? '',
+  search_keyword: post?.search_keyword ?? '',
+  page_title: post?.page_title ?? '',
+  meta_title: post?.meta_title ?? '',
+  page_keyword: post?.page_keyword ?? '',
+  page_description: post?.page_description ?? '',
+  cano_url: post?.cano_url ?? '',
+  featured_start_date: post?.featured_start_date ?? '',
+  featured_end_date: post?.featured_end_date ?? '',
+  downld_file_path: post?.downld_file_path ?? '',
+  trial_duration: post?.trial_duration ?? '0',
+  trial_duration_in: post?.trial_duration_in ?? '',
+  free_downld_path: post?.free_downld_path ?? '',
+  show_in_peripherals: post?.show_in_peripherals ?? '0',
+  price_type: post?.price_type ?? '1',
+  commission_type: post?.commission_type ?? '1',
+  commission: post?.commission ?? '4',
+  tp_comment: post?.tp_comment ?? '',
+  discount_factor: post?.discount_factor ?? '0',
+  discount_value: post?.discount_value ?? '2',
+  rebate: post?.rebate ?? '',
+  renewable_term: post?.renewable_term ?? '',
+  custom_search_order: post?.custom_search_order ?? '0',
+  recommended: post?.recommended ?? '22',
+  manual_reviews: post?.manual_reviews ?? '1',
+};
+
 
     const maxSlug = await getSelectedColumns(
       "tbl_website_settings",
@@ -175,7 +191,8 @@ export const basicDetails = async (req, res) => {
       success: true,
       message: "Product saved successfully",
       product_id: productId,
-      imageSavedAt: imageurl, 
+       fileUrl: imageurl || null,
+       imageUrl: secondImageUrl || null,
     });
   } catch (error) {
     console.error("Error saving product:", error);
