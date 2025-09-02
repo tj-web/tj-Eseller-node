@@ -4,10 +4,8 @@ import { QueryTypes } from "sequelize";
 export const insertProductScreenshots = async (screenshotsData) => {
   try {
     if (!screenshotsData || screenshotsData.length === 0) return;
-    // Generate placeholders (?, ?, ?) for each record
     const placeholders = screenshotsData.map(() => "(?, ?, ?)").join(", ");
 
-    // Flatten values into one array
     const values = screenshotsData.flatMap(item => [
       item.product_id,
       item.image,             // filename
@@ -29,3 +27,6 @@ export const insertProductScreenshots = async (screenshotsData) => {
     throw error;
   }
 };
+
+
+
