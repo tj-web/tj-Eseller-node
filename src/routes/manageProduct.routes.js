@@ -8,7 +8,8 @@ import {
   getProductFeatures,
   addScreenshots,
   addGallery,
-  addVideo
+  addVideo,
+  viewProduct
 } from "../controllers/manageProductController.js";
 import multer from "multer";
 
@@ -21,6 +22,8 @@ const upload = multer({ storage });
 // Routes
 router.get('/product_list', fetchVendorProducts);
 router.get('/leadId', brand_arr);
+router.get('/vv/:product_id', viewProduct);
+
 
 
 router.post(

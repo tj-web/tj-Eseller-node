@@ -7,20 +7,24 @@ const s3 = new AWS.S3({
 });
 
 export const uploadfile2 = async function (fileObj) {
-  const fileName = `${Date.now()}-${fileObj.originalname}`;
+ if (!fileObj.key) {
+    throw new Error("S3 key is required");
+  }
 
   const params = {
     Bucket: process.env.AWS_BUCKET,
-    Key: `web/assets/images/techjockey/products/${fileName}`, // unique file name
+    Key: fileObj.key, // Use the provided key
     Body: fileObj.buffer,
     ContentType: fileObj.mimetype,
     ACL: "public-read",
   };
 
   // Upload to S3
-  const awsResponse = await s3.upload(params).promise();
+  // const awsResponse = await s3.upload(params).promise();
 
-  // Use AWS_PATH from .env
-  const fileUrl = `${process.env.AWS_PATH}${fileName}`;
-  return awsResponse?.Location ?? "";
+  // // Use AWS_PATH from .env
+  // const fileUrl = `${process.env.AWS_PATH}${fileName}`;
+  // return awsResponse?.Location ?? "";
+    const awsResponse = await s3.upload(params).promise();
+  return awsResponse.Location; 
 };

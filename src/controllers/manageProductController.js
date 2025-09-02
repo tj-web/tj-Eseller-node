@@ -90,10 +90,10 @@ export const basicDetails = async (req, res) => {
 
 if (req.files?.file) {
   const file = req.files.file[0]; // array of files
-  console.log("File received:", file);
 
   let originalName = file.originalname.replace(/\s+/g, "-");
   const ext = originalName.split(".").pop().toLowerCase();
+   const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`; 
 
   const allowedTypes = ["png", "jpg", "jpeg", "gif"];
   if (!allowedTypes.includes(ext)) {
@@ -106,6 +106,7 @@ if (req.files?.file) {
   const sanitizedFile = {
     ...file,
     originalname: originalName,
+    key
   };
 
   imageurl = await uploadfile2(sanitizedFile);
@@ -118,9 +119,11 @@ if (req.files?.image) {
   console.log("Second image received:", img);
 
   let originalName = img.originalname.replace(/\s+/g, "-");
+  const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`; 
   const sanitizedImg = {
     ...img,
     originalname: originalName,
+    key
   };
 
   secondImageUrl = await uploadfile2(sanitizedImg);
@@ -319,39 +322,48 @@ export const getProductFeatures = async (req, res) => {
 };
 
 //----------------------------Add screenshots----------------------------
+
 import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
-import { send } from "node-dev/lib/ipc.js";
 
 export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
-    const image = req.files; 
-    const img_alt = req.body.alt_text; 
-    // console.log("Received files:", image);
+    const files = req.files; 
+    let img_alt = req.body.alt_text; 
 
-    if (!product_id || !image || image.length === 0) {
+    if (!product_id || !files || files.length === 0) {
       return res.status(400).json({ error: "Product ID and screenshots are required" });
     }
 
-    // Normalize alt_text
     let altArray = [];
     if (Array.isArray(img_alt)) {
       altArray = img_alt;
     } else if (img_alt) {
       altArray = [img_alt];
     }
-    const screenshotsData = image.map((file, index) => ({
-      product_id,
-      image: file.originalname,
-      alt_text: altArray[index] || null   
-    }));
+
+    const screenshotsData = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const originalName = file.originalname.replace(/\s+/g, "-");
+      const key = `web/assets/images/techjockey/products/screenshots/${Date.now()}-${originalName}`;
+
+      // Upload to S3
+      const s3Url = await uploadfile2({ ...file, key });
+
+      screenshotsData.push({
+        product_id,
+        image: s3Url,               // S3 URL
+        alt_text: altArray[i] || null,
+      });
+    }
 
     await insertProductScreenshots(screenshotsData);
 
     res.status(200).json({
       success: true,
       message: "Screenshots added successfully",
-      data: screenshotsData
+      data: screenshotsData,
     });
 
   } catch (error) {
@@ -360,7 +372,10 @@ export const addScreenshots = async (req, res) => {
   }
 };
 
+
 //-----------------------------Add gallery-----------------------------------------
+
+
 
 import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
 
@@ -372,21 +387,39 @@ export const addGallery = async (req, res) => {
     if (!files || files.length === 0) {
       return res.status(400).json({ message: "At least one image is required" });
     }
+
+  
     const titleArr = Array.isArray(title) ? title : [title];
     const descriptionArr = Array.isArray(description) ? description : [description];
 
-    const result = await addGalleryModel(files, titleArr, descriptionArr, product_id);
+
+    const uploadedFiles = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const originalName = file.originalname.replace(/\s+/g, "-");
+      const key = `web/assets/images/techjockey/gallery/${Date.now()}-${originalName}`;
+
+      const awsUrl = await uploadfile2({ ...file, key });
+
+      uploadedFiles.push({
+        image: awsUrl,           // S3 URL
+        title: titleArr[i] || titleArr[0],
+        description: descriptionArr[i] || descriptionArr[0],
+      });
+    }
+
+    
+    const result = await addGalleryModel(uploadedFiles, product_id);
 
     return res.status(201).json({
       message: "Gallery added successfully",
-      result,
+      gallery: result, 
     });
   } catch (error) {
     console.error("Error adding gallery:", error);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 
 //------------------------------Add Video-----------------------------------------
 import { addVideoModel } from "../models/ManageProduct/addVideos.js";
@@ -399,7 +432,7 @@ export const addVideo = async (req, res) => {
       return res.status(400).json({ message: "At least one video is required" });
     }
 
-    // Ensure arrays
+    
     const titleArr = Array.isArray(video_title) ? video_title : [video_title];
     const urlArr = Array.isArray(video_url) ? video_url : [video_url];
     const descriptionArr = Array.isArray(video_desc) ? video_desc : [video_desc];
@@ -415,5 +448,33 @@ export const addVideo = async (req, res) => {
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+
+//------------------------View Product controller------------------------
+import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
+export const viewProduct = async (req, res) => {
+  try {
+    const { product_id } = req.params;
+
+    if (!product_id) {
+      return res.redirect('/product-list');
+    }
+
+    const productData = await getProductDetail(product_id);
+
+
+    return res.json({
+      active_tab: 'view_product',
+      product_data: productData
+    });
+
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+
 
 

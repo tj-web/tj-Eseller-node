@@ -1,29 +1,26 @@
+
 import sequelize from "../../db/connection.js";
 import { QueryTypes } from "sequelize";
 
-export const addGalleryModel = async (files, titleArr, descriptionArr, product_id) => {
+export const addGalleryModel = async (filesData, product_id) => {
   try {
     const galleryData = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const title = titleArr[i] || titleArr[0]; // fallback to first if not enough
-      const description = descriptionArr[i] || descriptionArr[0];
-
+    for (const item of filesData) {
       const [insertId] = await sequelize.query(
         `INSERT INTO tbl_description_gallery (image, title, description, product_id)
          VALUES (?, ?, ?, ?)`,
         {
-          replacements: [file.originalname, title, description, product_id],
+          replacements: [item.image, item.title, item.description, product_id],
           type: QueryTypes.INSERT,
         }
       );
 
       galleryData.push({
         id: insertId,
-        image: file.originalname,
-        title,
-        description,
+        image: item.image,
+        title: item.title,
+        description: item.description,
         product_id,
       });
     }
@@ -34,3 +31,4 @@ export const addGalleryModel = async (files, titleArr, descriptionArr, product_i
     throw error;
   }
 };
+
