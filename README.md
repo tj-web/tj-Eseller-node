@@ -44,21 +44,21 @@ The **eSeller Platform Backend** is designed to support:
 e-seller-backend/
 │
 ├── src/
-│ ├── models/ # Mongoose schemas (Data layer)
-│ ├── presenters/ # Business logic layer
-│ ├── views/ # API route handlers
-│ ├── routes/ # Route declarations
-│ ├── middlewares/ # Auth, validation, error handling
-│ ├── utils/ # Helpers, formatters
-│ ├── config/ # DB connection, env, constants
-│ └── app.js # Main express config
+│   ├── models/         # Sequelize models (Data layer)
+│   ├── controllers/    # Business logic / route handlers
+│   ├── routes/         # Express route declarations
+│   ├── middlewares/    # Auth, validation, error handling
+│   ├── utils/          # Helpers, formatters
+│   ├── config/         # DB connection, env configs, constants
+│   └── app.js          # Main Express app configuration
 │
-├── tests/ # Unit and integration tests
-├── .env # Environment variables
+├── tests/              # Unit and integration tests
+├── .env                # Environment variables
 ├── .gitignore
-├── Dockerfile # (optional for deployment)
+├── Dockerfile          # (optional for deployment)
 ├── package.json
 └── README.md
+
 
 
 
@@ -71,10 +71,33 @@ e-seller-backend/
 
 ### 🔧 Prerequisites
 
-- Node.js >= 18.x
-- MongoDB (Local or Atlas)
-- Cloudinary Account (for image uploads)
-- Postman (for API testing)
+-Project Requirements
+
+-Node.js version 18.x or higher
+
+-MySQL database with Sequelize ORM (supporting raw queries)
+
+-AWS S3 account for media (image/video) uploads
+
+-Postman (or similar API client) for API testing and debugging
+
+-npm or yarn for package management
+
+-Express.js framework for building RESTful APIs
+
+-Environment variables managed via .env
+
+-Docker  for containerized development and deployment
+
+-Git for version control and collaboration
+
+-ESLint / Prettier for code quality and consistency
+
+-Logging (e.g., winston or morgan) for debugging and monitoring
+
+-CORS handling for secure cross-origin requests
+
+-Error handling middleware for centralized API error management
 
 ### 📦 Installation
 
@@ -99,6 +122,7 @@ npm run dev
 |----------------|---------------------------------------------------------------|
 | **Varun Trikha** | 📊 Dashboard API, 📋 ManageLeads, ✅ Profile Completion, 🔢 LeadsCount |
 | **Prashant**     | ✅Manage orders API complete, ✨Manage Brands API(Brand listing and filters completed) |
+
 
 
 
