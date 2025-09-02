@@ -387,3 +387,33 @@ export const addGallery = async (req, res) => {
   }
 };
 
+
+//------------------------------Add Video-----------------------------------------
+import { addVideoModel } from "../models/ManageProduct/addVideos.js";
+
+export const addVideo = async (req, res) => {
+  try {
+    const { video_title, video_url, video_desc, product_id } = req.body;
+
+    if (!video_url || (Array.isArray(video_url) && video_url.length === 0)) {
+      return res.status(400).json({ message: "At least one video is required" });
+    }
+
+    // Ensure arrays
+    const titleArr = Array.isArray(video_title) ? video_title : [video_title];
+    const urlArr = Array.isArray(video_url) ? video_url : [video_url];
+    const descriptionArr = Array.isArray(video_desc) ? video_desc : [video_desc];
+
+    const result = await addVideoModel(urlArr, titleArr, urlArr, descriptionArr, product_id);
+
+    return res.status(201).json({
+      message: "Videos added successfully",
+      result,
+    });
+  } catch (error) {
+    console.error("Error adding videos:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
