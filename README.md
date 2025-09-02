@@ -4,7 +4,7 @@
 > Built with **Node.js**, this project is maintained by **Varun Trikha** and **Prashant** in collaboration.
 
 ![Node.js](https://img.shields.io/badge/Node.js-18.x-green.svg)
-![MongoDB](https://img.shields.io/badge/Database-MongoDB-green.svg)
+![MYSQL](https://img.shields.io/badge/Database-MongoDB-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Under_Development-yellow.svg)
 
@@ -99,6 +99,7 @@ npm run dev
 |----------------|---------------------------------------------------------------|
 | **Varun Trikha** | 📊 Dashboard API, 📋 ManageLeads, ✅ Profile Completion, 🔢 LeadsCount |
 | **Prashant**     | ✅Manage orders API complete, ✨Manage Brands API(Brand listing and filters completed) |
+
 
 
 
