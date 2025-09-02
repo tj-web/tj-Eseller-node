@@ -317,3 +317,103 @@ export const getProductFeatures = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
+//----------------------------Add screenshots----------------------------
+import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
+import { send } from "node-dev/lib/ipc.js";
+
+export const addScreenshots = async (req, res) => {
+  try {
+    const { product_id } = req.body;
+    const image = req.files; 
+    const img_alt = req.body.alt_text; 
+    // console.log("Received files:", image);
+
+    if (!product_id || !image || image.length === 0) {
+      return res.status(400).json({ error: "Product ID and screenshots are required" });
+    }
+
+    // Normalize alt_text
+    let altArray = [];
+    if (Array.isArray(img_alt)) {
+      altArray = img_alt;
+    } else if (img_alt) {
+      altArray = [img_alt];
+    }
+    const screenshotsData = image.map((file, index) => ({
+      product_id,
+      image: file.originalname,
+      alt_text: altArray[index] || null   
+    }));
+
+    await insertProductScreenshots(screenshotsData);
+
+    res.status(200).json({
+      success: true,
+      message: "Screenshots added successfully",
+      data: screenshotsData
+    });
+
+  } catch (error) {
+    console.error("Error adding screenshots:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//-----------------------------Add gallery-----------------------------------------
+
+import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
+
+export const addGallery = async (req, res) => {
+  try {
+    const { title, description, product_id } = req.body;
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "At least one image is required" });
+    }
+    const titleArr = Array.isArray(title) ? title : [title];
+    const descriptionArr = Array.isArray(description) ? description : [description];
+
+    const result = await addGalleryModel(files, titleArr, descriptionArr, product_id);
+
+    return res.status(201).json({
+      message: "Gallery added successfully",
+      result,
+    });
+  } catch (error) {
+    console.error("Error adding gallery:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+//------------------------------Add Video-----------------------------------------
+import { addVideoModel } from "../models/ManageProduct/addVideos.js";
+
+export const addVideo = async (req, res) => {
+  try {
+    const { video_title, video_url, video_desc, product_id } = req.body;
+
+    if (!video_url || (Array.isArray(video_url) && video_url.length === 0)) {
+      return res.status(400).json({ message: "At least one video is required" });
+    }
+
+    // Ensure arrays
+    const titleArr = Array.isArray(video_title) ? video_title : [video_title];
+    const urlArr = Array.isArray(video_url) ? video_url : [video_url];
+    const descriptionArr = Array.isArray(video_desc) ? video_desc : [video_desc];
+
+    const result = await addVideoModel(urlArr, titleArr, urlArr, descriptionArr, product_id);
+
+    return res.status(201).json({
+      message: "Videos added successfully",
+      result,
+    });
+  } catch (error) {
+    console.error("Error adding videos:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
