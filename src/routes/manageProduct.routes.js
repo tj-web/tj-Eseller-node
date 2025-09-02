@@ -5,13 +5,15 @@ import {
   basicDetails,
   ProductSpecification,
   saveProductFeature,
-  getProductFeatures 
+  getProductFeatures,
+  addScreenshots,
+  addGallery
 } from "../controllers/manageProductController.js";
 import multer from "multer";
 
 const router = express.Router();
 
-// Storage in memory (can switch to diskStorage if you want to save files)
+
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
@@ -19,19 +21,22 @@ const upload = multer({ storage });
 router.get('/product_list', fetchVendorProducts);
 router.get('/leadId', brand_arr);
 
-//  Handle multiple files: images[] + documents[]
+
 router.post(
   '/adddetail',
   upload.fields([
-    { name: 'image', maxCount: 5 },      // up to 5 images
+    { name: 'image', maxCount: 5 },      
     { name: 'documents', maxCount: 3},
-    {name:'file',maxCount:3},    // up to 3 documents
+    {name:'file',maxCount:3},    
   ]),
   basicDetails
 );
 
 router.post('/specification', ProductSpecification);
 router.post('/features', saveProductFeature);
-router.get('/ff', getProductFeatures);
+router.get('/getfeatures', getProductFeatures);
+router.post('/addscreenshots', upload.array('image', 5), addScreenshots);
+router.post('/addgallery', upload.array('image', 5), addGallery); 
+
 
 export default router;
