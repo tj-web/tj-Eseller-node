@@ -83,20 +83,19 @@ import { uploadfile2 } from "../utilis/s3Uploader.js";
 
 export const basicDetails = async (req, res) => {
   try {
-    const post = req.query;
+    const post = req.body;
     const vendorId = req.user?.vendor_id || 0;
 
     let imageurl = "";
-    
-  if (req.file) {
-  
-  let originalName = req.file.originalname.replace(/\s+/g, "-");
 
+if (req.files?.file) {
+  const file = req.files.file[0]; // array of files
 
+  let originalName = file.originalname.replace(/\s+/g, "-");
   const ext = originalName.split(".").pop().toLowerCase();
+   const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`; 
 
   const allowedTypes = ["png", "jpg", "jpeg", "gif"];
-
   if (!allowedTypes.includes(ext)) {
     return res.status(400).json({
       success: false,
@@ -105,59 +104,79 @@ export const basicDetails = async (req, res) => {
   }
 
   const sanitizedFile = {
-    ...req.file,
+    ...file,
     originalname: originalName,
+    key
   };
 
   imageurl = await uploadfile2(sanitizedFile);
 }
 
+// handle second image field
+let secondImageUrl = "";
+if (req.files?.image) {
+  const img = req.files.image[0];
+  console.log("Second image received:", img);
+
+  let originalName = img.originalname.replace(/\s+/g, "-");
+  const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`; 
+  const sanitizedImg = {
+    ...img,
+    originalname: originalName,
+    key
+  };
+
+  secondImageUrl = await uploadfile2(sanitizedImg);
+}
+
+
 
     const save = {
-      product_name: post.product_name,
-      brand_id: post.brand_id,
-      website_url: post.website_url,
-      trial_available: post.trial_available,
-      free_downld_available: post.free_downld_available,
-      status: 0,
-      date_added: new Date(),
-      added_by: "vendor",
-      added_by_id: vendorId,
-      product_code: post.product_code,
-      similar_product: post.similar_product,
-      price: post.price,
-      special_price: post.special_price,
-      duration: post.duration,
-      duration_mode: post.duration_mode,
-      discount: post.discount,
-      price_text: post.price_text,
-      brochure: post.brochure,
-      slug: post.slug,
-      search_keyword: post.search_keyword,
-      page_title: post.page_title,
-      meta_title: post.meta_title,
-      page_keyword: post.page_keyword,
-      page_description: post.page_description,
-      cano_url: post.cano_url,
-      featured_start_date: post.featured_start_date,
-      featured_end_date: post.featured_end_date,
-      downld_file_path: post.downld_file_path,
-      trial_duration: post.trial_duration,
-      trial_duration_in: post.trial_duration_in,
-      free_downld_path: post.free_downld_path,
-      show_in_peripherals: post.show_in_peripherals,
-      price_type: post.price_type,
-      commission_type: post.commission_type,
-      commission: post.commission,
-      tp_comment: post.tp_comment,
-      discount_factor: post.discount_factor,
-      discount_value: post.discount_value,
-      rebate: post.rebate,
-      renewable_term: post.renewable_term,
-      custom_search_order: post.custom_search_order,
-      recommended: post.recommended,
-      manual_reviews: post.manual_reviews,
-    };
+  product_name: post?.product_name ?? '',
+  brand_id: post?.brand_id ?? '',
+  website_url: post?.website_url ?? '',
+  trial_available: post?.trial_available ?? '',
+  free_downld_available: post?.free_downld_available ?? '',
+  status: 0,
+  date_added: new Date(),
+  added_by: "vendor",
+  added_by_id: vendorId ?? '',
+  product_code: post?.product_code ?? '',
+  similar_product: post?.similar_product ?? '',
+  price: post?.price ?? '',
+  special_price: post?.special_price ?? '',
+  duration: post?.duration ?? '',
+  duration_mode: post?.duration_mode ?? '',
+  discount: post?.discount ?? '',
+  price_text: post?.price_text ?? '',
+  brochure: post?.brochure ?? '',
+  slug: post?.slug ?? '',
+  search_keyword: post?.search_keyword ?? '',
+  page_title: post?.page_title ?? '',
+  meta_title: post?.meta_title ?? '',
+  page_keyword: post?.page_keyword ?? '',
+  page_description: post?.page_description ?? '',
+  cano_url: post?.cano_url ?? '',
+  featured_start_date: post?.featured_start_date ?? '',
+  featured_end_date: post?.featured_end_date ?? '',
+  downld_file_path: post?.downld_file_path ?? '',
+  trial_duration: post?.trial_duration ?? '0',
+  trial_duration_in: post?.trial_duration_in ?? '',
+  free_downld_path: post?.free_downld_path ?? '',
+  show_in_peripherals: post?.show_in_peripherals ?? '0',
+  price_type: post?.price_type ?? '1',
+  commission_type: post?.commission_type ?? '1',
+  commission: post?.commission ?? '4',
+  tp_comment: post?.tp_comment ?? '',
+  discount_factor: post?.discount_factor ?? '0',
+  discount_value: post?.discount_value ?? '2',
+  rebate: post?.rebate ?? '',
+  renewable_term: post?.renewable_term ?? '',
+  custom_search_order: post?.custom_search_order ?? '0',
+  recommended: post?.recommended ?? '22',
+  manual_reviews: post?.manual_reviews ?? '1',
+};
+
 
     const maxSlug = await getSelectedColumns(
       "tbl_website_settings",
@@ -175,7 +194,8 @@ export const basicDetails = async (req, res) => {
       success: true,
       message: "Product saved successfully",
       product_id: productId,
-      imageSavedAt: imageurl, 
+       fileUrl: imageurl || null,
+       imageUrl: secondImageUrl || null,
     });
   } catch (error) {
     console.error("Error saving product:", error);
@@ -300,3 +320,207 @@ export const getProductFeatures = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
+//----------------------------Add screenshots----------------------------
+
+import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
+
+export const addScreenshots = async (req, res) => {
+  try {
+    const { product_id } = req.body;
+    const files = req.files; 
+    let img_alt = req.body.alt_text; 
+
+    if (!product_id || !files || files.length === 0) {
+      return res.status(400).json({ error: "Product ID and screenshots are required" });
+    }
+
+    let altArray = [];
+    if (Array.isArray(img_alt)) {
+      altArray = img_alt;
+    } else if (img_alt) {
+      altArray = [img_alt];
+    }
+
+    const screenshotsData = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const originalName = file.originalname.replace(/\s+/g, "-");
+      const key = `web/assets/images/techjockey/products/screenshots/${Date.now()}-${originalName}`;
+
+      // Upload to S3
+      const s3Url = await uploadfile2({ ...file, key });
+
+      screenshotsData.push({
+        product_id,
+        image: s3Url,               // S3 URL
+        alt_text: altArray[i] || null,
+      });
+    }
+
+    await insertProductScreenshots(screenshotsData);
+
+    res.status(200).json({
+      success: true,
+      message: "Screenshots added successfully",
+      data: screenshotsData,
+    });
+
+  } catch (error) {
+    console.error("Error adding screenshots:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+//-----------------------------Add gallery-----------------------------------------
+
+
+
+import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
+import { imageSize } from "image-size";
+export const addGallery = async (req, res) => {
+  try {
+    const { title, description, product_id } = req.body;
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "At least one image is required" });
+    }
+      const dimensions = imageSize(req.files[0].buffer);
+    console.log("Width:", dimensions.width, "Height:", dimensions.height);
+
+  
+    const titleArr = Array.isArray(title) ? title : [title];
+    const descriptionArr = Array.isArray(description) ? description : [description];
+
+
+    const uploadedFiles = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const originalName = file.originalname.replace(/\s+/g, "-");
+      const key = `web/assets/images/techjockey/gallery/${Date.now()}-${originalName}`;
+
+      const awsUrl = await uploadfile2({ ...file, key });
+
+      uploadedFiles.push({
+        image: awsUrl,           // S3 URL
+        title: titleArr[i] || titleArr[0],
+        description: descriptionArr[i] || descriptionArr[0],
+      });
+    }
+
+    
+    const result = await addGalleryModel(uploadedFiles, product_id);
+
+    return res.status(201).json({
+      message: "Gallery added successfully",
+      gallery: result, 
+    });
+  } catch (error) {
+    console.error("Error adding gallery:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//------------------------------Add Video-----------------------------------------
+import { addVideoModel } from "../models/ManageProduct/addVideos.js";
+
+export const addVideo = async (req, res) => {
+  try {
+    const { video_title, video_url, video_desc, product_id } = req.body;
+
+    if (!video_url || (Array.isArray(video_url) && video_url.length === 0)) {
+      return res.status(400).json({ message: "At least one video is required" });
+    }
+
+    
+    const titleArr = Array.isArray(video_title) ? video_title : [video_title];
+    const urlArr = Array.isArray(video_url) ? video_url : [video_url];
+    const descriptionArr = Array.isArray(video_desc) ? video_desc : [video_desc];
+
+    const result = await addVideoModel(urlArr, titleArr, urlArr, descriptionArr, product_id);
+
+    return res.status(201).json({
+      message: "Videos added successfully",
+      result,
+    });
+  } catch (error) {
+    console.error("Error adding videos:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+//------------------------View Product controller------------------------
+import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
+export const viewProduct = async (req, res) => {
+  try {
+    const { product_id } = req.params;
+
+    if (!product_id) {
+      return res.redirect('/product-list');
+    }
+
+    const productData = await getProductDetail(product_id);
+
+
+    return res.json({
+      active_tab: 'view_product',
+      product_data: productData
+    });
+
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//------------------------Edit Product controller------------------------
+import {  isVendorProduc } from "../models/ManageProduct/editProduct.js";
+
+export const checkVendorProduct = async (req, res) => {
+  try {
+    const  {product_id,vendor_id}  = req.body;
+
+    const brandArr = await getVendorBrands(vendor_id);
+    const isVendor = await isVendorProduc(product_id, brandArr);
+
+    return res.json({
+      success: true,
+      isVendorProduct: isVendor,
+    });
+  } catch (err) {
+    console.error("Error in checkVendorProduct:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//----------------This is controller will help to get data of the existing product and show in the form for editing------------------------
+import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
+
+export const editProduct = async (req, res) => {
+  try {
+     const productId = req.params.product_id; 
+     const replacements = { productId: productId }; // plain object
+
+     const productData = await geteditProductDetail(replacements.productId);
+
+    if (!productData) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      product: productData,
+    });
+  } catch (error) {
+    console.error("Error fetching product for edit:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+
+
+
