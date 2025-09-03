@@ -12,7 +12,9 @@ import brandRoutes from "./routes/brands.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import manageLeads from "./routes/manageLeads.routes.js";
 import manageProduct from "./routes/manageProduct.routes.js";
+import agreementRoutes from "./routes/agreement.routes.js";
 import helpSupportRoutes from "./routes/help-support.routes.js";
+
 import morgan from "morgan";
 
 // Global constants
@@ -49,6 +51,7 @@ app.use(process.env.API_VERSION_PATH + "/manage", manageLeads);
 app.use(process.env.API_VERSION_PATH + "/orders", orderRoutes);
 app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes);
 app.use(process.env.API_VERSION_PATH + "/product", manageProduct);
+app.use(process.env.API_VERSION_PATH + "/eseller-agreement", agreementRoutes);
 app.use(process.env.API_VERSION_PATH + "/help-support", helpSupportRoutes);
 
 // Global error handler
