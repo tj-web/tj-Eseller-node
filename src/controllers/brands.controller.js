@@ -1,4 +1,7 @@
-import { getCurrentDateTime } from "../General_Function/general_helper.js";
+import {
+  findDifferences,
+  getCurrentDateTime,
+} from "../General_Function/general_helper.js";
 import {
   get_brand_by_id,
   get_vendor_brands,
@@ -9,9 +12,11 @@ import {
   tbl_brand_Cols,
   updateVendorLogs,
   viewBrand,
+  updateBrandinfo,
+  checkBrandName,
 } from "../models/brand.model.js";
-import { checkBrandName } from "../models/brand.model.js";
-import { saveBrandImage } from "../models/brand.utility.js";
+import { saveBrandImage } from "../utilis/brand.utility.js";
+import { uploadfile2 } from "../utilis/s3Uploader.js";
 
 export const getBrands = async (req, res) => {
   try {
@@ -112,17 +117,17 @@ export const addBrand = async (req, res) => {
 
     save_brand_data.brand_image = `${save_brand_info_data.tbl_brand_id}_${save_brand_data.image}`;
 
-    // 2. Remove unwanted keys
+    
     delete save_brand_data.date_added;
     delete save_brand_data.status;
     delete save_brand_data.added_by;
     delete save_brand_data.added_by_id;
     delete save_brand_data.image;
 
-    // 3. Remove tbl_brand_id from brand info
+    
     delete save_brand_data.tbl_brand_id;
 
-    // 4. Prepare update object
+    
     const updateArr = {
       tbl_brand: save_brand_data,
       tbl_brand_info: save_brand_info_data,
@@ -148,37 +153,106 @@ export const addBrand = async (req, res) => {
   }
 };
 
+export const updateBrandController = async (req, res) => {
+  try {
+    const { vendor_id } = req.body;
+    const { brand_id } = req.params;
 
-// export const updatebrandinfo= async (req, res)=>{
-//   const {brand_id} = req.params ; 
-//   const brandDetails = await get_brand_by_id(brand_id);
-//   if(brandDetails){
-//     const data={
-//       brand_id : brand_id,
-//       brand_name : brandDetails.brand_name,
-//       image : brandDetails.brand_image,
-//       information : brandDetails.information,
-//       founded_on : brandDetails.founded_on,
-//       founders : brandDetails.founders,
-//       company_size : brandDetails.company_size,
-//       location : brandDetails.location,
-//       industry : brandDetails.industry,
-//     }
-//   }else{
-//     return res.status(200).json({success: "true", message:"Brand Not Found"});
-//   }
-//   const post  = req.body;
-//   if(req.body.id){
-    
-//   }
+    if (!brand_id) {
+      return res.status(400).json({
+        success: false,
+        message: "INVALID BRAND ID",
+      });
+    }
 
-// }
+    const brandDetails = await get_brand_by_id(vendor_id, brand_id);
+
+    if (!brandDetails) {
+      return res.status(404).json({
+        success: false,
+        message: "Brand not found",
+      });
+    }
 
 
+    const {
+      brand_name,
+      information,
+      location,
+      industry,
+      founded_on,
+      founders,
+      company_size,
+    } = req.body;
+
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadfile2(req.file);
+    }
+
+    const brandSave = {
+      brand_name,
+      location,
+      information,
+      industry,
+      founded_on,
+      founders,
+      company_size,
+      image: imageUrl,
+    };
+
+    const brandDiff = findDifferences(brandDetails, brandSave);
+
+    if (brandDiff && Object.keys(brandDiff).length > 0) {
+      const updateArr = {
+        tbl_brand: Object.fromEntries(
+          Object.entries({
+            brand_name: brandDiff.brand_name?.new || "",
+            brand_image: brandDiff.image?.new || "",
+            p_key: "brand_id",
+            update_id: brand_id,
+          }).filter(([_, v]) => v !== "")
+        ),
+
+        tbl_brand_info: Object.fromEntries(
+          Object.entries({
+            founded_on: brandDiff.founded_on?.new || "",
+            founders: brandDiff.founders?.new || "",
+            company_size: brandDiff.company_size?.new || "",
+            location: brandDiff.location?.new || "",
+            industry: brandDiff.industry?.new || "",
+            information: brandDiff.information?.new || "",
+            p_key: "id",
+            update_id: brandDetails.tbl_info_id, 
+          }).filter(([_, v]) => v !== "")
+        ),
+      };
+
+      await updateVendorLogs(
+        updateArr,
+        brand_id,
+        vendor_id,
+        0,
+        brand_id,
+        "updated",
+        "brand"
+      );
+    }
 
 
-
-
+    res.status(200).json({
+      success: true,
+      message: "Brand updated successfully",
+    });
+  } catch (error) {
+    console.error("Error in updateBrandController:", error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+      error: error.message,
+    });
+  }
+};
 
 export const view_brand = async (req, res) => {
   const { brand_id } = req.params;

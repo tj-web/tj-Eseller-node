@@ -11,16 +11,16 @@ export const uploadfile2 = async function (fileObj) {
 
   const params = {
     Bucket: process.env.AWS_BUCKET,
-    Key: `web/assets/images/techjockey/products/${fileName}`, // unique file name
+    Key: `web/assets/images/techjockey/brands/${fileName}`, 
     Body: fileObj.buffer,
     ContentType: fileObj.mimetype,
     ACL: "public-read",
   };
 
-  // Upload to S3
+  
   const awsResponse = await s3.upload(params).promise();
 
-  // Use AWS_PATH from .env
+  
   const fileUrl = `${process.env.AWS_PATH}${fileName}`;
   return awsResponse?.Location ?? "";
 };
