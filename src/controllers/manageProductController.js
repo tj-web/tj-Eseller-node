@@ -378,7 +378,7 @@ export const addScreenshots = async (req, res) => {
 
 
 import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
-
+import { imageSize } from "image-size";
 export const addGallery = async (req, res) => {
   try {
     const { title, description, product_id } = req.body;
@@ -387,6 +387,8 @@ export const addGallery = async (req, res) => {
     if (!files || files.length === 0) {
       return res.status(400).json({ message: "At least one image is required" });
     }
+      const dimensions = imageSize(req.files[0].buffer);
+    console.log("Width:", dimensions.width, "Height:", dimensions.height);
 
   
     const titleArr = Array.isArray(title) ? title : [title];
@@ -471,6 +473,50 @@ export const viewProduct = async (req, res) => {
   } catch (error) {
     console.error("Error fetching product:", error);
     return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//------------------------Edit Product controller------------------------
+import {  isVendorProduc } from "../models/ManageProduct/editProduct.js";
+
+export const checkVendorProduct = async (req, res) => {
+  try {
+    const  {product_id,vendor_id}  = req.body;
+
+    const brandArr = await getVendorBrands(vendor_id);
+    const isVendor = await isVendorProduc(product_id, brandArr);
+
+    return res.json({
+      success: true,
+      isVendorProduct: isVendor,
+    });
+  } catch (err) {
+    console.error("Error in checkVendorProduct:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//----------------This is controller will help to get data of the existing product and show in the form for editing------------------------
+import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
+
+export const editProduct = async (req, res) => {
+  try {
+     const productId = req.params.product_id; 
+     const replacements = { productId: productId }; // plain object
+
+     const productData = await geteditProductDetail(replacements.productId);
+
+    if (!productData) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      product: productData,
+    });
+  } catch (error) {
+    console.error("Error fetching product for edit:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 

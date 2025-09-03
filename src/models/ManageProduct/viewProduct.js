@@ -84,3 +84,86 @@ export const getProductDetail = async (product_id) => {
     throw error;
   }
 };
+
+
+//--------------This function will fetch the data of the existing product for editing purpose----------------
+// import sequelize from "../../db/connection.js";
+// import { QueryTypes } from "sequelize";
+
+export const geteditProductDetail = async (productId) => {
+  try {
+    // 1. Product details
+    const productSql = `
+      SELECT *
+      FROM tbl_product AS tp
+      WHERE tp.product_id = :productId
+    `;
+    const product = await sequelize.query(productSql, {
+      replacements: { productId },
+      type: QueryTypes.SELECT,
+    });
+
+    if (!product.length) return null;
+
+    const productRow = product[0];
+
+    // 2. Product image
+    const imageSql = `
+      SELECT image_id, image
+      FROM tbl_product_image
+      WHERE product_id = :productId
+      LIMIT 1
+    `;
+    const image = await sequelize.query(imageSql, {
+      replacements: { productId },
+      type: QueryTypes.SELECT,
+    });
+
+    // 3. Product description
+    const descSql = `
+      SELECT id, overview
+      FROM tbl_product_description
+      WHERE product_id = :productId
+      LIMIT 1
+    `;
+    const description = await sequelize.query(descSql, {
+      replacements: { productId },
+      type: QueryTypes.SELECT,
+    });
+
+    // 4. Product categories
+    const catSql = `
+      SELECT tpc.id, tc.parent_id, tc.category_id, tc.category_name
+      FROM tbl_product_category AS tpc
+      INNER JOIN tbl_category AS tc ON tc.category_id = tpc.category_id
+      WHERE tpc.product_id = :productId
+        AND tc.status = 1
+        AND tc.is_deleted = 0
+    `;
+    const categories = await sequelize.query(catSql, {
+      replacements: { productId },
+      type: QueryTypes.SELECT,
+    });
+
+    // 5. Build final data object
+    return {
+      product_id: productRow.product_id,
+      product_name: productRow.product_name,
+      brand_id: productRow.brand_id,
+      website_url: productRow.website_url,
+      trial_available: productRow.trial_available,
+      free_downld_available: productRow.free_downld_available,
+      pricing_document: productRow.pricing_document,
+      image: image.length ? image[0].image : null,
+      overview: description.length ? description[0].overview : null,
+      arr_cat_selected: categories,
+    };
+  } catch (error) {
+    console.error("Error in geteditProductDetail:", error);
+    throw error;
+  }
+};
+
+
+
+

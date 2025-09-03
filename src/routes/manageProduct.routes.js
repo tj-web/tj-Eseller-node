@@ -9,7 +9,9 @@ import {
   addScreenshots,
   addGallery,
   addVideo,
-  viewProduct
+  viewProduct,
+  checkVendorProduct,
+  editProduct
 } from "../controllers/manageProductController.js";
 import multer from "multer";
 
@@ -42,6 +44,9 @@ router.get('/getfeatures', getProductFeatures);
 router.post('/addscreenshots', upload.array('image', 5), addScreenshots);
 router.post('/addgallery', upload.array('image', 5), addGallery); 
 router.post('/addvideos', upload.array('videos', 5), addVideo);
+router.get('/ff',checkVendorProduct);
+router.get('/editproduct/:product_id', editProduct);
+
 
 
 export default router;
