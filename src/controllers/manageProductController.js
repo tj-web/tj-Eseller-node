@@ -1,9 +1,29 @@
+import { isVendorProduc } from "../models/ManageProduct/editProduct.js";
+import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
+import { addVideoModel } from "../models/ManageProduct/addVideos.js";
+import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
+import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
 import {
   getProductList,
   getVendorBrands,
 } from "../models/ManageProduct/getManageProduct.js";
-
-// import { getSelectedColumns , saveProduct} from "../models/ManageProduct/addBasicDetails.js";
+import {
+  getSelectedColumns,
+  saveProduct,
+} from "../models/ManageProduct/addBasicDetails.js";
+import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
+import { getSelectedCol } from "../models/ManageProduct/viewProduct.js";
+import { saveOrUpdateProductFeature } from "../models/ManageProduct/getFeatures.js";
+import {
+  isVendorProduct,
+  getAllFeatures,
+} from "../models/ManageProduct/featuresAddlist.js";
+import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
+import { imageSize } from "image-size";
+import { upsertEnrichmentImages } from "../models/ManageProduct/addenrichment.js";
+import { uploadfile2 } from "../utilis/s3Uploader.js";
+import fs from "fs";
+import path from "path";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -75,107 +95,102 @@ export const fetchVendorProducts = async (req, res) => {
 
 // ----------------------------------Add Basic details of the form ------------------------
 
-import {
-  getSelectedColumns,
-  saveProduct,
-} from "../models/ManageProduct/addBasicDetails.js";
-import { uploadfile2 } from "../utilis/s3Uploader.js";
 
 export const basicDetails = async (req, res) => {
   try {
     const post = req.body;
     const vendorId = req.user?.vendor_id || 0;
+    const product_id=req.params.product_id || null;
 
     let imageurl = "";
 
-if (req.files?.file) {
-  const file = req.files.file[0]; // array of files
+    if (req.files?.file) {
+      const file = req.files.file[0]; // array of files
 
-  let originalName = file.originalname.replace(/\s+/g, "-");
-  const ext = originalName.split(".").pop().toLowerCase();
-   const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`; 
+      let originalName = file.originalname.replace(/\s+/g, "-");
+      const ext = originalName.split(".").pop().toLowerCase();
+      const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`;
 
-  const allowedTypes = ["png", "jpg", "jpeg", "gif"];
-  if (!allowedTypes.includes(ext)) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid file type. Allowed types: png, jpg, jpeg, gif",
-    });
-  }
+      const allowedTypes = ["png", "jpg", "jpeg", "gif"];
+      if (!allowedTypes.includes(ext)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid file type. Allowed types: png, jpg, jpeg, gif",
+        });
+      }
 
-  const sanitizedFile = {
-    ...file,
-    originalname: originalName,
-    key
-  };
+      const sanitizedFile = {
+        ...file,
+        originalname: originalName,
+        key,
+      };
 
-  imageurl = await uploadfile2(sanitizedFile);
-}
+      imageurl = await uploadfile2(sanitizedFile);
+    }
 
-// handle second image field
-let secondImageUrl = "";
-if (req.files?.image) {
-  const img = req.files.image[0];
-  console.log("Second image received:", img);
+    // handle second image field
+    let secondImageUrl = "";
+    if (req.files?.image) {
+      const img = req.files.image[0];
+      console.log("Second image received:", img);
 
-  let originalName = img.originalname.replace(/\s+/g, "-");
-  const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`; 
-  const sanitizedImg = {
-    ...img,
-    originalname: originalName,
-    key
-  };
+      let originalName = img.originalname.replace(/\s+/g, "-");
+      const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`;
+      const sanitizedImg = {
+        ...img,
+        originalname: originalName,
+        key,
+      };
 
-  secondImageUrl = await uploadfile2(sanitizedImg);
-}
-
-
+      secondImageUrl = await uploadfile2(sanitizedImg);
+    }
 
     const save = {
-  product_name: post?.product_name ?? '',
-  brand_id: post?.brand_id ?? '',
-  website_url: post?.website_url ?? '',
-  trial_available: post?.trial_available ?? '',
-  free_downld_available: post?.free_downld_available ?? '',
-  status: 0,
-  date_added: new Date(),
-  added_by: "vendor",
-  added_by_id: vendorId ?? '',
-  product_code: post?.product_code ?? '',
-  similar_product: post?.similar_product ?? '',
-  price: post?.price ?? '',
-  special_price: post?.special_price ?? '',
-  duration: post?.duration ?? '',
-  duration_mode: post?.duration_mode ?? '',
-  discount: post?.discount ?? '',
-  price_text: post?.price_text ?? '',
-  brochure: post?.brochure ?? '',
-  slug: post?.slug ?? '',
-  search_keyword: post?.search_keyword ?? '',
-  page_title: post?.page_title ?? '',
-  meta_title: post?.meta_title ?? '',
-  page_keyword: post?.page_keyword ?? '',
-  page_description: post?.page_description ?? '',
-  cano_url: post?.cano_url ?? '',
-  featured_start_date: post?.featured_start_date ?? '',
-  featured_end_date: post?.featured_end_date ?? '',
-  downld_file_path: post?.downld_file_path ?? '',
-  trial_duration: post?.trial_duration ?? '0',
-  trial_duration_in: post?.trial_duration_in ?? '',
-  free_downld_path: post?.free_downld_path ?? '',
-  show_in_peripherals: post?.show_in_peripherals ?? '0',
-  price_type: post?.price_type ?? '1',
-  commission_type: post?.commission_type ?? '1',
-  commission: post?.commission ?? '4',
-  tp_comment: post?.tp_comment ?? '',
-  discount_factor: post?.discount_factor ?? '0',
-  discount_value: post?.discount_value ?? '2',
-  rebate: post?.rebate ?? '',
-  renewable_term: post?.renewable_term ?? '',
-  custom_search_order: post?.custom_search_order ?? '0',
-  recommended: post?.recommended ?? '22',
-  manual_reviews: post?.manual_reviews ?? '1',
-};
+      product_name: post?.product_name ?? "",
+      brand_id: post?.brand_id ?? "",
+      website_url: post?.website_url ?? "",
+      trial_available: post?.trial_available ?? "",
+      free_downld_available: post?.free_downld_available ?? "",
+      status: 0,
+      date_added: new Date(),
+      added_by: "vendor",
+      added_by_id: vendorId ?? "",
+      product_code: post?.product_code ?? "",
+      similar_product: post?.similar_product ?? "",
+      price: post?.price ?? "",
+      special_price: post?.special_price ?? "",
+      duration: post?.duration ?? "",
+      duration_mode: post?.duration_mode ?? "",
+      discount: post?.discount ?? "",
+      price_text: post?.price_text ?? "",
+      brochure: post?.brochure ?? "",
+      slug: post?.slug ?? "",
+      search_keyword: post?.search_keyword ?? "",
+      page_title: post?.page_title ?? "",
+      meta_title: post?.meta_title ?? "",
+      page_keyword: post?.page_keyword ?? "",
+      page_description: post?.page_description ?? "",
+      cano_url: post?.cano_url ?? "",
+      featured_start_date: post?.featured_start_date ?? "",
+      featured_end_date: post?.featured_end_date ?? "",
+      downld_file_path: post?.downld_file_path ?? "",
+      trial_duration: post?.trial_duration ?? "0",
+      trial_duration_in: post?.trial_duration_in ?? "",
+      free_downld_path: post?.free_downld_path ?? "",
+      show_in_peripherals: post?.show_in_peripherals ?? "0",
+      price_type: post?.price_type ?? "1",
+      commission_type: post?.commission_type ?? "1",
+      commission: post?.commission ?? "4",
+      tp_comment: post?.tp_comment ?? "",
+      discount_factor: post?.discount_factor ?? "0",
+      discount_value: post?.discount_value ?? "2",
+      rebate: post?.rebate ?? "",
+      renewable_term: post?.renewable_term ?? "",
+      custom_search_order: post?.custom_search_order ?? "0",
+      recommended: post?.recommended ?? "22",
+      manual_reviews: post?.manual_reviews ?? "1",
+    };
+
 
 
     const maxSlug = await getSelectedColumns(
@@ -188,14 +203,14 @@ if (req.files?.image) {
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
     // Insert product
-    const productId = await saveProduct(save,imageurl);
+    const productId = await saveProduct(save, imageurl,product_id);
 
     res.status(201).json({
       success: true,
       message: "Product saved successfully",
       product_id: productId,
-       fileUrl: imageurl || null,
-       imageUrl: secondImageUrl || null,
+      fileUrl: imageurl || null,
+      imageUrl: secondImageUrl || null,
     });
   } catch (error) {
     console.error("Error saving product:", error);
@@ -204,8 +219,6 @@ if (req.files?.image) {
 };
 
 // ------------Product Specification -------------------------------------------
-
-import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
 
 export const ProductSpecification = async (req, res) => {
   try {
@@ -234,7 +247,14 @@ export const ProductSpecification = async (req, res) => {
       languages: toCSV(languages),
     };
 
-    const result = await saveOrUpdateProductSpecification("", productData);
+ const data = await getSelectedCol({
+  table: "tbl_product_specification",   //  real table name
+  columns: ["id"],                      // select only id
+  where: { product_id: product_id },     // condition
+  records: "single"
+});
+    const id = data?.id || null;
+    const result = await saveOrUpdateProductSpecification(id, productData);
 
     return res.status(200).json({
       message: "Changes have been recorded successfully!",
@@ -248,19 +268,25 @@ export const ProductSpecification = async (req, res) => {
 
 //--------------------------------------------features part of the form--------------
 
-import { saveOrUpdateProductFeature } from "../models/ManageProduct/getFeatures.js";
 
 export const saveProductFeature = async (req, res) => {
   try {
-    const post = req.query; // or req.body if using JSON
+    const post = req.query; 
 
-    // Validate required field
     if (!post.product_id) {
       return res.status(400).json({ error: "product_id is required" });
     }
+ const data = await getSelectedCol({
+  table: "tbl_product_features",   //  real table name
+  columns: ["id"],                      // select only id
+  where: { product_id: post.product_id },     // condition
+  records: "single"
+});
+const id = data?.id || null;
 
     // Call model to handle DB operation
-    const result = await saveOrUpdateProductFeature(post);
+    const result = await saveOrUpdateProductFeature(id,post);
+
 
     if (result.action === "update") {
       return res
@@ -278,10 +304,6 @@ export const saveProductFeature = async (req, res) => {
 };
 
 //-------------function for getting the list of the features added --------------------
-import {
-  isVendorProduct,
-  getAllFeatures,
-} from "../models/ManageProduct/featuresAddlist.js";
 
 export const getProductFeatures = async (req, res) => {
   try {
@@ -323,17 +345,24 @@ export const getProductFeatures = async (req, res) => {
 
 //----------------------------Add screenshots----------------------------
 
-import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
 
 export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
-    const files = req.files; 
-    let img_alt = req.body.alt_text; 
+    const files = req.files;
+    let img_alt = req.body.alt_text;
 
     if (!product_id || !files || files.length === 0) {
-      return res.status(400).json({ error: "Product ID and screenshots are required" });
+      return res
+        .status(400)
+        .json({ error: "Product ID and screenshots are required" });
     }
+      const existingRows = await getSelectedCol({
+      table: "tbl_product_screenshots",
+      columns: ["id"],
+      where: { product_id: product_id },
+      records: "all"  // fetch ALL instead of single
+    });
 
     let altArray = [];
     if (Array.isArray(img_alt)) {
@@ -353,8 +382,9 @@ export const addScreenshots = async (req, res) => {
 
       screenshotsData.push({
         product_id,
-        image: s3Url,               // S3 URL
+        image: s3Url, // S3 URL
         alt_text: altArray[i] || null,
+        id: existingRows[i]?.id || null,  // attach id if exists
       });
     }
 
@@ -365,20 +395,14 @@ export const addScreenshots = async (req, res) => {
       message: "Screenshots added successfully",
       data: screenshotsData,
     });
-
   } catch (error) {
     console.error("Error adding screenshots:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-
 //-----------------------------Add gallery-----------------------------------------
 
-
-
-import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
-import { imageSize } from "image-size";
 export const addGallery = async (req, res) => {
   try {
     const { title, description, product_id } = req.body;
@@ -387,13 +411,17 @@ export const addGallery = async (req, res) => {
     if (!files || files.length === 0) {
       return res.status(400).json({ message: "At least one image is required" });
     }
-      const dimensions = imageSize(req.files[0].buffer);
-    console.log("Width:", dimensions.width, "Height:", dimensions.height);
 
-  
+    // Get existing gallery ids for this product
+    const existingRows = await getSelectedCol({
+      table: "tbl_description_gallery",
+      columns: ["id"],
+      where: { product_id: product_id },
+      records: "all"  // fetch ALL instead of single
+    });
+
     const titleArr = Array.isArray(title) ? title : [title];
     const descriptionArr = Array.isArray(description) ? description : [description];
-
 
     const uploadedFiles = [];
     for (let i = 0; i < files.length; i++) {
@@ -404,18 +432,18 @@ export const addGallery = async (req, res) => {
       const awsUrl = await uploadfile2({ ...file, key });
 
       uploadedFiles.push({
-        image: awsUrl,           // S3 URL
+        id: existingRows[i]?.id || null,  // attach id if exists
+        image: awsUrl,
         title: titleArr[i] || titleArr[0],
         description: descriptionArr[i] || descriptionArr[0],
       });
     }
 
-    
     const result = await addGalleryModel(uploadedFiles, product_id);
 
     return res.status(201).json({
-      message: "Gallery added successfully",
-      gallery: result, 
+      message: "Gallery added/updated successfully",
+      gallery: result,
     });
   } catch (error) {
     console.error("Error adding gallery:", error);
@@ -423,9 +451,8 @@ export const addGallery = async (req, res) => {
   }
 };
 
-//------------------------------Add Video-----------------------------------------
-import { addVideoModel } from "../models/ManageProduct/addVideos.js";
 
+//------------------------------Add Video-----------------------------------------
 export const addVideo = async (req, res) => {
   try {
     const { video_title, video_url, video_desc, product_id } = req.body;
@@ -434,15 +461,31 @@ export const addVideo = async (req, res) => {
       return res.status(400).json({ message: "At least one video is required" });
     }
 
-    
+    //  fetch all ids for this product
+    const existingRows = await getSelectedCol({
+      table: "tbl_product_videos",
+      columns: ["id"],
+      where: { product_id: product_id },
+      records: "all"
+    });
+
     const titleArr = Array.isArray(video_title) ? video_title : [video_title];
     const urlArr = Array.isArray(video_url) ? video_url : [video_url];
     const descriptionArr = Array.isArray(video_desc) ? video_desc : [video_desc];
 
-    const result = await addVideoModel(urlArr, titleArr, urlArr, descriptionArr, product_id);
+    //  attach id (if exists at the same index)
+    const videosWithIds = urlArr.map((url, i) => ({
+      id: existingRows[i]?.id || null,
+      video_title: titleArr[i] || titleArr[0],
+      video_url: url,
+      video_desc: descriptionArr[i] || descriptionArr[0],
+      product_id
+    }));
+
+    const result = await addVideoModel(videosWithIds);
 
     return res.status(201).json({
-      message: "Videos added successfully",
+      message: "Videos added/updated successfully",
       result,
     });
   } catch (error) {
@@ -453,23 +496,20 @@ export const addVideo = async (req, res) => {
 
 
 //------------------------View Product controller------------------------
-import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
 export const viewProduct = async (req, res) => {
   try {
     const { product_id } = req.params;
 
     if (!product_id) {
-      return res.redirect('/product-list');
+      return res.redirect("/product-list");
     }
 
     const productData = await getProductDetail(product_id);
 
-
     return res.json({
-      active_tab: 'view_product',
-      product_data: productData
+      active_tab: "view_product",
+      product_data: productData,
     });
-
   } catch (error) {
     console.error("Error fetching product:", error);
     return res.status(500).json({ error: "Internal Server Error" });
@@ -477,11 +517,10 @@ export const viewProduct = async (req, res) => {
 };
 
 //------------------------Edit Product controller------------------------
-import {  isVendorProduc } from "../models/ManageProduct/editProduct.js";
 
 export const checkVendorProduct = async (req, res) => {
   try {
-    const  {product_id,vendor_id}  = req.body;
+    const { product_id, vendor_id } = req.body;
 
     const brandArr = await getVendorBrands(vendor_id);
     const isVendor = await isVendorProduc(product_id, brandArr);
@@ -497,14 +536,14 @@ export const checkVendorProduct = async (req, res) => {
 };
 
 //----------------This is controller will help to get data of the existing product and show in the form for editing------------------------
-import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
+
 
 export const editProduct = async (req, res) => {
   try {
-     const productId = req.params.product_id; 
-     const replacements = { productId: productId }; // plain object
+    const productId = req.params.product_id;
+    const replacements = { productId: productId }; // plain object
 
-     const productData = await geteditProductDetail(replacements.productId);
+    const productData = await geteditProductDetail(replacements.productId);
 
     if (!productData) {
       return res.status(404).json({ message: "Product not found" });
@@ -521,6 +560,86 @@ export const editProduct = async (req, res) => {
 };
 
 
+//----------this for the enrichment part of the form-----------------
+
+// import sizeOf from "image-size";
+// import path from "path";
+// import { upsertEnrichmentImages } from "../models/enrichmentModel.js";
+// import { getSelectedCol } from "../helpers/common.js";
+import sizeOf from "image-size";
+
+export const enrichment = async (req, res) => {
+  try {
+    const { product_id, type } = req.body;
+   const files = req.files || [];
+  //  console.log("Files received:", files);return;
+let typeArr = [];
+
+// Make sure typeArr matches files length
+if (Array.isArray(type)) {
+  typeArr = type.map(Number);
+} else if (type) {
+  // Single type sent
+  typeArr = Array(files.length).fill(Number(type));
+} else {
+  return res.status(400).json({ success: false, message: "Type is required for each image" });
+}
+
+// Now validate counts per type
+const typeCount = typeArr.reduce((acc, t) => {
+  acc[t] = (acc[t] || 0) + 1;
+  return acc;
+}, {});
+
+// Dynamic validation
+for (const t in typeCount) {
+  if (typeCount[t] < 4) {
+    return res.status(400).json({
+      success: false,
+      message: `Please upload at least 4 images for type ${Number(t) === 1 ? "desktop" : "mobile"}`,
+    });
+  }
+}
+
+    // Fetch existing enrichment images for this product
+    const existingRows = await getSelectedCol({
+      table: "tbl_product_enrichment_images",
+      columns: ["id", "type"],
+      where: { product_id, is_deleted: 0 },
+      records: "multiple",
+    });
+
+    // Prepare enrichment data with update/insert logic
+    const enrichmentData = files.map((file, index) => {
+    const dimensions = sizeOf(file.buffer);
+
+      // Match existing row by type (first match)
+      const existingIndex = existingRows.findIndex(row => row.type === typeArr[index]);
+      const existing = existingIndex !== -1 ? existingRows.splice(existingIndex, 1)[0] : null;
+
+      return {
+        id: existing?.id || null,      // update if exists
+        product_id,
+        type: typeArr[index],
+        image_width: dimensions.width,
+        image_height: dimensions.height,
+        image: file.originalname,
+      };
+    });
+
+    const saved = await upsertEnrichmentImages(enrichmentData);
+
+    return res.json({
+      success: true,
+      message: "Enrichment images processed successfully",
+      saved, // only newly inserted/updated images
+    });
+
+  } catch (error) {
+    console.error("Error in enrichmentController:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 
 
