@@ -11,7 +11,8 @@ import {
   addVideo,
   viewProduct,
   checkVendorProduct,
-  editProduct
+  editProduct,
+  enrichment
 } from "../controllers/manageProductController.js";
 import multer from "multer";
 
@@ -37,6 +38,13 @@ router.post(
   ]),
   basicDetails
 );
+router.post('/adddetail/:product_id',
+  upload.fields([
+    { name: 'image', maxCount: 5 },      
+    { name: 'documents', maxCount: 3},
+    {name:'file',maxCount:3},    
+  ]),
+  basicDetails);
 
 router.post('/specification', ProductSpecification);
 router.post('/features', saveProductFeature);
@@ -46,6 +54,7 @@ router.post('/addgallery', upload.array('image', 5), addGallery);
 router.post('/addvideos', upload.array('videos', 5), addVideo);
 router.get('/ff',checkVendorProduct);
 router.get('/editproduct/:product_id', editProduct);
+router.post('/enrichment', upload.array('images', 10), enrichment);
 
 
 

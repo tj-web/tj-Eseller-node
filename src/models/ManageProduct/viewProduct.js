@@ -87,8 +87,6 @@ export const getProductDetail = async (product_id) => {
 
 
 //--------------This function will fetch the data of the existing product for editing purpose----------------
-// import sequelize from "../../db/connection.js";
-// import { QueryTypes } from "sequelize";
 
 export const geteditProductDetail = async (productId) => {
   try {
@@ -163,6 +161,68 @@ export const geteditProductDetail = async (productId) => {
     throw error;
   }
 };
+
+//---------------------w cwd c clw c/////////////
+// import { QueryTypes } from "sequelize";
+// import sequelize from "../db/connection.js"; // adjust path to your DB connection
+
+export const getSelectedCol = async ({
+  table,
+  columns = [],
+  where = {},
+  records = "single",
+  flag = false,
+  order_by = null
+}) => {
+  try {
+    // Build SELECT part
+    const cols = columns.length > 0 ? columns.join(", ") : "*";
+
+    // Build WHERE part
+    let whereClause = "";
+    let replacements = {};
+    if (Object.keys(where).length > 0) {
+      const conditions = [];
+      Object.entries(where).forEach(([key, value], index) => {
+        conditions.push(`${key} = :${key}`);
+        replacements[key] = value;
+      });
+      whereClause = "WHERE " + conditions.join(" AND ");
+    }
+
+    // Build ORDER BY part
+    let orderClause = "";
+    if (order_by && Object.keys(order_by).length > 0) {
+      const key = Object.keys(order_by)[0];
+      const direction = order_by[key];
+      orderClause = `ORDER BY ${key} ${direction}`;
+    }
+
+    // Final query
+    const query = `
+      SELECT ${cols}
+      FROM ${table}
+      ${whereClause}
+      ${orderClause}
+    `;
+
+    const result = await sequelize.query(query, {
+      replacements,
+      type: QueryTypes.SELECT,
+    });
+
+    // Handle single/multiple like CI
+    if (records === "single") {
+      return result.length > 0 ? (flag ? result[0] : result[0]) : null;
+    } else {
+      return flag ? result : result;
+    }
+  } catch (error) {
+    console.error("Error in getSelectedColumns:", error);
+    throw error;
+  }
+};
+
 
 
 
