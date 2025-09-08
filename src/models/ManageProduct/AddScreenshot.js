@@ -1,32 +1,3 @@
-// import sequelize from "../../db/connection.js";
-// import { QueryTypes } from "sequelize";
-
-// export const insertProductScreenshots = async (screenshotsData) => {
-//   try {
-//     if (!screenshotsData || screenshotsData.length === 0) return;
-//     const placeholders = screenshotsData.map(() => "(?, ?, ?)").join(", ");
-
-//     const values = screenshotsData.flatMap(item => [
-//       item.product_id,
-//       item.image,             // filename
-//       item.alt_text || null   // img_alt
-//     ]);
-
-//     const query = `
-//       INSERT INTO tbl_product_screenshots (product_id, image, img_alt)
-//       VALUES ${placeholders}
-//     `;
-
-//     await sequelize.query(query, {
-//       replacements: values,
-//       type: QueryTypes.INSERT,
-//     });
-
-//   } catch (error) {
-//     console.error("Error inserting product screenshots:", error);
-//     throw error;
-//   }
-// };
 
 import sequelize from "../../db/connection.js";
 import { QueryTypes } from "sequelize";
@@ -47,25 +18,35 @@ export const insertProductScreenshots = async (screenshotsData) => {
       }
     }
 
-    // Run bulk insert
     if (inserts.length > 0) {
-      const placeholders = inserts.map(() => "(?, ?, ?)").join(", ");
-      const values = inserts.flatMap(item => [
-        item.product_id,
-        item.image,
-        item.alt_text || null,
-      ]);
+  const placeholders = inserts.map(() => "(?, ?, ?)").join(", ");
+  const values = inserts.flatMap(item => [
+    item.product_id,
+    item.image,
+    item.alt_text || null,
+  ]);
 
-      const insertQuery = `
-        INSERT INTO tbl_product_screenshots (product_id, image, img_alt)
-        VALUES ${placeholders}
-      `;
+  const insertQuery = `
+    INSERT INTO tbl_product_screenshots (product_id, image, img_alt)
+    VALUES ${placeholders}
+  `;
 
-      await sequelize.query(insertQuery, {
-        replacements: values,
-        type: QueryTypes.INSERT,
-      });
-    }
+  const [result] = await sequelize.query(insertQuery, {
+    replacements: values,
+    type: QueryTypes.INSERT,
+  });
+
+  // attach generated IDs back to inserts
+  const insertedIds = Array.from(
+    { length: inserts.length },
+    (_, i) => result 
+  );
+
+  inserts.forEach((item, index) => {
+    item.id = insertedIds[index];
+  });
+}
+
 
     // Run updates one by one
     for (const item of updates) {

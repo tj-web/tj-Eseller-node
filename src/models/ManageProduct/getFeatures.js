@@ -10,7 +10,7 @@ export const saveOrUpdateProductFeature = async (id,post) => {
       feature_display_name: post.feature_display_name || "",
       product_id: post.product_id,
       type: post.type || 0,
-      image: post.image || null,
+      image: post.image || '',
       created_at: post.created_at || new Date()
     };
 
