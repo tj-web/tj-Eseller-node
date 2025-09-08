@@ -164,10 +164,54 @@ export const tbl_brand_Cols = {
   vendor_sheet: "",
 };
 
-export async function saveBrand(save, brand_id = "") {
+// export async function saveBrand(save, transaction, brand_id = "") {
+//   try {
+//     if (brand_id) {
+//       //  Update existing brand
+//       const setClause = Object.keys(save)
+//         .map((key) => `${key} = :${key}`)
+//         .join(", ");
+
+//       await sequelize.query(
+//         `UPDATE tbl_brand 
+//          SET ${setClause} 
+//          WHERE id = :brand_id`,
+//         {
+//           replacements: { ...save, brand_id },
+//           type: sequelize.QueryTypes.UPDATE,
+//           transaction,
+//         }
+//       );
+
+//       return brand_id;
+//     } else {
+//       //  Insert new brand
+//       const keys = Object.keys(save).join(", ");
+//       const values = Object.keys(save)
+//         .map((key) => `:${key}`)
+//         .join(", ");
+
+//       const [result] = await sequelize.query(
+//         `INSERT INTO tbl_brand (${keys}) VALUES (${values})`,
+//         {
+//           replacements: save,
+//           type: sequelize.QueryTypes.INSERT,
+//           transaction,
+//         }
+//       );
+
+//       // MySQL returns [insertId, affectedRows]
+//       return result.insertId;
+//     }
+//   } catch (error) {
+//     console.error("Error in saveBrand:", error);
+//     return null;
+//   }
+// }
+export async function saveBrand(save, transaction, brand_id = "") {
   try {
     if (brand_id) {
-      //  Update existing brand
+      // Update existing brand
       const setClause = Object.keys(save)
         .map((key) => `${key} = :${key}`)
         .join(", ");
@@ -179,27 +223,28 @@ export async function saveBrand(save, brand_id = "") {
         {
           replacements: { ...save, brand_id },
           type: sequelize.QueryTypes.UPDATE,
+          transaction,
         }
       );
 
       return brand_id;
     } else {
-      //  Insert new brand
+      // Insert new brand
       const keys = Object.keys(save).join(", ");
       const values = Object.keys(save)
         .map((key) => `:${key}`)
         .join(", ");
 
-      const [result] = await sequelize.query(
+      const [insertId] = await sequelize.query(
         `INSERT INTO tbl_brand (${keys}) VALUES (${values})`,
         {
           replacements: save,
           type: sequelize.QueryTypes.INSERT,
+          transaction,
         }
       );
 
-      // MySQL returns [insertId, affectedRows]
-      return result;
+      return insertId; //  this is the primary key of the new row
     }
   } catch (error) {
     console.error("Error in saveBrand:", error);
@@ -207,9 +252,10 @@ export async function saveBrand(save, brand_id = "") {
   }
 }
 
+
 /*****************save brand info ********************* */
 
-export const saveBrandInfo = async (save) => {
+export const saveBrandInfo = async (save, transaction) => {
   try {
     
     const keys = Object.keys(save).join(", ");
@@ -222,6 +268,7 @@ export const saveBrandInfo = async (save) => {
     const [result] = await sequelize.query(query, {
       replacements: save,
       type: sequelize.QueryTypes.INSERT,
+      transaction,
     });
 
     
@@ -257,7 +304,7 @@ export const saveVendorRelationBrand = async (vendorId, brandId) => {
       type: sequelize.QueryTypes.INSERT,
     });
 
-    console.log(" Vendor-brand relation saved!");
+    // console.log(" Vendor-brand relation saved!");
   } catch (error) {
     console.error(" Error in saveVendorRelationBrand:", error);
     throw error;
@@ -269,9 +316,9 @@ export const updateVendorLogs = async (
   itemId,
   profileId,
   status,
-  updateId,
   action,
-  module
+  module,
+  transaction
 ) => {
   try {
     let insertArray = [];
@@ -287,6 +334,7 @@ export const updateVendorLogs = async (
       {
         replacements: { itemId, module },
         type: sequelize.QueryTypes.SELECT,
+        transaction,
       }
     );
 
@@ -313,9 +361,8 @@ export const updateVendorLogs = async (
 
     
     for (const [tableName, columns] of Object.entries(updateArr)) {
-      const pKey = columns.p_key || "";
-      const updateIdVal = columns.update_id || "";
-
+      const pKey = columns.p_key;
+      const updateIdVal = columns.update_id;
      
       let linkedAttr = "";
       if (vendorLogDetails.length > 0 && vendorLogDetails[0].linked_attribute) {
@@ -356,7 +403,6 @@ export const updateVendorLogs = async (
         }
       }
     }
-
    
     if (insertArray.length > 0) {
       const keys = Object.keys(insertArray[0]);
@@ -371,7 +417,7 @@ export const updateVendorLogs = async (
         INSERT INTO vendor_logs (${keys.join(", ")})
         VALUES ${values}
       `;
-      await sequelize.query(query);
+      await sequelize.query(query,{transaction});
     }
 
     
@@ -387,12 +433,13 @@ export const updateVendorLogs = async (
           {
             replacements: row,
             type: sequelize.QueryTypes.UPDATE,
+            transaction
           }
         );
       }
     }
 
-    console.log(" updateVendorLogs executed successfully!");
+    // console.log(" updateVendorLogs executed successfully!");
   } catch (error) {
     console.error(" Error in updateVendorLogs:", error);
     throw error;
