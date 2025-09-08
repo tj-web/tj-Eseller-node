@@ -7,6 +7,7 @@ const s3 = new AWS.S3({
 });
 
 export const uploadfile2 = async function (fileObj) {
+  
  if (!fileObj.key) {
     throw new Error("S3 key is required");
   }
@@ -14,7 +15,7 @@ export const uploadfile2 = async function (fileObj) {
   const params = {
     Bucket: process.env.AWS_BUCKET,
 
-    Key: `web/assets/images/techjockey/brands/${fileName}`, 
+    Key: `web/assets/images/techjockey/brands/${fileObj.originalname}`, 
 
     Body: fileObj.buffer,
     ContentType: fileObj.mimetype,
@@ -25,6 +26,6 @@ export const uploadfile2 = async function (fileObj) {
   const awsResponse = await s3.upload(params).promise();
 
   
-  const fileUrl = `${process.env.AWS_PATH}${fileName}`;
+  const fileUrl = `${process.env.AWS_PATH}${fileObj.originalname}`;
   return awsResponse?.Location ?? "";
 };
