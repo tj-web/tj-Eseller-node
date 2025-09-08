@@ -351,7 +351,7 @@ export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
     const files = req.files; // depends on multer config
-    let alt_text = req.body.alt_text; // can be string or array
+let alt_text = req.body.alt_text; // can be string or array 
 
     if (!product_id || !files || files.length === 0) {
       return res
@@ -366,6 +366,8 @@ export const addScreenshots = async (req, res) => {
       records: "all", // fetch ALL instead of single
     });
 
+  
+    // Ensure alt_text is always an array
     let altArray = [];
     if (Array.isArray(alt_text)) {
       altArray = alt_text;
@@ -418,6 +420,7 @@ export const addGallery = async (req, res) => {
   try {
     const { title, description, product_id } = req.body;
     const files = req.files;
+    // console.log("Files received for gallery:", files);return;
 
     if (!files || files.length === 0) {
       return res
@@ -467,45 +470,43 @@ export const addGallery = async (req, res) => {
 };
 
 //------------------------------Add Video-----------------------------------------
+
 export const addVideo = async (req, res) => {
   try {
-    const { video_title, video_url, video_desc, product_id } = req.body;
+    // console.log("Request body for videos:", req.body);return;
+    const { product_id, data } = req.body;
 
-    if (!video_url || (Array.isArray(video_url) && video_url.length === 0)) {
-      return res
-        .status(400)
-        .json({ message: "At least one video is required" });
+    if (!product_id || !Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({
+        message: "Product ID and at least one video are required",
+      });
     }
 
-    //  fetch all ids for this product
+    // Fetch all existing IDs for this product
     const existingRows = await getSelectedCol({
       table: "tbl_product_videos",
       columns: ["id"],
-      where: { product_id: product_id },
+      where: { product_id },
       records: "all",
     });
 
-    const titleArr = Array.isArray(video_title) ? video_title : [video_title];
-    const urlArr = Array.isArray(video_url) ? video_url : [video_url];
-    const descriptionArr = Array.isArray(video_desc)
-      ? video_desc
-      : [video_desc];
-
-    //  attach id (if exists at the same index)
-    const videosWithIds = urlArr.map((url, i) => ({
+    // Map videos with existing IDs if updating
+    const videosToProcess = data.map((v, i) => ({
       id: existingRows[i]?.id || null,
-      video_title: titleArr[i] || titleArr[0],
-      video_url: url,
-      video_desc: descriptionArr[i] || descriptionArr[0],
       product_id,
+      video_title: v.video_title || "",
+      video_url: v.video_url || "",
+      video_desc: v.video_desc || "",
     }));
 
-    const result = await addVideoModel(videosWithIds);
+    // Save videos in DB
+    const result = await addVideoModel(videosToProcess);
 
     return res.status(201).json({
       message: "Videos added/updated successfully",
       result,
     });
+
   } catch (error) {
     console.error("Error adding videos:", error);
     return res.status(500).json({ error: "Internal Server Error" });

@@ -48,9 +48,9 @@ router.post(
 router.post("/specification", ProductSpecification);
 router.post("/features", saveProductFeature);
 router.get("/getfeatures", getProductFeatures);
-router.post("/addscreenshots", upload.array("image", 5), addScreenshots);
+router.post("/addscreenshots", upload.array("screenshot", 5), addScreenshots);
 router.post("/addgallery", upload.array("image", 5), addGallery);
-router.post("/addvideos", upload.array("videos", 5), addVideo);
+router.post("/addvideos",  addVideo);
 router.get("/ff", checkVendorProduct);
 router.get("/editproduct/:product_id", editProduct);
 router.post("/enrichment", upload.array("images", 10), enrichment);

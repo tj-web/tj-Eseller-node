@@ -7,7 +7,7 @@ export const addVideoModel = async (videos) => {
 
     for (const item of videos) {
       if (item.id) {
-        // 🔄 Update
+        //  Update
         await sequelize.query(
           `UPDATE tbl_product_videos 
            SET video_title = ?, video_url = ?, video_desc = ?, product_id = ?
@@ -21,7 +21,7 @@ export const addVideoModel = async (videos) => {
         videoData.push(item);
       } else {
         // ➕ Insert
-        const [insertId] = await sequelize.query(
+       const result= await sequelize.query(
           `INSERT INTO tbl_product_videos (video_title, video_url, video_desc, product_id)
            VALUES (?, ?, ?, ?)`,
           {
@@ -29,8 +29,7 @@ export const addVideoModel = async (videos) => {
             type: QueryTypes.INSERT,
           }
         );
-
-        videoData.push({ ...item, id: insertId });
+ videoData.push({ ...item, id: result?.insertId || null });
       }
     }
 
