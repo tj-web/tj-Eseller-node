@@ -1,4 +1,4 @@
-import { vendorOrders } from "../models/orders.utility.js";
+import { vendorOrders } from "../utilis/orders.utility.js";
 
 export const getOrders = async (req, res) => {
   try {
