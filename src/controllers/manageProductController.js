@@ -95,12 +95,11 @@ export const fetchVendorProducts = async (req, res) => {
 
 // ----------------------------------Add Basic details of the form ------------------------
 
-
 export const basicDetails = async (req, res) => {
   try {
     const post = req.body;
     const vendorId = req.user?.vendor_id || 0;
-    const product_id=req.params.product_id || null;
+    const product_id = req.params.product_id || null;
 
     let imageurl = "";
 
@@ -149,20 +148,20 @@ export const basicDetails = async (req, res) => {
       product_name: post?.product_name ?? "",
       brand_id: post?.brand_id ?? "",
       website_url: post?.website_url ?? "",
-      trial_available: post?.trial_available ?? "",
+      trial_available: post?.trial_available ?? 0,
       free_downld_available: post?.free_downld_available ?? "",
       status: 0,
       date_added: new Date(),
       added_by: "vendor",
       added_by_id: vendorId ?? "",
-      product_code: post?.product_code ?? "",
+      product_code: post?.product_code ?? "TP01",
       similar_product: post?.similar_product ?? "",
-      price: post?.price ?? "",
-      special_price: post?.special_price ?? "",
-      duration: post?.duration ?? "",
+      price: post?.price || 10.2,
+      special_price: post?.special_price || 200,
+      duration: post?.duration || 0,
       duration_mode: post?.duration_mode ?? "",
-      discount: post?.discount ?? "",
-      price_text: post?.price_text ?? "",
+      discount: post?.discount || 10.2,
+      price_text: post?.price_text || "varun",
       brochure: post?.brochure ?? "",
       slug: post?.slug ?? "",
       search_keyword: post?.search_keyword ?? "",
@@ -176,7 +175,7 @@ export const basicDetails = async (req, res) => {
       downld_file_path: post?.downld_file_path ?? "",
       trial_duration: post?.trial_duration ?? "0",
       trial_duration_in: post?.trial_duration_in ?? "",
-      free_downld_path: post?.free_downld_path ?? "",
+      free_downld_path: post?.free_downld_path || 0,
       show_in_peripherals: post?.show_in_peripherals ?? "0",
       price_type: post?.price_type ?? "1",
       commission_type: post?.commission_type ?? "1",
@@ -191,8 +190,6 @@ export const basicDetails = async (req, res) => {
       manual_reviews: post?.manual_reviews ?? "1",
     };
 
-
-
     const maxSlug = await getSelectedColumns(
       "tbl_website_settings",
       ["setting_value"],
@@ -203,7 +200,7 @@ export const basicDetails = async (req, res) => {
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
     // Insert product
-    const productId = await saveProduct(save, imageurl,product_id);
+    const productId = await saveProduct(save, imageurl, product_id);
 
     res.status(201).json({
       success: true,
@@ -231,28 +228,27 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.query;
 
-    // Validation
     if (!deployment || !device || !operating_system || !organization_type) {
       return res.status(400).json({ error: "Required fields are missing" });
     }
 
     // Convert arrays → CSV
-    const toCSV = (val) => (Array.isArray(val) ? val.join(",") : val);
+    // const toCSV = (val) => (Array.isArray(val) ? val.join(",") : val);
     const productData = {
       product_id,
-      deployment: toCSV(deployment),
-      device: toCSV(device),
-      operating_system: toCSV(operating_system),
-      organization_type: toCSV(organization_type),
-      languages: toCSV(languages),
+      deployment,
+      device,
+      operating_system,
+      organization_type,
+      languages,
     };
 
- const data = await getSelectedCol({
-  table: "tbl_product_specification",   //  real table name
-  columns: ["id"],                      // select only id
-  where: { product_id: product_id },     // condition
-  records: "single"
-});
+    const data = await getSelectedCol({
+      table: "tbl_product_specification", //  real table name
+      columns: ["id"], // select only id
+      where: { product_id: product_id }, // condition
+      records: "single",
+    });
     const id = data?.id || null;
     const result = await saveOrUpdateProductSpecification(id, productData);
 
@@ -268,34 +264,40 @@ export const ProductSpecification = async (req, res) => {
 
 //--------------------------------------------features part of the form--------------
 
-
 export const saveProductFeature = async (req, res) => {
   try {
-    const post = req.query; 
+    const post = req.query;
+    // console.log("Received product feature data:", post);return;
 
     if (!post.product_id) {
       return res.status(400).json({ error: "product_id is required" });
     }
- const data = await getSelectedCol({
-  table: "tbl_product_features",   //  real table name
-  columns: ["id"],                      // select only id
-  where: { product_id: post.product_id },     // condition
-  records: "single"
-});
-const id = data?.id || null;
+    const data = await getSelectedCol({
+      table: "tbl_product_features", //  real table name
+      columns: ["id"], // select only id
+      where: { product_id: post.product_id }, // condition
+      records: "single",
+    });
+    const id = data?.id || null;
 
     // Call model to handle DB operation
-    const result = await saveOrUpdateProductFeature(id,post);
-
+    const result = await saveOrUpdateProductFeature(id, post);
 
     if (result.action === "update") {
-      return res
-        .status(200)
-        .json({ message: "Feature updated", id: result.id });
+      return res.status(200).json({
+        message: "Feature updated",
+        id: result.id,
+        product_id: post.product_id,
+      });
     } else {
-      return res
-        .status(201)
-        .json({ message: "Feature inserted", id: result.id });
+      return res.status(201).json({
+        message: "success",
+        response:
+          "We have recorded your changes! We will review and update soon.",
+        id: result.id,
+        result,
+        product_id: post.product_id,
+      });
     }
   } catch (error) {
     console.error("Error saving product feature (controller):", error);
@@ -345,30 +347,30 @@ export const getProductFeatures = async (req, res) => {
 
 //----------------------------Add screenshots----------------------------
 
-
 export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
-    const files = req.files;
-    let img_alt = req.body.alt_text;
+    const files = req.files; // depends on multer config
+    let alt_text = req.body.alt_text; // can be string or array
 
     if (!product_id || !files || files.length === 0) {
       return res
         .status(400)
         .json({ error: "Product ID and screenshots are required" });
     }
-      const existingRows = await getSelectedCol({
+
+    const existingRows = await getSelectedCol({
       table: "tbl_product_screenshots",
       columns: ["id"],
       where: { product_id: product_id },
-      records: "all"  // fetch ALL instead of single
+      records: "all", // fetch ALL instead of single
     });
 
     let altArray = [];
-    if (Array.isArray(img_alt)) {
-      altArray = img_alt;
-    } else if (img_alt) {
-      altArray = [img_alt];
+    if (Array.isArray(alt_text)) {
+      altArray = alt_text;
+    } else if (alt_text) {
+      altArray = [alt_text];
     }
 
     const screenshotsData = [];
@@ -384,15 +386,23 @@ export const addScreenshots = async (req, res) => {
         product_id,
         image: s3Url, // S3 URL
         alt_text: altArray[i] || null,
-        id: existingRows[i]?.id || null,  // attach id if exists
+        id: existingRows[i]?.id || null, // attach id if exists
       });
     }
+    const result = await insertProductScreenshots(screenshotsData);
 
-    await insertProductScreenshots(screenshotsData);
+    let message = "No changes applied";
+    if (result.inserted > 0 && result.updated > 0) {
+      message = "Screenshots added and updated successfully";
+    } else if (result.inserted > 0) {
+      message = "Screenshots added successfully";
+    } else if (result.updated > 0) {
+      message = "Screenshots updated successfully";
+    }
 
     res.status(200).json({
       success: true,
-      message: "Screenshots added successfully",
+      message,
       data: screenshotsData,
     });
   } catch (error) {
@@ -400,6 +410,7 @@ export const addScreenshots = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 //-----------------------------Add gallery-----------------------------------------
 
@@ -409,7 +420,9 @@ export const addGallery = async (req, res) => {
     const files = req.files;
 
     if (!files || files.length === 0) {
-      return res.status(400).json({ message: "At least one image is required" });
+      return res
+        .status(400)
+        .json({ message: "At least one image is required" });
     }
 
     // Get existing gallery ids for this product
@@ -417,11 +430,13 @@ export const addGallery = async (req, res) => {
       table: "tbl_description_gallery",
       columns: ["id"],
       where: { product_id: product_id },
-      records: "all"  // fetch ALL instead of single
+      records: "all", // fetch ALL instead of single
     });
 
     const titleArr = Array.isArray(title) ? title : [title];
-    const descriptionArr = Array.isArray(description) ? description : [description];
+    const descriptionArr = Array.isArray(description)
+      ? description
+      : [description];
 
     const uploadedFiles = [];
     for (let i = 0; i < files.length; i++) {
@@ -432,7 +447,7 @@ export const addGallery = async (req, res) => {
       const awsUrl = await uploadfile2({ ...file, key });
 
       uploadedFiles.push({
-        id: existingRows[i]?.id || null,  // attach id if exists
+        id: existingRows[i]?.id || null, // attach id if exists
         image: awsUrl,
         title: titleArr[i] || titleArr[0],
         description: descriptionArr[i] || descriptionArr[0],
@@ -451,14 +466,15 @@ export const addGallery = async (req, res) => {
   }
 };
 
-
 //------------------------------Add Video-----------------------------------------
 export const addVideo = async (req, res) => {
   try {
     const { video_title, video_url, video_desc, product_id } = req.body;
 
     if (!video_url || (Array.isArray(video_url) && video_url.length === 0)) {
-      return res.status(400).json({ message: "At least one video is required" });
+      return res
+        .status(400)
+        .json({ message: "At least one video is required" });
     }
 
     //  fetch all ids for this product
@@ -466,12 +482,14 @@ export const addVideo = async (req, res) => {
       table: "tbl_product_videos",
       columns: ["id"],
       where: { product_id: product_id },
-      records: "all"
+      records: "all",
     });
 
     const titleArr = Array.isArray(video_title) ? video_title : [video_title];
     const urlArr = Array.isArray(video_url) ? video_url : [video_url];
-    const descriptionArr = Array.isArray(video_desc) ? video_desc : [video_desc];
+    const descriptionArr = Array.isArray(video_desc)
+      ? video_desc
+      : [video_desc];
 
     //  attach id (if exists at the same index)
     const videosWithIds = urlArr.map((url, i) => ({
@@ -479,7 +497,7 @@ export const addVideo = async (req, res) => {
       video_title: titleArr[i] || titleArr[0],
       video_url: url,
       video_desc: descriptionArr[i] || descriptionArr[0],
-      product_id
+      product_id,
     }));
 
     const result = await addVideoModel(videosWithIds);
@@ -493,7 +511,6 @@ export const addVideo = async (req, res) => {
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 
 //------------------------View Product controller------------------------
 export const viewProduct = async (req, res) => {
@@ -537,7 +554,6 @@ export const checkVendorProduct = async (req, res) => {
 
 //----------------This is controller will help to get data of the existing product and show in the form for editing------------------------
 
-
 export const editProduct = async (req, res) => {
   try {
     const productId = req.params.product_id;
@@ -559,7 +575,6 @@ export const editProduct = async (req, res) => {
   }
 };
 
-
 //----------this for the enrichment part of the form-----------------
 
 // import sizeOf from "image-size";
@@ -571,35 +586,39 @@ import sizeOf from "image-size";
 export const enrichment = async (req, res) => {
   try {
     const { product_id, type } = req.body;
-   const files = req.files || [];
-  //  console.log("Files received:", files);return;
-let typeArr = [];
+    const files = req.files || [];
+    //  console.log("Files received:", files);return;
+    let typeArr = [];
 
-// Make sure typeArr matches files length
-if (Array.isArray(type)) {
-  typeArr = type.map(Number);
-} else if (type) {
-  // Single type sent
-  typeArr = Array(files.length).fill(Number(type));
-} else {
-  return res.status(400).json({ success: false, message: "Type is required for each image" });
-}
+    // Make sure typeArr matches files length
+    if (Array.isArray(type)) {
+      typeArr = type.map(Number);
+    } else if (type) {
+      // Single type sent
+      typeArr = Array(files.length).fill(Number(type));
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "Type is required for each image" });
+    }
 
-// Now validate counts per type
-const typeCount = typeArr.reduce((acc, t) => {
-  acc[t] = (acc[t] || 0) + 1;
-  return acc;
-}, {});
+    // Now validate counts per type
+    const typeCount = typeArr.reduce((acc, t) => {
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {});
 
-// Dynamic validation
-for (const t in typeCount) {
-  if (typeCount[t] < 4) {
-    return res.status(400).json({
-      success: false,
-      message: `Please upload at least 4 images for type ${Number(t) === 1 ? "desktop" : "mobile"}`,
-    });
-  }
-}
+    // Dynamic validation
+    for (const t in typeCount) {
+      if (typeCount[t] < 4) {
+        return res.status(400).json({
+          success: false,
+          message: `Please upload at least 4 images for type ${
+            Number(t) === 1 ? "desktop" : "mobile"
+          }`,
+        });
+      }
+    }
 
     // Fetch existing enrichment images for this product
     const existingRows = await getSelectedCol({
@@ -611,14 +630,17 @@ for (const t in typeCount) {
 
     // Prepare enrichment data with update/insert logic
     const enrichmentData = files.map((file, index) => {
-    const dimensions = sizeOf(file.buffer);
+      const dimensions = sizeOf(file.buffer);
 
       // Match existing row by type (first match)
-      const existingIndex = existingRows.findIndex(row => row.type === typeArr[index]);
-      const existing = existingIndex !== -1 ? existingRows.splice(existingIndex, 1)[0] : null;
+      const existingIndex = existingRows.findIndex(
+        (row) => row.type === typeArr[index]
+      );
+      const existing =
+        existingIndex !== -1 ? existingRows.splice(existingIndex, 1)[0] : null;
 
       return {
-        id: existing?.id || null,      // update if exists
+        id: existing?.id || null, // update if exists
         product_id,
         type: typeArr[index],
         image_width: dimensions.width,
@@ -634,12 +656,8 @@ for (const t in typeCount) {
       message: "Enrichment images processed successfully",
       saved, // only newly inserted/updated images
     });
-
   } catch (error) {
     console.error("Error in enrichmentController:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
-
-
