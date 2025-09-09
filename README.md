@@ -120,8 +120,16 @@ npm run dev
 
 | 👤 Contributor | 🚀 Contributions |
 |----------------|---------------------------------------------------------------|
+
 | **Varun Trikha** | 📊 Dashboard API, 📋 ManageLeads, ✅ Profile Completion, 🔢 LeadsCount |♂️ ManageProduct | 🆘help=support 
-| **Prashant**     | ✅Manage orders API complete, ✨Manage Brands API(Brand listing and filters completed) |
+
+
+- **Prashant**
+  - ✅ Manage Orders API – *Completed*
+  - ✨ Manage Brands API – *Brand listing and filters completed*
+  - 🛠️ Manage Brands – *Add, Edit, and View functionality completed*
+  - 📄 Agreement Page – *Completed*
+
 
 
 
