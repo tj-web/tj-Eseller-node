@@ -14,6 +14,7 @@ import manageLeads from "./routes/manageLeads.routes.js";
 import manageProduct from "./routes/manageProduct.routes.js";
 import agreementRoutes from "./routes/agreement.routes.js";
 import helpSupportRoutes from "./routes/help-support.routes.js";
+import accountHealthRoutes from "./routes/accountHealth.routes.js";
 
 import morgan from "morgan";
 
@@ -53,6 +54,7 @@ app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes);
 app.use(process.env.API_VERSION_PATH + "/product", manageProduct);
 app.use(process.env.API_VERSION_PATH + "/eseller-agreement", agreementRoutes);
 app.use(process.env.API_VERSION_PATH + "/help-support", helpSupportRoutes);
+app.use(process.env.API_VERSION_PATH + "/account-health", accountHealthRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
