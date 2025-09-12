@@ -1,8 +1,10 @@
 import express from "express";
-import { getAccountHealth } from "../controllers/accountHealthController.js";
+import { getAccountHealth,getReviews } from "../controllers/healthController.js";
+
 const router = express.Router();
 
-router.get("/status", getAccountHealth);
+router.get("/trusted_seller", getAccountHealth);
+router.get("/reviews", getReviews);
 
 
 export default router;

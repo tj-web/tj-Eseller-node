@@ -13,7 +13,7 @@ import {
   checkVendorProduct,
   editProduct,
   enrichment,
-} from "../controllers/manageProductController.js";
+} from "../controllers/productController.js";
 import multer from "multer";
 
 const router = express.Router();

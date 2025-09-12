@@ -1,29 +1,28 @@
-import { isVendorProduc } from "../models/ManageProduct/editProduct.js";
-import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
-import { addVideoModel } from "../models/ManageProduct/addVideos.js";
-import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
-import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
+import { isVendorProduc } from "../models/manageProduct.js";
+import { getProductDetail } from "../models/manageProduct.js";
+import { addVideoModel } from "../models/manageProduct.js";
+import { insertProductScreenshots } from "../models/manageProduct.js";
+import { addGalleryModel } from "../models/manageProduct.js";
 import {
   getProductList,
   getVendorBrands,
-} from "../models/ManageProduct/getManageProduct.js";
+} from "../models/manageProduct.js";
 import {
   getSelectedColumns,
   saveProduct,
-} from "../models/ManageProduct/addBasicDetails.js";
-import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
-import { getSelectedCol } from "../models/ManageProduct/viewProduct.js";
-import { saveOrUpdateProductFeature } from "../models/ManageProduct/getFeatures.js";
+} from "../models/manageProduct.js";
+import { saveOrUpdateProductSpecification } from "../models/manageProduct.js";
+import { getSelectedCol } from "../models/manageProduct.js";
+import { saveOrUpdateProductFeature } from "../models/manageProduct.js";
 import {
   isVendorProduct,
   getAllFeatures,
-} from "../models/ManageProduct/featuresAddlist.js";
-import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
-import { imageSize } from "image-size";
-import { upsertEnrichmentImages } from "../models/ManageProduct/addenrichment.js";
+} from "../models/manageProduct.js";
+import { geteditProductDetail } from "../models/manageProduct.js";
+import { upsertEnrichmentImages } from "../models/manageProduct.js";
 import { uploadfile2 } from "../utilis/s3Uploader.js";
-import fs from "fs";
-import path from "path";
+
+import sizeOf from "image-size";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -131,7 +130,6 @@ export const basicDetails = async (req, res) => {
     let secondImageUrl = "";
     if (req.files?.image) {
       const img = req.files.image[0];
-      console.log("Second image received:", img);
 
       let originalName = img.originalname.replace(/\s+/g, "-");
       const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`;
@@ -577,12 +575,6 @@ export const editProduct = async (req, res) => {
 };
 
 //----------this for the enrichment part of the form-----------------
-
-// import sizeOf from "image-size";
-// import path from "path";
-// import { upsertEnrichmentImages } from "../models/enrichmentModel.js";
-// import { getSelectedCol } from "../helpers/common.js";
-import sizeOf from "image-size";
 
 export const enrichment = async (req, res) => {
   try {

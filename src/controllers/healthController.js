@@ -1,4 +1,5 @@
-import {getVendorProductIds,getReviewsData,getAnalyticsData} from "../models/Account-Health/checking.js";
+import {getTotalReviewsCount} from '../models/accountHealth.js'
+import {getVendorProductIds,getReviewsData,getAnalyticsData} from "../models/accountHealth.js";
 
 export const getAccountHealth =  async (req, res) => {
  try {
@@ -32,3 +33,24 @@ export const getAccountHealth =  async (req, res) => {
   console.error("Error in getAccountHealth:", error);
  }
 }
+
+//--------------------this will help to us to get the reviews data--------------------
+export const getReviews = async (req, res) => {
+ try {
+    const { productIds, productName, rating, date } = req.query;
+
+    const filters = {};
+    if (productName) filters.productName = productName;
+    if (rating) filters.rating = rating;
+    if (date) filters.date = date;
+
+    const count = await getTotalReviewsCount(productIds || [], filters);
+
+    return res.json({ success: true, totalReviews: count });
+  } catch (error) {
+    console.error("Error fetching review count:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
+
+

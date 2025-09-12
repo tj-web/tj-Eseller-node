@@ -1,4 +1,5 @@
-import sequelize from "../../db/connection.js";  
+import { analytics, showAnalytics } from "../utilis/common.js";
+import sequelize from "../config/connection.js";
 export const getVendorProductIds = async (vendorId) => {
   try {
     const brandResults = await sequelize.query(
@@ -19,7 +20,7 @@ export const getVendorProductIds = async (vendorId) => {
       }
     );
 
-    const brandIds = brandResults.map(row => row.tbl_brand_id);
+    const brandIds = brandResults.map((row) => row.tbl_brand_id);
 
     if (brandIds.length === 0) {
       return { brandIds: [], productIds: [], priceAvailable: 1 };
@@ -41,7 +42,7 @@ export const getVendorProductIds = async (vendorId) => {
       }
     );
 
-    const productIds = productResults.map(row => row.product_id);
+    const productIds = productResults.map((row) => row.product_id);
 
     if (productIds.length === 0) {
       return { brandIds, productIds: [], priceAvailable: 1 };
@@ -63,16 +64,14 @@ export const getVendorProductIds = async (vendorId) => {
 
     const priceAvailable = priceResults.length > 0 ? 0 : 1;
 
-    return {productIds, priceAvailable };
-
+    return { productIds, priceAvailable };
   } catch (error) {
     console.error("Error fetching vendor product IDs:", error);
     return { brandIds: [], productIds: [], priceAvailable: 0 };
   }
 };
 
-
-  // adjust path
+// adjust path
 
 export const getReviewsData = async (productIds) => {
   try {
@@ -100,7 +99,6 @@ export const getReviewsData = async (productIds) => {
 };
 
 //--------------------this will help to us to get the analytics data--------------------
-import { analytics, showAnalytics } from "../../common/common.js";
 
 // Helper function like PHP thousandsCurrencyFormat
 const thousandsCurrencyFormat = (num) => {
@@ -219,8 +217,8 @@ export const getAnalyticsData = async (filter) => {
           heading: analytics.avg_attemp_time.heading,
           data:
             (analyticsData.avg_attemp_time || 0) > 59
-              ? `${(analyticsData.avg_attemp_time || '').toFixed(2)}h`
-              : `${analyticsData.avg_attemp_time ||''}m`,
+              ? `${(analyticsData.avg_attemp_time || "").toFixed(2)}h`
+              : `${analyticsData.avg_attemp_time || ""}m`,
           info: analytics.avg_attemp_time.info,
           icon: analytics.avg_attemp_time.icon,
         },
@@ -243,3 +241,41 @@ export const getAnalyticsData = async (filter) => {
 };
 
 
+
+export const getTotalReviewsCount = async (productIds = [], filters = {}) => {
+  if (!productIds.length) return 0;
+
+  let query = `
+    SELECT COUNT(tr.review_id) AS num_reviews
+    FROM tbl_review tr
+    JOIN tbl_product tp ON tr.product_id = tp.product_id
+    WHERE tr.status = 1
+    AND tr.product_id IN (:productIds)
+  `;
+
+  const replacements = { productIds };
+
+  if (filters.productName) {
+    query += ` AND tp.product_name = :productName`;
+    replacements.productName = filters.productName;
+  }
+
+  if (filters.rating) {
+    const rating = Math.floor(filters.rating);
+    query += ` AND (ROUND(tr.rating) = :rating OR (tr.rating >= :rating AND tr.rating < :ratingPlusOne))`;
+    replacements.rating = rating;
+    replacements.ratingPlusOne = rating + 1;
+  }
+
+  if (filters.date) {
+    query += ` AND DATE(tr.created_at) = :date`;
+    replacements.date = filters.date;
+  }
+
+  const [result] = await sequelize.query(query, {
+    replacements,
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  return result?.num_reviews || 0;
+};

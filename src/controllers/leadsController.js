@@ -1,6 +1,7 @@
-import { getLeadsCount } from "../models/ManageLeads/leadsCount.js";
-import { getLeadHistory } from "../models/ManageLeads/leadsHistory.js";
-import { getDemosCount } from "../models/ManageLeads/myDemos.js";
+import { addRemarkReminderUtil } from "../models/leads.model.js";
+import { getLeadsCount } from "../models/leads.model.js";
+import { getLeadHistory } from "../models/leads.model.js";
+import { getDemosCount } from "../models/leads.model.js";
 //--------------------Manage Lead History-----------------------------------------------------
 
 export const manageLeads = async (req, res) => {
@@ -74,7 +75,6 @@ export const getLeadHistoryPost = async (req, res) => {
 
 //---------------------------add Remark API --------------------------------------
 
-import { addRemarkReminderUtil } from "../models/ManageLeads/remarkReminderUtil.js";
 
 export const addRemarkReminder = async (req, res) => {
   try {

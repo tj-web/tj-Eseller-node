@@ -1,8 +1,6 @@
 import { or, Sequelize } from "sequelize";
-import sequelize from "../db/connection.js";
+import sequelize from "../config/connection.js";
 import { unserialize } from "php-serialize";
-
-
 
 export async function getAllOrders({
   vendor_id,

@@ -1,4 +1,4 @@
-import sequelize from "../../db/connection.js";
+import sequelize from "../config/connection.js";
 import { QueryTypes } from "sequelize";
 
 export const insertVendorHelpQuery = async (helpData) => {
@@ -13,7 +13,7 @@ export const insertVendorHelpQuery = async (helpData) => {
       helpData.name,
       helpData.email,
       helpData.query,
-      new Date() // auto timestamp
+      new Date(), // auto timestamp
     ];
 
     const [result] = await sequelize.query(query, {

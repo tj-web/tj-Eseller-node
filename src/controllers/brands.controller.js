@@ -1,7 +1,7 @@
 import {
   findDifferences,
   getCurrentDateTime,
-} from "../General_Function/general_helper.js";
+} from "../helpers/generalHelper.js";
 import {
   get_brand_by_id,
   get_vendor_brands,
@@ -16,7 +16,7 @@ import {
   checkBrandName,
 } from "../models/brand.model.js";
 import { uploadfile2 } from "../utilis/s3Uploader.js";
-import sequelize from "../db/connection.js";
+import sequelize from "../config/connection.js";
 
 /*******   brand-list controller function   ******/
 
@@ -70,7 +70,6 @@ export const checkBrand = async (req, res) => {
 /*******  Main controller for adding a new brand  *******/
 
 export const addBrand = async (req, res) => {
-
   const t = await sequelize.transaction();
   try {
     const is_available = await checkBrandName(req.body.brand_name);
@@ -81,7 +80,7 @@ export const addBrand = async (req, res) => {
     }
     let save_brand_data = {
       brand_name: req.body.brand_name,
-      image: req.file ?req.file.originalname: "",
+      image: req.file ? req.file.originalname : "",
       date_added: getCurrentDateTime(),
       status: 0,
       added_by: "vendor",
@@ -115,10 +114,10 @@ export const addBrand = async (req, res) => {
 
     await saveBrandInfo(save_brand_info_data, t);
     const fileName = req.file ? req.file.originalname : "";
-    const fileobj = req.file?
-    {...req.file,
-      key: `web/assets/images/techjockey/brands/${fileName}`}: null ;
-    const brand_image = fileobj?await uploadfile2(fileobj):"";
+    const fileobj = req.file
+      ? { ...req.file, key: `web/assets/images/techjockey/brands/${fileName}` }
+      : null;
+    const brand_image = fileobj ? await uploadfile2(fileobj) : "";
 
     await saveVendorRelationBrand(
       req.body.vendor_id,

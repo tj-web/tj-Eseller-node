@@ -1,4 +1,4 @@
-import { insertVendorHelpQuery } from "../models/help-Support/helpsupport.js";
+import { insertVendorHelpQuery } from "../models/helpsupport.js";
 
 export const addHelpSupportQuery = async (req, res) => {
   try {

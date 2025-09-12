@@ -1,6 +1,6 @@
-import { oemTotalLeadsCountInfo } from "../models/Dashboard/dashboard.js";
+import { oemTotalLeadsCountInfo } from "../models/dashboard.model.js";
 //sniih eovehiv eaybevbe
-import sequelize from "../db/connection.js";
+import sequelize from "../config/connection.js";
 export const totalLeadsCountInfo = async (req, res) => {
   try {
     const {
@@ -88,7 +88,7 @@ export const getVendorOverview = async (req, res) => {
 
 //analytics data function
 
-import { analyticsInfo } from "../models/Dashboard/analytics.js";
+import { analyticsInfo } from "../models/dashboard.model.js";
 
 export const analyticsCount = async (req, res) => {
   try {
@@ -105,7 +105,7 @@ export const analyticsCount = async (req, res) => {
   }
 };
 
-import { getOemPlansWithRawSQL } from "../models/Dashboard/oemService.js";
+import { getOemPlansWithRawSQL } from "../models/dashboard.model.js";
 import { prepareOemPlansData } from "../helpers/oemHelper.js";
 
 export const fetchPlansInfo = async (req, res) => {

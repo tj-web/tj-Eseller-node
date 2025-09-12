@@ -1,6 +1,8 @@
-import sequelize from "../../db/connection.js";
-import { analyticsConfig } from "../../config/analytics.config.js";
-import { thousandsCurrencyFormat, formatTime } from "../../helpers/format.js";
+import { QueryTypes } from "sequelize";
+import { Sequelize } from "sequelize";
+import sequelize from "../config/connection.js";
+import { analyticsConfig } from "../config/analytics.config.js";
+import { thousandsCurrencyFormat, formatTime } from "../helpers/format.js";
 
 // Get OMS PI data (only if show_current_plan_data == 1)
 const getOmsPiData = async (vendor_id) => {
@@ -133,3 +135,77 @@ export const analyticsInfo = async (filter) => {
     throw error;
   }
 };
+
+
+
+
+
+export const oemTotalLeadsCountInfo = async ({
+  filter_start_date,
+  filter_end_date,
+  vendor_id,
+  show_current_plan_data,
+}) => {
+  try {
+    const params = [vendor_id];
+    let query = `
+     SELECT 
+  COUNT(1) AS total_leads,
+  COALESCE(SUM(CASE WHEN (status != '2' AND is_contact_viewed = '0') THEN 1 ELSE 0 END), 0) AS pending_leads,
+  COALESCE(SUM(CASE WHEN (status = '2' OR is_contact_viewed = '1') THEN 1 ELSE 0 END), 0) AS utilised_leads
+FROM tbl_leads
+WHERE 
+  vendor_id = ?
+  AND phone <> ''
+  AND email <> ''
+  AND (
+    lead_visibility = 1 
+    OR (lead_visibility = 0 AND is_trashed = 1)
+)
+
+    `;
+
+    if (filter_start_date && filter_end_date) {
+      query += ` AND created_at BETWEEN ? AND ?`;
+      params.push(filter_start_date, filter_end_date);
+    }
+
+    const [result] = await sequelize.query(query, {
+      replacements: params,
+      type: Sequelize.QueryTypes.SELECT,
+    });
+
+    return result;
+  } catch (err) {
+    throw err;
+  }
+};
+
+
+
+
+
+export const getOemPlansWithRawSQL = async (vendor_id) => {
+  const query = `
+    SELECT 
+      opd.id, opd.brand_id, opd.vendor_id, opd.lead_plan_id, 
+      opd.total_lead AS total_credits, opd.used_lead AS credits_used,
+      opd.start_date, opd.end_date,
+      tlp.plan_name, tlp.plan_type, tlp.show_credits,
+      tlc.product_id, tp.product_name
+    FROM oms_pi_details opd
+    LEFT JOIN tbl_leads_plan tlp ON tlp.id = opd.lead_plan_id
+    LEFT JOIN tbl_leads_counter tlc ON tlc.order_id = opd.id
+    LEFT JOIN tbl_product tp ON tp.product_id = tlc.product_id
+    WHERE opd.vendor_id = :vendor_id AND opd.pi_status = 3
+    ORDER BY opd.id DESC
+  `;
+
+  const results = await sequelize.query(query, {
+    replacements: { vendor_id },
+    type: QueryTypes.SELECT,
+  });
+
+  return results;
+};
+

@@ -1,5 +1,4 @@
-import sequelize from "../db/connection.js";
-
+import sequelize from "../config/connection.js";
 
 export const getDesignation = async () => {
   try {
@@ -9,7 +8,7 @@ export const getDesignation = async () => {
       WHERE status = 1 AND is_deleted = 0
     `);
 
-    return results; 
+    return results;
   } catch (error) {
     console.error("Error fetching designations:", error);
     throw error;
@@ -23,12 +22,12 @@ export const getVendorById = async (profile_id) => {
        FROM vendor_auth
        WHERE id = :profile_id`,
       {
-        replacements: { profile_id }, 
+        replacements: { profile_id },
         type: sequelize.QueryTypes.SELECT,
       }
     );
 
-    return result || null; 
+    return result || null;
   } catch (error) {
     console.error("Error fetching vendor by ID:", error);
     throw error;
@@ -42,12 +41,12 @@ export const getVendorDetailById = async (vendor_id) => {
        FROM vendor_details
        WHERE vendor_id = :vendor_id`,
       {
-        replacements: { vendor_id }, 
+        replacements: { vendor_id },
         type: sequelize.QueryTypes.SELECT,
       }
     );
 
-    return result || null; 
+    return result || null;
   } catch (error) {
     console.error("Error fetching vendor details by ID:", error);
     throw error;
@@ -64,12 +63,12 @@ export const getVendorAgreement = async (vendor_id, version) => {
        ORDER BY id DESC
        LIMIT 1`,
       {
-        replacements: { vendor_id, version }, 
+        replacements: { vendor_id, version },
         type: sequelize.QueryTypes.SELECT,
       }
     );
 
-    return result || null; 
+    return result || null;
   } catch (error) {
     console.error("Error fetching vendor agreement:", error);
     throw error;
@@ -88,13 +87,12 @@ export const isPreviousSigned = async (version, vendor_id) => {
       }
     );
 
-    return result[0].count; 
+    return result[0].count;
   } catch (error) {
     console.error("Error checking previous signed agreement:", error);
     throw error;
   }
 };
-
 
 export const getVendorBrands = async (vendor_id) => {
   try {
@@ -107,47 +105,42 @@ export const getVendorBrands = async (vendor_id) => {
          AND (vbr.status = 1 OR (tb.added_by = 'vendor' AND tb.added_by_id = :vendor_id))`,
       {
         replacements: { vendor_id },
-        type: sequelize.QueryTypes.SELECT, 
+        type: sequelize.QueryTypes.SELECT,
       }
     );
 
-
-    return results.map(row => row.tbl_brand_id);
+    return results.map((row) => row.tbl_brand_id);
   } catch (error) {
     console.error("Error fetching vendor brands:", error);
     throw error;
   }
 };
 
-
 export const getBrands = async (vendor_id) => {
   try {
-    
     const brandArr = await getVendorBrands(vendor_id);
 
     if (!brandArr || brandArr.length === 0) {
-      return []; 
+      return [];
     }
 
-    
     const results = await sequelize.query(
       `SELECT brand_id, brand_name, commission_type, commission, 
               renewal_terms, payment_terms, payment_terms_comment
        FROM tbl_brand
        WHERE brand_id IN (:brandArr)`,
       {
-        replacements: { brandArr }, 
+        replacements: { brandArr },
         type: sequelize.QueryTypes.SELECT,
       }
     );
 
-    return results; 
+    return results;
   } catch (error) {
     console.error("Error fetching brands:", error);
     throw error;
   }
 };
-
 
 //   try {
 //     let finalData = {};
@@ -161,7 +154,7 @@ export const getBrands = async (vendor_id) => {
 
 //     // Step 2: Run raw query (no destructuring!)
 //     const results = await sequelize.query(
-//       `SELECT 
+//       `SELECT
 //           tp.product_id,
 //           tp.product_name,
 //           tp.status,
@@ -228,7 +221,7 @@ export const getBrands = async (vendor_id) => {
 
 //     // 2. Run raw query with JOINs
 //     const query = `
-//       SELECT 
+//       SELECT
 //         tp.product_id,
 //         tp.product_name,
 //         tp.status,
@@ -292,11 +285,9 @@ export const getAgreementProductPlans = async (vendor_id) => {
   try {
     const finalData = {};
 
-
     const brandArr = await getVendorBrands(vendor_id);
 
     if (brandArr && brandArr.length > 0) {
-
       const results = await sequelize.query(
         `
         SELECT 
@@ -332,7 +323,7 @@ export const getAgreementProductPlans = async (vendor_id) => {
           type: sequelize.QueryTypes.SELECT,
         }
       );
-      
+
       if (results.length > 0) {
         const planIds = results
           .map((row) => row.plan_id)
@@ -340,7 +331,6 @@ export const getAgreementProductPlans = async (vendor_id) => {
 
         const planSpecsDetails = await getPlanRelatedSpecs(planIds);
 
-      
         results.forEach((product) => {
           if (!finalData[product.product_id]) {
             finalData[product.product_id] = {
@@ -364,8 +354,7 @@ export const getAgreementProductPlans = async (vendor_id) => {
               tp_commission_type: product.plan_tp_commission_type,
               tp_commission: product.plan_tp_commission,
               specs:
-                planSpecsDetails &&
-                planSpecsDetails[product.plan_id]
+                planSpecsDetails && planSpecsDetails[product.plan_id]
                   ? planSpecsDetails[product.plan_id]
                   : [],
             });
@@ -381,15 +370,12 @@ export const getAgreementProductPlans = async (vendor_id) => {
   }
 };
 
-
-
 export const getPlanRelatedSpecs = async (plan_ids) => {
   try {
     if (!Array.isArray(plan_ids) || plan_ids.length === 0) {
       return {};
     }
 
-    
     const results = await sequelize.query(
       `
       SELECT 

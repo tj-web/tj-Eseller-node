@@ -1,29 +1,25 @@
 import { get_brand_by_id } from "../models/brand.model.js";
 import { uploadFile } from "../config/aws.config.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { objectKeyDiff } from "../General_Function/general_helper.js";
+import { objectKeyDiff } from "../helpers/generalHelper.js";
 import sequelize from "../db/connection.js";
 // import { AWS_paths } from "../config/constants.js";
 // global.CONSTANTS = AWS_paths();
 
 // /********************HANDLE IMAGE UPLOADS********************** */
 
-
 /********************CLEAN UPLOAD FILE NAME VALIDATOR************* */
 function cleanUploadFileName(input) {
   return input.replace(/[^a-zA-Z0-9._]+/g, "");
 }
-
-
 
 /********************8save brand image utility. */
 export const saveBrandImage = async (imageName, brand_id) => {
   try {
     let fileName;
     let awsObjectUrl = "";
-    
+
     if (imageName) {
-      
       const file = imageName;
 
       const filePath = `${CONSTANTS.AWS_BRAND_IMAGES}${brand_id}_`;
@@ -61,4 +57,3 @@ export const saveBrandImage = async (imageName, brand_id) => {
     throw error;
   }
 };
-

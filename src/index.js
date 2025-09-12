@@ -1,11 +1,10 @@
-
 import dotenv from "dotenv";
-dotenv.config({ debug: false }); 
+dotenv.config({ debug: false });
 
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import sequelize from "./db/connection.js";
+import sequelize from "./config/connection.js";
 import { AWS_paths } from "./config/constants.js";
 import orderRoutes from "./routes/orders.routes.js";
 import brandRoutes from "./routes/brands.routes.js";
@@ -24,10 +23,12 @@ global.CONSTANTS = AWS_paths();
 const app = express();
 
 // Middlewares
-app.use(cors({
-  origin: "http://localhost:5000",
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -54,7 +55,7 @@ app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes);
 app.use(process.env.API_VERSION_PATH + "/product", manageProduct);
 app.use(process.env.API_VERSION_PATH + "/eseller-agreement", agreementRoutes);
 app.use(process.env.API_VERSION_PATH + "/help-support", helpSupportRoutes);
-app.use(process.env.API_VERSION_PATH + "/account-health", accountHealthRoutes);
+app.use(process.env.API_VERSION_PATH + "/account", accountHealthRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {

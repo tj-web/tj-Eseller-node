@@ -2,7 +2,7 @@ import {
   getCurrentDateNoHIs,
   insertRecordWithoutId,
   updateRecord,
-} from "../General_Function/general_helper.js";
+} from "../helpers/generalHelper.js";
 import {
   getAgreementProductPlans,
   getDesignation,
@@ -10,7 +10,7 @@ import {
   getVendorById,
   getVendorDetailById,
   isPreviousSigned,
-  getBrands
+  getBrands,
 } from "../models/agreement.model.js";
 
 export const getAgreements = async (req, res) => {
@@ -19,7 +19,7 @@ export const getAgreements = async (req, res) => {
   const arr_designation = await getDesignation();
   const basic_data = await getVendorById(profile_id);
   const profile_data = await getVendorDetailById(vendor_id);
-  const agreement_data = await getVendorAgreement(vendor_id, 'V2');
+  const agreement_data = await getVendorAgreement(vendor_id, "V2");
   const is_previous_signed = await isPreviousSigned("v1", vendor_id);
   const brands = await getBrands(vendor_id);
   if (!brands) {
@@ -38,7 +38,6 @@ export const getAgreements = async (req, res) => {
     });
   }
 
-
   const data = {
     active_tab: "eseller_agreement",
     title: "agreement-Esellerhub Techjockey",
@@ -53,7 +52,7 @@ export const getAgreements = async (req, res) => {
   return res.status(200).json({ success: true, data });
 };
 
-export const agreementFormController = async (req, res)=>{
+export const agreementFormController = async (req, res) => {
   const { vendor_id, profile_id } = req.body;
   const agreement_data = await getVendorAgreement(vendor_id, "WEB_VERSION");
   if (req.body.type === "agreement_form") {
@@ -67,7 +66,7 @@ export const agreementFormController = async (req, res)=>{
       agreement_by: req.body.agreement_by,
     };
     if (agreement_data) {
-      await updateRecord("vendor_agreement",agreement_data.id, form_data);
+      await updateRecord("vendor_agreement", agreement_data.id, form_data);
     } else {
       form_data = {
         ...form_data,
@@ -104,4 +103,4 @@ export const agreementFormController = async (req, res)=>{
       }
     }
   }
-}
+};
