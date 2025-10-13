@@ -7,9 +7,10 @@ import {
   addRemarkReminder,
 getDemosCountController
 } from "../controllers/leadsController.js";
-router.get("/leads", manageLeads);
-router.post("/leadsHistory", getLeadHistoryPost);
-router.post('/addRemark',addRemarkReminder);
-router.get('/my_demos',getDemosCountController)
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
+router.get("/leads",isAuthenticated, manageLeads);
+router.post("/leadsHistory",isAuthenticated, getLeadHistoryPost);
+router.post('/addRemark',isAuthenticated,addRemarkReminder);
+router.get('/my_demos',isAuthenticated,getDemosCountController)
 
 export default router;

@@ -1,19 +1,33 @@
-import { createClient } from 'redis';
- 
+import { createClient } from "redis";
+
 const redis = createClient({
   socket: {
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-  }
+    host: "127.0.0.1",
+    port: 6379,
+  },
 });
- 
-redis.on('error', (err) => console.error(' Redis Client Error:', err));
- 
+
+redis.on("error", (err) => console.error("Redis Client Error:", err));
 await redis.connect();
- 
-const pong = await redis.ping();
-const value = await redis.get("ci_session:411b1d987eebc083b0a5a4be42f14263bb25243a");
-console.log("Redis Value:", value);
-console.log(' Redis Ping Response:', pong);
- 
-export default redis;
+console.log("redis connected successfully")
+
+// Function to set JSON data
+export async function setJson(key, value) {
+  const jsonData = JSON.stringify(value);
+  await redis.set(key, jsonData);
+  console.log(` Saved ${key}`);
+}
+
+// Function to get JSON data
+export async function getJson(key) {
+  const data = await redis.get(key);
+  return data ? JSON.parse(data) : null;
+}
+
+// Example usage
+// await setJson("user:1001", { name: "Alice", age: 25, email: "alice@example.com" });
+
+// const user = await getJson("user:1001");
+// console.log(user); 
+
+export default redis 

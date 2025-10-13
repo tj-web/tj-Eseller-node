@@ -14,6 +14,9 @@ import manageProduct from "./routes/manageProduct.routes.js";
 import agreementRoutes from "./routes/agreement.routes.js";
 import helpSupportRoutes from "./routes/help-support.routes.js";
 import accountHealthRoutes from "./routes/accountHealth.routes.js";
+import authRoutes from './routes/auth.routes.js'
+import session from 'express-session'
+import redis from "./config/redisService.js"
 
 import morgan from "morgan";
 
@@ -33,19 +36,20 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan("dev"));
+app.use(
+  session({
+    name: "myAppSessionId",   //  custom cookie name instead of connect.sid
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, httpOnly: true }
+  })
+);
 
 // Test route
 app.get("/", (req, res) => {
   res.status(200).send("test");
 });
-
-// DB connection
-try {
-  await sequelize.authenticate();
-  console.log("Database connected successfully");
-} catch (error) {
-  console.error("Database connection failed:", error);
-}
 
 // Routes
 app.use(process.env.API_VERSION_PATH + "/dashboard", dashboardRoutes);
@@ -56,11 +60,15 @@ app.use(process.env.API_VERSION_PATH + "/product", manageProduct);
 app.use(process.env.API_VERSION_PATH + "/eseller-agreement", agreementRoutes);
 app.use(process.env.API_VERSION_PATH + "/help-support", helpSupportRoutes);
 app.use(process.env.API_VERSION_PATH + "/account", accountHealthRoutes);
+app.use(process.env.API_VERSION_PATH + '/authenticate',authRoutes)
 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error("Global error:", err);
-  return res.status(500).json({ message: "Something went wrong" });
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Something went wrong",
+  });
 });
 
 // Start server

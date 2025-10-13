@@ -1,93 +1,152 @@
-// import { v4 as uuidv4 } from "uuid";
-// import crypto from "crypto";
-// import VendorAuth from "../models/vendorAuth.js";
-// import Vendor from "../models/vendor.js";
-// // import redis from "../db/redisService.js";
+import crypto from "crypto";
+import { isEmailExist, isPhoneExist } from "../services/authServices.js";
+import { add_vendor ,verify_email,insermail,verifyVendor} from "../models/auth.model.js";
+import { generateToken } from "../services/authService.js";
+import { getJson, setJson } from "../config/redisService.js";  //  move import outside
 
-// VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
+export const auth_oem = async (req, res) => {
+  try {
+    const { email, name, phone, password, dial_code } = req.body;
 
-// export const login = async (req, res) => {
-//   const { frmtype, username, userpassword, rememberme } = req.body;
+    if (!email || !name || !phone || !password || !dial_code) {
+      return res
+        .status(400)
+        .json({ success: false, message: "All fields are required" });
+    }
 
-//   if (rememberme == 0) {
-//     return res.status(400).json({ message: "Please select 'remember me'" });
-//   }
 
-//   if (frmtype !== "vendor_login") {
-//     return res.status(400).json({ message: "Invalid form type" });
-//   }
+    const is_email_exist = await isEmailExist(email);
+    if (is_email_exist) {
+      return res
+        .status(409)
+        .json({ success: false, message: "Your email is already registered with us" });
+    }
 
-//   try {
-//     const user = await VendorAuth.findOne({
-//       where: { email: username },
-//       include: [{ model: Vendor }],
-//     });
+    
+    const is_phone_exist = await isPhoneExist(dial_code, phone);
+    if (is_phone_exist) {
+      return res
+        .status(409)
+        .json({ success: false, message: "Your phone is already registered with us" });
+    }
 
-//     if (!user) {
-//       return res
-//         .status(400)
-//         .json({ message: "Invalid credentials: user not found" });
-//     }
+    // Hash password with MD5
+    const hashPassword = crypto.createHash("md5").update(password).digest("hex");
 
-//     const hashedPassword = crypto
-//       .createHash("md5")
-//       .update(userpassword)
-//       .digest("hex");
+    // Insert into DB
+    const data = await add_vendor({ name, email, hashPassword, dial_code, phone });
 
-//     if (user.password !== hashedPassword) {
-//       return res
-//         .status(400)
-//         .json({ message: "Invalid credentials: wrong password", status: 2 });
-//     }
+    const payload = {
+      name: name,
+      email: email,
+      vendor_id: data["vendor_id"],
+    };
 
-//     if (user.vendor.status === 0 || user.vendor.auth_status === 0) {
-//       return res
-//         .status(403)
-//         .json({ message: "Account disabled. Contact admin.", status: 2 });
-//     }
+    const token = generateToken(payload);
 
-//     const sessionId = uuidv4();
+    
+    const redisKey = `user:${data["vendor_id"]}`; 
+  const redisValue = { 
+  vendor_id: data["vendor_id"],  
+  token, 
+  name, 
+  email 
+};
 
-//     const sessionData = {
-//       vendor_id: user.vendor_id,
-//       profile_id: user.id,
-//       v_name: user.first_name,
-//       v_lname: user.last_name,
-//       v_email: user.email,
-//       v_dial_code: user.dial_code,
-//       v_number: user.phone,
-//       is_temp_account: user.vendor.is_temp,
-//       vendor_mode: user.vendor.vendor_mode,
-//       v_created: user.created_at,
-//       v_current_plan_data: user.vendor.show_current_plan_data,
-//       v_email_verified: user.vendor.email_verified,
-//     };
+    await setJson(redisKey, redisValue);
 
-//     await redis.set(`ci_session:${sessionId}`, JSON.stringify(sessionData), {
-//       EX: 7 * 24 * 60 * 60, // 7 days
-//     });
+    //  Retrieve it back 
+    const user = await getJson(redisKey);
+    console.log("User in Redis:", user);
 
-//     const check = await redis.get(`ci_session:${sessionId}`);
-//     console.log("Session stored in Redis:", check);
-//     console.log(`ci_session:${sessionId}`);
-//     res.cookie("session_token", sessionId, {
-//       httpOnly: true,
-//       secure: false,
-//       sameSite: "lax",
-//       maxAge: 7 * 24 * 60 * 60 * 1000,
-//     });
+    return res
+      .status(201)
+      .json({ success: true, message: "Vendor registered successfully", data, token });
+  } catch (error) {
+    console.error("Error in auth_oem:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal Server Error" });
+  }
+};
 
-//     res.status(200).json({
-//       message: "Login successful",
-//       status: 1,
-//       user: {
-//         id: user.id,
-//         email: user.email,
-//         name: `${user.first_name} ${user.last_name}`,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error during login:", error.message);
-//     res.status(500).json({ message: "Internal Server Error" });
-//   }
-// };
+
+
+// This is for the login api 
+
+export const login_oem = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
+    const email_exist = await verify_email(email);
+    if (!email_exist) {
+      return res.status(401).json({
+        success: false,
+        message: "your email is not registered with us",
+      });
+    }
+
+    const User = await verifyVendor(email, password);
+    // console.log("Login data:", data);return;
+    if (User.is_valid === true) {
+      //  User is valid
+      const hashPassword = crypto
+        .createHash("md5")
+        .update(password)
+        .digest("hex");
+          const payload = {
+    email: email,
+    password: hashPassword
+  };
+  const token = generateToken(payload);
+
+      // Save user data in session (NOT in cookie directly)
+      req.session.user = {
+        email,
+        password: hashPassword,
+      };
+
+      return res.status(200).json({
+        success: true,
+        message: "User successfully logged in",token,User
+      });
+    } else {
+      return res.status(401).json({
+        success: false,
+        message: "Provided password is incorrect",
+      });
+    }
+  } catch (error) {
+    console.error("Error in login_oem", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+
+
+// This controller will help for the forget password user just entered the email and it gonna save in the table they it will shoot the mail by it self 
+
+export const resetpassword= async (req,res) =>{
+  try {
+    const {email}=req.body
+  
+    if(!email){
+      return res.status(409).json({success:false,message:"please provide the email id "})
+    }
+
+    const data = await insermail(email)
+    res.status(201).json({success:false,message:"Shortly you will get the mail for password reset"})
+  } catch (error) {
+    console.log("Error in the forget password",error)
+    res.status(500).json({success:false,message:"Internal Server Error"})
+  }
+}

@@ -1,0 +1,6 @@
+import { getJson,setJson } from "../config/redisService.js";
+
+await setJson("user:1001", { name: "Alice", age: 25, email: "alice@example.com" });
+
+const user = await getJson("user:1001");
+console.log(user);

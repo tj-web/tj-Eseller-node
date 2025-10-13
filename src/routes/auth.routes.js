@@ -1,12 +1,13 @@
-// import express from "express";
-// import {  login } from "../controllers/auth.controller.js";
+import express from "express";
+import { auth_oem,login_oem,resetpassword } from "../controllers/auth.controller.js";
+import { validInput,emailValidate } from "../middlewares/authValidation.js";
+import {isAuthenticated} from '../middlewares/isAuthenticated.js'
+const router = express.Router();
+
+router.post('/authen_oem',validInput,isAuthenticated, auth_oem)
+router.post('/login',emailValidate,login_oem)
+router.post('/forgetpassword',resetpassword)
 
 
-// const router = express.Router();
 
-
-// // router.post("/signup", signup);
-// router.post("/login", login);
-// // router.post("/logout", logout);
-
-// export default router;
+export default router;
