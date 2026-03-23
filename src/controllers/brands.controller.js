@@ -32,6 +32,7 @@ export const getBrands = async (req, res) => {
       pagenumber,
     } = req.query;
 
+     
     const result = await get_vendor_brands({
       vendor_id,
       orderby,

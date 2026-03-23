@@ -1,6 +1,6 @@
 
 import dotenv from "dotenv";
-dotenv.config({ debug: false }); 
+dotenv.config({ debug: false });
 
 import express from "express";
 import cors from "cors";
@@ -16,6 +16,7 @@ import agreementRoutes from "./routes/agreement.routes.js";
 import helpSupportRoutes from "./routes/help-support.routes.js";
 import companyInformationRoutes from "./routes/companyInformation.routes.js";
 import accountHealthRoutes from "./routes/accountHealth.routes.js";
+import authRoutes from "./routes/auth.routes.js";
 
 
 import morgan from "morgan";
@@ -27,7 +28,7 @@ const app = express();
 
 // Middlewares
 app.use(cors({
-  origin: "http://localhost:5000",
+  origin: "http://localhost:5173",
   credentials: true,
 }));
 app.use(express.json());
@@ -58,6 +59,7 @@ app.use(process.env.API_VERSION_PATH + "/eseller-agreement", agreementRoutes);
 app.use(process.env.API_VERSION_PATH + "/help-support", helpSupportRoutes);
 app.use(process.env.API_VERSION_PATH + "/company-information", companyInformationRoutes);
 app.use(process.env.API_VERSION_PATH + "/account-health", accountHealthRoutes);
+app.use(process.env.API_VERSION_PATH + "/auth", authRoutes);
 
 
 // Global error handler
