@@ -27,7 +27,7 @@ const app = express();
 
 // Middlewares
 app.use(cors({
-  origin: "http://localhost:5000",
+  origin: true, // Allow all origins
   credentials: true,
 }));
 app.use(express.json());
