@@ -28,6 +28,7 @@ import path from "path";
 export const brand_arr = async (req, res) => {
   try {
     const { vendor_id } = req.query;
+    // const vendor_id = req.user.vendor_id; // fixed !!
 
     if (!vendor_id) {
       return res
@@ -55,6 +56,7 @@ export const brand_arr = async (req, res) => {
 export const fetchVendorProducts = async (req, res) => {
   try {
     const vendor_id = req.user?.vendor_id || req.query.vendor_id;
+    // const vendor_id = req.user.vendor_id; // fixed !!
     if (!vendor_id) {
       return res
         .status(400)
@@ -99,6 +101,7 @@ export const basicDetails = async (req, res) => {
   try {
     const post = req.body;
     const vendorId = req.user?.vendor_id || 0;
+    // const vendorId = req.user.vendor_id; // fixed ??
     const product_id = req.params.product_id || null;
 
     let imageurl = "";
@@ -272,6 +275,10 @@ export const saveProductFeature = async (req, res) => {
     if (!post.product_id) {
       return res.status(400).json({ error: "product_id is required" });
     }
+ 
+    //something goes on herr , ownership check !
+  //  const check = await checkProductIdOwnership(post.product_id, req.user.vendor_id);
+
     const data = await getSelectedCol({
       table: "tbl_product_features", //  real table name
       columns: ["id"], // select only id

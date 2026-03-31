@@ -2,7 +2,8 @@ import {getVendorProductIds,getReviewsData,getAnalyticsData} from "../models/Acc
 
 export const getAccountHealth =  async (req, res) => {
  try {
-  const vendorId = req.query.vendorId;
+  const vendorId = req.user.vendor_id; //  fixed !!
+  
   if (!vendorId) {
     return res.status(400).json({ error: "vendorId query parameter is required" });
   }
@@ -14,7 +15,7 @@ export const getAccountHealth =  async (req, res) => {
       show_current_plan_data: req.body?.show_current_plan_data || 0,
     };
 
-    
+
   const result = await getAnalyticsData(filter);
   const productIds = await getVendorProductIds(vendorId);
   const data = await getReviewsData(productIds.productIds);
