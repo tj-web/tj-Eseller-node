@@ -6,78 +6,118 @@ export const getProductDetail = async (product_id) => {
     // Get main product data with joins
     const productQuery = `
       SELECT 
-        tp.product_name,
-        tpd.overview,
-        tpd.description,
-        tpi.image,
-        tp.status,
-        tps.industries,
-        tps.business,
-        tps.deployment,
-        tps.device,
-        tps.operating_system,
-        tps.hw_configuration,
-        tps.sw_configuration,
-        tp.brand_id,
-        tp.website_url
-      FROM tbl_product AS tp
-      LEFT JOIN tbl_product_specification AS tps
-        ON tps.product_id = tp.product_id
-      LEFT JOIN tbl_product_description AS tpd
-        ON tpd.product_id = tp.product_id
-      LEFT JOIN tbl_product_image AS tpi
-        ON tpi.product_id = tp.product_id
-      WHERE tp.product_id = :product_id
-      LIMIT 1
+  tp.product_name,
+  tpd.overview,
+  tpd.description,
+  tpi.image,
+  tp.status,
+  tps.industries,
+  tps.business,
+  tps.deployment,
+  tps.device,
+  tps.operating_system,
+  tps.hw_configuration,
+  tps.sw_configuration,
+  tp.brand_id,
+  tp.website_url,
+
+  -- Operating System
+  (
+    SELECT GROUP_CONCAT(os.os_name)
+    FROM tbl_operating_systems os
+    WHERE FIND_IN_SET(os.id, IFNULL(tps.operating_system, ''))
+  ) AS operating_system_names,
+
+  (
+    SELECT GROUP_CONCAT(os.os_image)
+    FROM tbl_operating_systems os
+    WHERE FIND_IN_SET(os.id, IFNULL(tps.operating_system, ''))
+  ) AS operating_system_images,
+
+  -- Industries
+  (
+    SELECT GROUP_CONCAT(pi.name)
+    FROM tbl_product_industry pi
+    WHERE FIND_IN_SET(pi.id, IFNULL(tps.industries, ''))
+  ) AS industries_names,
+
+  -- Business Type
+  (
+    SELECT GROUP_CONCAT(bt.business_type_name)
+    FROM tbl_business_type bt
+    WHERE FIND_IN_SET(bt.id, IFNULL(tps.business, ''))
+  ) AS business_names
+
+FROM tbl_product tp
+
+LEFT JOIN tbl_product_specification tps
+  ON tps.product_id = tp.product_id
+
+LEFT JOIN tbl_product_description tpd
+  ON tpd.product_id = tp.product_id
+
+LEFT JOIN tbl_product_image tpi
+  ON tpi.product_id = tp.product_id
+
+WHERE tp.product_id = :product_id
+LIMIT 1
     `;
+  
+    try {
+      const results = await sequelize.query(productQuery, {
+        replacements: { product_id },
+        type: QueryTypes.SELECT,
+      });
 
-    const [product] = await sequelize.query(productQuery, {
-      replacements: { product_id },
-      type: QueryTypes.SELECT
-    });
+      const product = results[0] || null;
 
-    if (!product) return null;
+      if (!product) return null;
 
-    // Get Product FAQs
-    const faqsQuery = `
-      SELECT question, answer 
-      FROM tbl_product_faqs
-      WHERE product_id = :product_id
-    `;
-    const faqs = await sequelize.query(faqsQuery, {
-      replacements: { product_id },
-      type: QueryTypes.SELECT
-    });
+      // Get Product FAQs
+      const faqsQuery = `
+        SELECT question, answer 
+        FROM tbl_product_faqs
+        WHERE product_id = :product_id
+      `;
+      const faqs = await sequelize.query(faqsQuery, {
+        replacements: { product_id },
+        type: QueryTypes.SELECT
+      });
 
-    // Get Product Screenshots
-    const screenshotsQuery = `
-      SELECT id, image 
-      FROM tbl_product_screenshots
-      WHERE product_id = :product_id
-    `;
-    const screenshots = await sequelize.query(screenshotsQuery, {
-      replacements: { product_id },
-      type: QueryTypes.SELECT
-    });
+      // Get Product Screenshots
+      const screenshotsQuery = `
+        SELECT id, image 
+        FROM tbl_product_screenshots
+        WHERE product_id = :product_id
+      `;
+      const screenshots = await sequelize.query(screenshotsQuery, {
+        replacements: { product_id },
+        type: QueryTypes.SELECT
+      });
 
-    // Get Product Videos
-    const videosQuery = `
-      SELECT id, video_url 
-      FROM tbl_product_videos
-      WHERE product_id = :product_id
-    `;
-    const videos = await sequelize.query(videosQuery, {
-      replacements: { product_id },
-      type: QueryTypes.SELECT
-    });
+      // Get Product Videos
+      const videosQuery = `
+        SELECT id, video_url 
+        FROM tbl_product_videos
+        WHERE product_id = :product_id
+      `;
+      const videos = await sequelize.query(videosQuery, {
+        replacements: { product_id },
+        type: QueryTypes.SELECT
+      });
 
-    // Combine all data
-    return {
-      ...product,
-      faqs,
-      screenshot: screenshots,
-      videos
-    };
+      // Combine all data
+      return {
+        ...product,
+        faqs,
+        screenshot: screenshots,
+        videos
+      };
+
+    } catch (error) {
+      console.error("PRODUCT QUERY ERROR:", error);
+      throw error;
+    }
 
   } catch (error) {
     console.error("Error in getProductDetail:", error);
@@ -102,7 +142,6 @@ export const geteditProductDetail = async (productId) => {
     });
 
     if (!product.length) return null;
-
     const productRow = product[0];
 
     // 2. Product image
