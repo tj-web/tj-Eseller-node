@@ -50,7 +50,7 @@ router.post("/features", saveProductFeature);
 router.get("/getfeatures", getProductFeatures);
 router.post("/addscreenshots", upload.array("screenshot", 5), addScreenshots);
 router.post("/addgallery", upload.array("image", 5), addGallery);
-router.post("/addvideos",  addVideo);
+router.post("/addvideos", addVideo);
 router.get("/ff", checkVendorProduct);
 router.get("/editproduct/:product_id", editProduct);
 router.post("/enrichment", upload.array("images", 10), enrichment);

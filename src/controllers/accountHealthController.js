@@ -6,7 +6,8 @@ import {
 
 export const getAccountHealth = async (req, res) => {
   try {
-    const vendorId = req.query.vendorId;
+    const vendorId = req.user.vendor_id; //  fixed !!
+
     if (!vendorId) {
       return res
         .status(400)

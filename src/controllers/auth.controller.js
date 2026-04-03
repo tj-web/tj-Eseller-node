@@ -1,93 +1,249 @@
 import { v4 as uuidv4 } from "uuid";
-import crypto from "crypto";
-import VendorAuth from "../models/vendorAuth.js";
+import VendorAuth from "../models/auth/vendorAuth.js";
 import Vendor from "../models/vendor.js";
-import redis from "../db/redisService.js";
+import { verifyEmailService } from "../services/emailService.js";
+import { verifyOtpService, sendOtpService } from "../services/otpService.js";
+import { AppError } from "../utilis/appError.js";
+import { findUserByEmail } from "../services/userService.js";
+
+import {
+  generateAuthTokens,
+  createLoginHistory,
+  verifyPassword,
+  registerVendor,
+  resetPasswordService,
+  forgotPasswordService,
+  changePasswordService,
+  logoutService,
+} from "../services/authService.js";
+import LoginHistory from "../models/auth/loginHistory.js";
 
 VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
-export const login = async (req, res) => {
+/* ======================================================
+   LOGIN CONTROLLER
+====================================================== */
+export const login = async (req, res, next) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
 
-  if (rememberme == 0) {
-    return res.status(400).json({ message: "Please select 'remember me'" });
-  }
-
-  if (frmtype !== "vendor_login") {
-    return res.status(400).json({ message: "Invalid form type" });
-  }
+  const ip =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const deviceId = req.headers["x-device-id"] || null;
 
   try {
-    const user = await VendorAuth.findOne({
-      where: { email: username },
-      include: [{ model: Vendor }],
-    });
+    const user = await findUserByEmail(username);
 
     if (!user) {
-      return res
-        .status(400)
-        .json({ message: "Invalid credentials: user not found" });
+      throw new AppError("Invalid credentials", 400);
     }
 
-    const hashedPassword = crypto
-      .createHash("md5")
-      .update(userpassword)
-      .digest("hex");
+    // PASSWORD CHECK
+    const isValid = await verifyPassword(userpassword, user.password);
 
-    if (user.password !== hashedPassword) {
-      return res
-        .status(400)
-        .json({ message: "Invalid credentials: wrong password", status: 2 });
+    if (!isValid) {
+      throw new AppError("Invalid credentials", 400);
     }
 
-    if (user.vendor.status === 0 || user.vendor.auth_status === 0) {
-      return res
-        .status(403)
-        .json({ message: "Account disabled. Contact admin.", status: 2 });
+    if (user.Vendor.status === 0) {
+      throw new AppError("Account disabled", 403);
     }
 
-    const sessionId = uuidv4();
+    const { accessToken, refreshToken } = generateAuthTokens(user);
 
-    const sessionData = {
-      vendor_id: user.vendor_id,
-      profile_id: user.id,
-      v_name: user.first_name,
-      v_lname: user.last_name,
-      v_email: user.email,
-      v_dial_code: user.dial_code,
-      v_number: user.phone,
-      is_temp_account: user.vendor.is_temp,
-      vendor_mode: user.vendor.vendor_mode,
-      v_created: user.created_at,
-      v_current_plan_data: user.vendor.show_current_plan_data,
-      v_email_verified: user.vendor.email_verified,
-    };
+    await createLoginHistory(user, ip, deviceId, refreshToken);
 
-    await redis.set(`ci_session:${sessionId}`, JSON.stringify(sessionData), {
-      EX: 7 * 24 * 60 * 60, // 7 days
-    });
-
-    const check = await redis.get(`ci_session:${sessionId}`);
-    console.log("Session stored in Redis:", check);
-    console.log(`ci_session:${sessionId}`);
-    res.cookie("session_token", sessionId, {
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("access_token", accessToken, {
       httpOnly: true,
-      secure: false,
+      secure: isProd,
       sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 15 * 60 * 1000,
     });
 
-    res.status(200).json({
+    res.cookie("refresh_token", refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 10 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
       message: "Login successful",
       status: 1,
       user: {
-        id: user.id,
+        id: user.vendor_id,
         email: user.email,
-        name: `${user.first_name} ${user.last_name}`,
+        name: `${user.Vendor?.first_name} ${user.Vendor?.last_name}`,
       },
     });
   } catch (error) {
-    console.error("Error during login:", error.message);
-    res.status(500).json({ message: "Internal Server Error" });
+    next(error);
+  }
+};
+
+/* ======================================================
+   SIGNUP CONTROLLER
+====================================================== */
+
+export const signup = async (req, res, next) => {
+  try {
+    const result = await registerVendor(req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// // *******************************************************************
+// FORGOT PASSWORD CONTROLLER
+//  ************************************************************************
+
+export const forgotPassword = async (req, res, next) => {
+  const { email } = req.body;
+
+  try {
+    await forgotPasswordService(email);
+
+    return res.status(200).json({
+      message: "Please check your Email.",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resetPassword = async (req, res, next) => {
+  const { new_password, confirm_password } = req.body;
+  const rawToken = req.query.token;
+
+  const token = rawToken
+    ? decodeURIComponent(rawToken).replace(/^"|"$/g, "").trim()
+    : null;
+
+  try {
+    await resetPasswordService(token, new_password);
+
+    return res.status(200).json({
+      message: "Password reset successful",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* ======================================================
+   LOGOUT CONTROLLER
+====================================================== */
+export const logOut = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies.refresh_token;
+
+    if (refreshToken) {
+      await logoutService(refreshToken);
+    }
+
+    const isProd = process.env.NODE_ENV === "production";
+    res.clearCookie("access_token", {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+    });
+    res.clearCookie("refresh_token", {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+    });
+
+    return res.status(200).json({
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* ======================================================
+    CHANGE PASSWORD CONTROLLER
+====================================================== */
+export const changePassword = async (req, res, next) => {
+  const { old_password, new_password } = req.body;
+
+  try {
+    const vendorId = req.user?.vendor_id;
+
+    await changePasswordService(vendorId, old_password, new_password);
+
+    return res.status(200).json({
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const verifyEmail = async (req, res, next) => {
+  try {
+    const token = req.query.token;
+
+    await verifyEmailService(token);
+
+    return res.status(200).json({
+      message: "Email verified successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* ======================================================
+    OTP CONTROLLERS
+====================================================== */
+
+export const sendOtp = async (req, res, next) => {
+  const { phone_number } = req.body;
+
+  try {
+    await sendOtpService(phone_number);
+
+    return res.status(200).json({
+      message: "OTP sent successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const verifyOtp = async (req, res, next) => {
+  const { phone_number, otp } = req.body;
+
+  const ip =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+  const deviceId = req.headers["x-device-id"] || null;
+
+  try {
+    const result = await verifyOtpService(phone_number, otp, ip, deviceId);
+
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("access_token", result.accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie("refresh_token", result.refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 10 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      message: "Login successful via OTP",
+      user: result.user,
+    });
+  } catch (error) {
+    next(error);
   }
 };
