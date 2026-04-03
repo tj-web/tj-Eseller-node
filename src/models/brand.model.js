@@ -58,6 +58,8 @@ ORDER BY :orderby :order
 
 LIMIT :offset, :limit;`;
 
+  //console.log(sql);
+
   const results = await sequelize.query(sql, {
     replacements: {
       vendor_id,
@@ -74,7 +76,45 @@ LIMIT :offset, :limit;`;
   return results;
 }
 
-/****************************get brands details*************************************/
+/****************************get vendor brand counts by status*************************************/
+
+export async function get_vendor_brands_count(vendor_id, srch_brand_name = "") {
+  let whereCondition = `vbr.vendor_id = :vendor_id AND vbr.tbl_brand_id != 0`;
+  const replacements = { vendor_id };
+
+  if (srch_brand_name) {
+    whereCondition += ` AND tb.brand_name LIKE :srch_brand_name`;
+    replacements.srch_brand_name = srch_brand_name;
+  }
+
+  const sql = `
+    SELECT
+      vbr.status,
+      COUNT(*) AS count
+    FROM vendor_brand_relation AS vbr
+    LEFT JOIN tbl_brand AS tb ON tb.brand_id = vbr.tbl_brand_id
+    WHERE ${whereCondition}
+    GROUP BY vbr.status
+  `;
+
+  const rows = await sequelize.query(sql, {
+    replacements,
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const counts = { all: 0, pending: 0, approved: 0, declined: 0 };
+  for (const row of rows) {
+    const n = Number(row.count) || 0;
+    counts.all += n;
+    if (row.status === 0) counts.pending += n;
+    else if (row.status === 1) counts.approved += n;
+    else if (row.status === 2) counts.declined += n;
+  }
+
+  return counts;
+}
+
+/****************************get brand details*************************************/
 
 export const get_brand_by_id = async (vendor_id, brand_id) => {
   const query = `
@@ -173,8 +213,8 @@ export const tbl_brand_Cols = {
 //         .join(", ");
 
 //       await sequelize.query(
-//         `UPDATE tbl_brand 
-//          SET ${setClause} 
+//         `UPDATE tbl_brand
+//          SET ${setClause}
 //          WHERE id = :brand_id`,
 //         {
 //           replacements: { ...save, brand_id },
@@ -224,7 +264,7 @@ export async function saveBrand(save, transaction, brand_id = "") {
           replacements: { ...save, brand_id },
           type: sequelize.QueryTypes.UPDATE,
           transaction,
-        }
+        },
       );
 
       return brand_id;
@@ -241,7 +281,7 @@ export async function saveBrand(save, transaction, brand_id = "") {
           replacements: save,
           type: sequelize.QueryTypes.INSERT,
           transaction,
-        }
+        },
       );
 
       return insertId; //  this is the primary key of the new row
@@ -252,12 +292,10 @@ export async function saveBrand(save, transaction, brand_id = "") {
   }
 }
 
-
 /*****************save brand info ********************* */
 
 export const saveBrandInfo = async (save, transaction) => {
   try {
-    
     const keys = Object.keys(save).join(", ");
     const values = Object.keys(save)
       .map((key) => `:${key}`)
@@ -271,7 +309,6 @@ export const saveBrandInfo = async (save, transaction) => {
       transaction,
     });
 
-    
     return result;
   } catch (error) {
     console.error("Error in saveBrandInfo:", error);
@@ -286,7 +323,7 @@ export const saveVendorRelationBrand = async (vendorId, brandId) => {
       tbl_brand_id: brandId,
       status: 0,
       is_requested: 0,
-      created_at: new Date(), 
+      created_at: new Date(),
     };
 
     const keys = Object.keys(vendorBrandRelation).join(", ");
@@ -318,13 +355,12 @@ export const updateVendorLogs = async (
   status,
   action,
   module,
-  transaction
+  transaction,
 ) => {
   try {
     let insertArray = [];
     let updateArray = [];
 
-    
     const vendorLogDetails = await sequelize.query(
       `
       SELECT id, column_name, linked_attribute
@@ -335,10 +371,9 @@ export const updateVendorLogs = async (
         replacements: { itemId, module },
         type: sequelize.QueryTypes.SELECT,
         transaction,
-      }
+      },
     );
 
-  
     const unacceptedChanges = {};
     const unacceptedChangesIds = {};
 
@@ -359,11 +394,10 @@ export const updateVendorLogs = async (
       "type",
     ];
 
-    
     for (const [tableName, columns] of Object.entries(updateArr)) {
       const pKey = columns.p_key;
       const updateIdVal = columns.update_id;
-     
+
       let linkedAttr = "";
       if (vendorLogDetails.length > 0 && vendorLogDetails[0].linked_attribute) {
         linkedAttr = vendorLogDetails[0].linked_attribute;
@@ -403,13 +437,13 @@ export const updateVendorLogs = async (
         }
       }
     }
-   
+
     if (insertArray.length > 0) {
       const keys = Object.keys(insertArray[0]);
       const values = insertArray
         .map(
           (row) =>
-            `(${keys.map((key) => sequelize.escape(row[key])).join(", ")})`
+            `(${keys.map((key) => sequelize.escape(row[key])).join(", ")})`,
         )
         .join(", ");
 
@@ -417,10 +451,9 @@ export const updateVendorLogs = async (
         INSERT INTO vendor_logs (${keys.join(", ")})
         VALUES ${values}
       `;
-      await sequelize.query(query,{transaction});
+      await sequelize.query(query, { transaction });
     }
 
-    
     if (updateArray.length > 0) {
       for (const row of updateArray) {
         await sequelize.query(
@@ -433,8 +466,8 @@ export const updateVendorLogs = async (
           {
             replacements: row,
             type: sequelize.QueryTypes.UPDATE,
-            transaction
-          }
+            transaction,
+          },
         );
       }
     }
@@ -448,24 +481,39 @@ export const updateVendorLogs = async (
 
 /*******************view brand details ********************/
 
-export const viewBrand = async (brand_id) => {
+export const viewBrand = async (brand_id, vendor_id) => {
   try {
-    if (!brand_id) {
+    if (!brand_id || !vendor_id) {
       return false;
     }
 
     const [brandDetail] = await sequelize.query(
       `
-      SELECT brand_name, description, image, status
-      FROM tbl_brand
-      WHERE brand_id = :brand_id
-      AND is_deleted = 0
+      SELECT 
+          b.brand_name,
+          b.description,
+          b.image,
+          b.status,
+          tbi.information,
+          tbi.founded_on,
+          tbi.founders,
+          tbi.company_size,
+          tbi.location,
+          tbi.industry
+      FROM tbl_brand as b
+      INNER JOIN vendor_brand_relation as vbr 
+          ON vbr.tbl_brand_id = b.brand_id
+      LEFT JOIN tbl_brand_info as tbi 
+          ON tbi.tbl_brand_id = b.brand_id
+      WHERE b.brand_id = :brand_id
+          AND vbr.vendor_id = :vendor_id
+          AND b.is_deleted = 0
       LIMIT 1
       `,
       {
-        replacements: { brand_id },
+        replacements: { brand_id, vendor_id },
         type: sequelize.QueryTypes.SELECT,
-      }
+      },
     );
 
     if (!brandDetail) {
@@ -481,17 +529,14 @@ export const viewBrand = async (brand_id) => {
       {
         replacements: { brand_id },
         type: sequelize.QueryTypes.SELECT,
-      }
+      },
     );
 
     const locArr = brandLoc.map((loc) => loc.location_id);
 
     const data = {
+      ...brandDetail,
       active_tab: "view_brand",
-      brand_name: brandDetail.brand_name,
-      description: brandDetail.description,
-      image: brandDetail.image,
-      status: brandDetail.status,
       brand_location: brandLoc,
       location_ids: locArr,
     };
@@ -514,7 +559,7 @@ export const getBrandLocation = async (brand_id) => {
       {
         replacements: { brand_id },
         type: sequelize.QueryTypes.SELECT,
-      }
+      },
     );
 
     return brandLocations;
@@ -524,18 +569,22 @@ export const getBrandLocation = async (brand_id) => {
   }
 };
 
-export const updateBrandinfo = async (brandId, brandSave, brandDetail, image = null, old_image = null) => {
+export const updateBrandinfo = async (
+  brandId,
+  brandSave,
+  brandDetail,
+  image = null,
+  old_image = null,
+) => {
   try {
     if (!brandId) return { message: "Brand ID required" };
 
-    
     let imgPath = old_image;
     if (image) {
       imgPath = uploadfile2(image);
     }
     brandSave.image = imgPath;
 
-   
     const brandDiff = {};
     for (let key in brandSave) {
       if (brandSave[key] != brandDetail[key]) {
@@ -543,7 +592,6 @@ export const updateBrandinfo = async (brandId, brandSave, brandDetail, image = n
       }
     }
 
-    
     if (Object.keys(brandDiff).length === 0) {
       return { message: "No changes detected" };
     }
@@ -560,11 +608,10 @@ export const updateBrandinfo = async (brandId, brandSave, brandDetail, image = n
             brand_name: brandDiff.brand_name || null,
             brand_image: brandDiff.image || null,
           },
-        }
+        },
       );
     }
 
-  
     if (
       brandDiff.founded_on ||
       brandDiff.founders ||
@@ -592,7 +639,7 @@ export const updateBrandinfo = async (brandId, brandSave, brandDetail, image = n
             industry: brandDiff.industry || null,
             information: brandDiff.information || null,
           },
-        }
+        },
       );
     }
 
@@ -602,4 +649,3 @@ export const updateBrandinfo = async (brandId, brandSave, brandDetail, image = n
     throw err;
   }
 };
-

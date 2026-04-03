@@ -5,6 +5,7 @@ import {
 import {
   get_brand_by_id,
   get_vendor_brands,
+  get_vendor_brands_count,
   getBrandLocation,
   saveBrand,
   saveBrandInfo,
@@ -50,6 +51,29 @@ export const getBrands = async (req, res) => {
   }
 };
 
+/*******  brand counts by status (for tab badges)   ******/
+
+export const getBrandsCount = async (req, res) => {
+  try {
+    const { vendor_id, srch_brand_name = "" } = req.query;
+
+    if (!vendor_id) {
+      return res.status(400).json({
+        success: false,
+        message: "vendor_id is required",
+      });
+    }
+
+    const counts = await get_vendor_brands_count(vendor_id, srch_brand_name);
+    return res.status(200).json(counts);
+  } catch (error) {
+    console.error("Error fetching brand counts:", error);
+    return res
+      .status(500)
+      .json({ message: "Internal Server Error in brand counts" });
+  }
+};
+
 /****** Helper function for checking brand name availability ******/
 
 export const checkBrand = async (req, res) => {
@@ -70,7 +94,6 @@ export const checkBrand = async (req, res) => {
 /*******  Main controller for adding a new brand  *******/
 
 export const addBrand = async (req, res) => {
-
   const t = await sequelize.transaction();
   try {
     const is_available = await checkBrandName(req.body.brand_name);
@@ -81,21 +104,12 @@ export const addBrand = async (req, res) => {
     }
     let save_brand_data = {
       brand_name: req.body.brand_name,
-      image: req.file ?req.file.originalname: "",
+      image: req.file ? req.file.originalname : "",
       date_added: getCurrentDateTime(),
       status: 0,
       added_by: "vendor",
       added_by_id: req.body.vendor_id,
-      image_name: "",
-      brand_onboarded: 0,
-      part_agree_date: getCurrentDateTime(),
-      vendor_sheet_rec: 0,
-      tj_agree_by_oem: 0,
-      oem_agree_by_tj: 0,
-      lead_locking: 0,
-      onboard_last_updated: getCurrentDateTime(),
-      oem_onboarded_date: getCurrentDateTime(),
-      declined_by: 1,
+      show_status: 0,
     };
 
     const save = { ...save_brand_data, ...tbl_brand_Cols };
@@ -115,14 +129,16 @@ export const addBrand = async (req, res) => {
 
     await saveBrandInfo(save_brand_info_data, t);
     const fileName = req.file ? req.file.originalname : "";
-    const fileobj = req.file?
-    {...req.file,
-      key: `web/assets/images/techjockey/brands/${fileName}`}: null ;
-    const brand_image = fileobj?await uploadfile2(fileobj):"";
+    const fileobj = req.file
+      ? { ...req.file, key: `web/assets/images/techjockey/brands/${fileName}` }
+      : null;
+    const brand_image = fileobj
+      ? await uploadfile2({ ...fileobj, key: fileobj.originalname })
+      : "";
 
     await saveVendorRelationBrand(
       req.body.vendor_id,
-      save_brand_info_data.tbl_brand_id
+      save_brand_info_data.tbl_brand_id,
     );
 
     save_brand_data.brand_image = `${save_brand_info_data.tbl_brand_id}_${save_brand_data.image}`;
@@ -147,7 +163,7 @@ export const addBrand = async (req, res) => {
       0,
       "insert",
       "brand",
-      t
+      t,
     );
     save_brand_info_data["Brand Name"] = req.body.brand_name;
     save_brand_info_data["Brand Image"] = brand_image;
@@ -163,7 +179,7 @@ export const addBrand = async (req, res) => {
 
 /*********  Controller for editing/updating the existing brand ***********/
 
-export const updateBrandController = async (req, res) => {
+export const updateBrand = async (req, res) => {
   try {
     const { vendor_id } = req.body;
     const { brand_id } = req.params;
@@ -196,7 +212,7 @@ export const updateBrandController = async (req, res) => {
 
     let imageUrl = null;
     if (req.file) {
-      imageUrl = await uploadfile2(req.file);
+      imageUrl = await uploadfile2({ ...req.file, key: req.file.originalname });
     }
 
     const brandSave = {
@@ -220,7 +236,7 @@ export const updateBrandController = async (req, res) => {
             brand_image: brandDiff.image?.new || "",
             p_key: "brand_id",
             update_id: brand_id,
-          }).filter(([_, v]) => v !== "")
+          }).filter(([_, v]) => v !== ""),
         ),
 
         tbl_brand_info: Object.fromEntries(
@@ -233,7 +249,7 @@ export const updateBrandController = async (req, res) => {
             information: brandDiff.information?.new || "",
             p_key: "id",
             update_id: brandDetails.tbl_info_id,
-          }).filter(([_, v]) => v !== "")
+          }).filter(([_, v]) => v !== ""),
         ),
       };
 
@@ -242,9 +258,8 @@ export const updateBrandController = async (req, res) => {
         brand_id,
         vendor_id,
         0,
-        brand_id,
         "updated",
-        "brand"
+        "brand",
       );
     }
 
@@ -266,12 +281,21 @@ export const updateBrandController = async (req, res) => {
 
 export const view_brand = async (req, res) => {
   const { brand_id } = req.params;
-  const brandDetails = await viewBrand(brand_id);
+  const { action, vendor_id = 1 } = req.query;
+
+  let brandDetails;
+
+  if (action === "edit") {
+    brandDetails = await get_brand_by_id(vendor_id, brand_id);
+  } else {
+    brandDetails = await viewBrand(brand_id, vendor_id);
+  }
+
   const location = await getBrandLocation(brand_id);
   const result = { ...brandDetails, brand_location: location };
-  if (!result)
+  if (!result || !brandDetails)
     return res
-      .status(200)
+      .status(404)
       .json({ success: false, message: "INVALID BRAND ID" });
   return res.status(200).json({ success: true, data: result });
 };
