@@ -3,6 +3,7 @@ import {
   fetchVendorProducts,
   brand_arr,
   basicDetails,
+  searchCategories,
   ProductSpecification,
   saveProductFeature,
   getProductFeatures,
@@ -25,6 +26,7 @@ const upload = multer({ storage });
 router.get("/product_list", fetchVendorProducts);
 router.get("/leadId", brand_arr);
 router.get("/vv/:product_id", viewProduct);
+router.get("/categories", searchCategories);
 
 router.post(
   "/adddetail",

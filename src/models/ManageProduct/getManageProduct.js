@@ -119,3 +119,36 @@ export const getProductList = async (
 
 
 
+// ----------------------------------------GetCategoryList----------------------------
+
+export const getCategoryList = async (search = "", limit = 20, offset = 0) => {
+  const safeLimit  = parseInt(limit)  || 20;
+  const safeOffset = parseInt(offset) || 0;
+
+  let sql = `
+    SELECT category_id, category_name, parent_id
+    FROM tbl_category
+    WHERE status = 1
+    AND show_status = 1
+    AND is_deleted = 0
+  `;
+
+  sql += " AND category_id != 1 AND category_id != 491";
+
+  const replacements = {};
+
+  if (search.trim()) {
+    sql += " AND category_name LIKE :search";
+    replacements.search = `${search.trim()}%`;
+  }
+
+  sql += " ORDER BY category_name ASC";
+  sql += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+
+  const results = await sequelize.query(sql, {
+    replacements,
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  return results;
+};

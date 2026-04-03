@@ -7,6 +7,7 @@ import {
   getProductList,
   getVendorBrands,
   getVendorBrandsDetails,
+  getCategoryList,
 } from "../models/ManageProduct/getManageProduct.js";
 import {
   getSelectedColumns,
@@ -95,6 +96,24 @@ export const fetchVendorProducts = async (req, res) => {
   } catch (error) {
     console.error("Error fetching vendor products:", error.message);
     res.status(500).json({ status: false, message: "Internal Server Error" });
+  }
+};
+
+// search categories of products
+export const searchCategories = async (req, res) => {
+  try {
+    const { search = "", limit = 20, offset = 0 } = req.query;
+
+    const categories = await getCategoryList(search, limit, offset);
+    console.log("Fetched categories:", categories); // Debug log
+
+    return res.status(200).json({
+      success: true,
+      categories: categories,
+    });
+  } catch (error) {
+    console.error("Error fetching categories:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -229,6 +248,63 @@ export const basicDetails = async (req, res) => {
           type: sequelize.QueryTypes.UPDATE,
         }
       );
+    }
+
+    // Save product category association
+    if (post?.product_category) {
+      // Verify product was created successfully
+      if (!productId) {
+        throw new Error("Product ID verification failed - cannot insert categories");
+      }
+      const categories = Array.isArray(post.product_category) ? post.product_category : [post.product_category];
+
+      // Delete old mapping if exists
+      await sequelize.query(
+        `DELETE FROM tbl_product_category WHERE product_id = :productId`,
+        {
+          replacements: { productId },
+          type: sequelize.QueryTypes.DELETE,
+        }
+      );
+
+      // Insert new mappings
+      for (let index = 0; index < categories.length; index++) {
+        const categoryId = categories[index];
+        if (categoryId) {
+          // Fetch parent_id from tbl_category
+          const [categoryData] = await sequelize.query(
+            `SELECT parent_id FROM tbl_category WHERE category_id = :categoryId AND status = 1 AND show_status = 1
+    AND is_deleted = 0`,
+            {
+              replacements: { categoryId },
+              type: sequelize.QueryTypes.SELECT,
+            }
+          );
+
+          if (!categoryData) {
+            console.warn(`Category ${categoryId} not found or inactive, skipping...`);
+            continue;
+          }
+
+          const parentId = categoryData.parent_id;
+
+          // Insert with correct SQL syntax
+          await sequelize.query(
+            `INSERT INTO tbl_product_category (product_id, parent_id, category_id, sort_order, is_primary) 
+             VALUES (:productId, :parentId, :categoryId, :sortOrder, :isPrimary)`,
+            {
+              replacements: {
+                productId,
+                categoryId,
+                parentId,        // ✅ Properly bound parameter
+                sortOrder: 0,
+                isPrimary: 1
+              },
+              type: sequelize.QueryTypes.INSERT,
+            }
+          );
+        }
+      }
     }
 
     res.status(201).json({
@@ -381,7 +457,7 @@ export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
     const files = req.files; // depends on multer config
-let alt_text = req.body.alt_text; // can be string or array 
+    let alt_text = req.body.alt_text; // can be string or array 
 
     if (!product_id || !files || files.length === 0) {
       return res
@@ -396,7 +472,7 @@ let alt_text = req.body.alt_text; // can be string or array
       records: "all", // fetch ALL instead of single
     });
 
-  
+
     // Ensure alt_text is always an array
     let altArray = [];
     if (Array.isArray(alt_text)) {
@@ -649,9 +725,8 @@ export const enrichment = async (req, res) => {
       if (typeCount[t] < 4) {
         return res.status(400).json({
           success: false,
-          message: `Please upload at least 4 images for type ${
-            Number(t) === 1 ? "desktop" : "mobile"
-          }`,
+          message: `Please upload at least 4 images for type ${Number(t) === 1 ? "desktop" : "mobile"
+            }`,
         });
       }
     }
