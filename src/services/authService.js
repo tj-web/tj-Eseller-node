@@ -1,12 +1,15 @@
-// this file contains all auth related services , and session related services too
+// this file contains all auth related services
 import { hashPassword, generateToken } from "../helpers/cryptoHelper.js";
-import redis from "../db/redisService.js";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import {
   isEmailExists,
   isPhoneExists,
   createVendor,
   createVendorAuth,
   findUserByEmail,
+  createVendorDetails,
+  createVendorLeads,
 } from "./userService.js";
 import {
   sendVerificationEmail,
@@ -80,48 +83,26 @@ export const resetPasswordService = async (token, newPassword) => {
 };
 // ******************************************************
 
-export const logoutService = async (sessionId) => {
-  if (!sessionId) {
+export const logoutService = async (refreshToken) => {
+  if (!refreshToken) {
     return { message: "Already logged out", expired: true };
   }
 
-  const sessionData = await redis.get(`ci_session:${sessionId}`);
-
-  if (!sessionData) {
-    return {
-      message: "Session already expired",
-      expired: true,
-    };
-  }
-
-  let parsed;
   try {
-    parsed = JSON.parse(sessionData);
-  } catch {
-    parsed = null;
-  }
+    const record = await LoginHistory.findOne({
+      where: { auth_token: refreshToken }
+    });
 
-  const vendorId = parsed?.vendor_id;
-
-  try {
-    await redis.del(`ci_session:${sessionId}`);
-
-    if (vendorId) {
-      await redis.sRem(`vendor_sessions:${vendorId}`, sessionId);
+    if (!record) {
+      return { message: "Session already expired", expired: true };
     }
+
+    await LoginHistory.update(
+      { login_status: 0, auth_token: null },
+      { where: { id: record.id } }
+    );
   } catch (err) {
-    console.error("Redis cleanup error:", err);
-  }
-
-  if (parsed?.login_history_id) {
-    try {
-      await LoginHistory.update(
-        { login_status: 0 },
-        { where: { id: parsed.login_history_id } }
-      );
-    } catch (e) {
-      console.error("Login history update error:", e);
-    }
+    console.error("Login history update error:", err);
   }
 
   return {
@@ -137,7 +118,7 @@ export const forgotPasswordService = async (email) => {
   const user = await findUserByEmail(normalizedEmail);
 
   if (!user) {
-   throw new AppError("User not found", 400);
+    throw new AppError("User not found", 400);
   }
 
   const { token } = generateToken();
@@ -181,8 +162,9 @@ export const registerVendor = async (data) => {
     dial_code,
     contact_number,
     password,
+    company_name,
   } = data;
-    
+
   const normalizedEmail = email.trim().toLowerCase();
   // PHONE
   const countryMap = {
@@ -191,7 +173,7 @@ export const registerVendor = async (data) => {
     "+44": "en-GB",
   };
 
-    const locale = countryMap[dial_code];
+  const locale = countryMap[dial_code];
 
   if (!locale) {
     throw new AppError("Unsupported country code", 400);
@@ -238,16 +220,18 @@ export const registerVendor = async (data) => {
         password: hashedPassword,
 
         vendor_type: 1,
-        signup_progress: 0,
+        signup_progress: 2,
 
         email_verified: 0,
         status: 1,
-        admin_verified: 0,
+        admin_verified: 1,
         is_deleted: 0,
+        is_temp: 1,
 
         app_dec_comment: "",
         show_popup_date: new Date(),
-        registration_source: "website",
+        registration_source: "1",
+        creation_source: 1,
 
         created_at: new Date(),
       },
@@ -263,7 +247,7 @@ export const registerVendor = async (data) => {
         email: normalizedEmail,
 
         dial_code,
-        phone:  number,
+        phone: number,
 
         password: hashedPassword,
 
@@ -275,13 +259,40 @@ export const registerVendor = async (data) => {
         status: 1,
         is_deleted: 0,
 
-        is_admin: 0,
+        is_admin: 1,
         is_acd: 1,
         admin_verified: 1,
 
         sort_order: 0,
       },
       transaction,
+    );
+
+    // Step 3: Create vendor_details
+    await createVendorDetails(
+      {
+        vendor_id: vendor.id,
+        company: company_name || "",
+        country: 99,
+      },
+      transaction
+    );
+
+    // Step 4: Create vendors_leads
+    await createVendorLeads(
+      {
+        vendor_id: vendor.id,
+        first_name,
+        last_name,
+        email: normalizedEmail,
+        dial_code,
+        phone: number,
+        created_at: new Date(),
+        creation_source: 1,
+        company: "NA",
+        is_deleted: 0,
+      },
+      transaction
     );
 
     // ✅ EMAILS
@@ -303,7 +314,7 @@ export const registerVendor = async (data) => {
       message:
         "Signup successful. Verification email sent , check your email !",
       vendor_id: vendor.id,
-      vendorAuth_id: vendorAuth.id,
+      profile_id: vendorAuth.id,
     };
   } catch (error) {
     await transaction.rollback();
@@ -311,111 +322,58 @@ export const registerVendor = async (data) => {
   }
 };
 
+
 /* =========================================
-   CREATE SESSION
+   GENERATE TOKENS
 ========================================= */
-export const createSession = async (user, loginHistoryId = null, sessionId) => {
-  const sessionData = {
+export const generateAuthTokens = (user) => {
+  if (!process.env.ACCESS_TOKEN_SECRET) {
+    throw new Error("Missing ACCESS_TOKEN_SECRET");
+  }
+  if (!process.env.REFRESH_TOKEN_SECRET) {
+    throw new Error("Missing REFRESH_TOKEN_SECRET");
+  }
+
+  const payload = {
     vendor_id: user.vendor_id,
-    profile_id: user.id,
+    profile_id: user.id || user.Vendor?.id,
     v_name: user.Vendor?.first_name,
     v_lname: user.Vendor?.last_name,
     v_email: user.email,
-    v_dial_code: user.dial_code,
-    v_number: user.phone,
-    is_temp_account: user.Vendor?.is_temp,
-    vendor_mode: user.Vendor?.vendor_mode,
-    v_created: user.created_at,
-    v_current_plan_data: user.Vendor?.show_current_plan_data,
-    v_email_verified: user.Vendor?.email_verified,
-    login_history_id: loginHistoryId,
   };
 
-  // store session
-  await redis.set(`ci_session:${sessionId}`, JSON.stringify(sessionData), {
-    EX: 7 * 24 * 60 * 60, // 7 days
-  });
+  const accessToken = jwt.sign(
+    payload,
+    process.env.ACCESS_TOKEN_SECRET,
+    { expiresIn: "15m" }
+  );
 
-  // track all sessions , redis set for vendor sessions
-  await redis.sAdd(`vendor_sessions:${user.vendor_id}`, sessionId);
-  return sessionId;
-};
-
-/* =========================================
-   SET COOKIE
-========================================= */
-export const setSessionCookie = (res, sessionId) => {
-  res.cookie("session_token", sessionId, {
-    httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-};
-
-/* =========================================
-   GET SESSION
-========================================= */
-export const getSession = async (sessionId) => {
-  if (!sessionId) return null;
-
-  const sessionData = await redis.get(`ci_session:${sessionId}`);
-
-  return sessionData ? JSON.parse(sessionData) : null;
-};
-
-/* =========================================
-   CLEAN INVALID SESSIONS
-========================================= */ // redis set cleanup  !!!!
-export const cleanInvalidSessions = async (vendorId) => {
-  const sessions = await redis.sMembers(`vendor_sessions:${vendorId}`);
-
-  for (const sessionId of sessions) {
-    const exists = await redis.exists(`ci_session:${sessionId}`);
-
-    if (!exists) {
-      await redis.sRem(`vendor_sessions:${vendorId}`, sessionId);
-    }
-  }
-};
-
-/* =========================================
-   DELETE SINGLE SESSION
-========================================= */
-export const destroySession = async (sessionId, vendorId) => {
-  await redis.del(`ci_session:${sessionId}`);
-  await redis.sRem(`vendor_sessions:${vendorId}`, sessionId);
-};
-
-/* =========================================
-   DELETE ALL SESSIONS
-========================================= */
-export const destroyAllSessions = async (vendorId) => {
-  const sessions = await redis.sMembers(`vendor_sessions:${vendorId}`);
-
-  if (!sessions.length) return;
-
-  const deletePromises = sessions.map((sId) => redis.del(`ci_session:${sId}`));
-
-  await Promise.all(deletePromises);
-
-  await redis.del(`vendor_sessions:${vendorId}`);
+  const refreshToken = jwt.sign(
+    { vendor_id: user.vendor_id, email: user.email },
+    process.env.REFRESH_TOKEN_SECRET,
+    { expiresIn: "10d" }
+  );
+  return { accessToken, refreshToken };
 };
 
 // ***************************** WILL ADD DATA TO LOGIN_HISTORY TABLE **********************
 
-export const createLoginHistory = async (user, ip, deviceId, sessionId) => {
+export const createLoginHistory = async (user, ip, deviceId, refreshToken, loginVia = "native_auth") => {
   try {
     const record = await LoginHistory.create({
       email_id: user.email,
       source: "website",
-      login_via: "native_auth",
+      login_via: loginVia,
       ip,
       device_id: deviceId,
       login_status: 1,
-      profile_id: user.id,
-      auth_token: sessionId,
+      profile_id: user.id || user.Vendor?.id,
+      auth_token: refreshToken,
     });
+
+    const now = new Date();
+    await VendorAuth.update({ last_login_date: now }, { where: { vendor_id: user.vendor_id } });
+    await Vendor.update({ last_login_date: now }, { where: { id: user.vendor_id } });
 
     return record.id;
   } catch (e) {
@@ -431,58 +389,22 @@ export const verifyPassword = async (inputPassword, dbPassword) => {
 };
 
 export const clearAllSessionsByVendorId = async (vendorId) => {
-  const sessions = await redis.sMembers(`vendor_sessions:${vendorId}`);
-
-  if (!sessions.length) return;
-
-  await LoginHistory.update(
-    {
-      login_status: 0,
-      auth_token: null,
-    },
-    {
-      where: {
-        auth_token: {
-          [Op.in]: sessions,
-        },
-      },
-    },
-  );
-
-  // 2. Delete Redis session keys
-  const deletePromises = sessions.map((sId) => redis.del(`ci_session:${sId}`));
-  await Promise.all(deletePromises);
-
-  // 3. Delete set
-  await redis.del(`vendor_sessions:${vendorId}`);
+  const user = await VendorAuth.findOne({ where: { vendor_id: vendorId } });
+  if (user) {
+    await LoginHistory.update(
+      { login_status: 0, auth_token: null },
+      { where: { email_id: user.email } }
+    );
+  }
 };
 
 export const changePasswordService = async (
-  sessionId,
+  vendorId,
   oldPassword,
   newPassword
 ) => {
-  if (!sessionId) {
-    throw new AppError("Unauthorized", 401);
-  }
-
-  const sessionData = await redis.get(`ci_session:${sessionId}`);
-
-  if (!sessionData) {
-    throw new AppError("Session expired", 401);
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(sessionData);
-  } catch {
-    throw new AppError("Invalid session", 401);
-  }
-
-  const vendorId = parsed?.vendor_id;
-
   if (!vendorId) {
-    throw new AppError("Invalid session", 401);
+    throw new AppError("Unauthorized", 401);
   }
 
   const user = await VendorAuth.findOne({

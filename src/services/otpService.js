@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import Otp from "../models/auth/otp.js";
 import { findUserByPhone } from "./userService.js";
 import { AppError } from "../utilis/appError.js";
-import { createLoginHistory ,createSession ,cleanInvalidSessions } from "./authService.js"; 
+import { createLoginHistory, generateAuthTokens } from "./authService.js";  
 
 /* =========================================
    SEND OTP
@@ -18,7 +18,8 @@ export const sendOtpService = async (phone_number) => {
   const user = await findUserByPhone(phone_number);
 
   if (!user) {
-    return true; // Don't reveal user existence
+    console.warn(`OTP Failed: Phone '${phone_number}' not found in database`);
+    throw new AppError("Account not found for this phone number", 404);
   }
 
   const now = new Date();
@@ -62,15 +63,21 @@ export const sendOtpService = async (phone_number) => {
   const otp = Math.floor(1000 + Math.random() * 9000);
   const validTill = new Date(now.getTime() + 5 * 60 * 1000);
 
-  await Otp.create({
-    phone_number,
-    otp,
-    created_date: now,
-    valid_till: validTill,
-    is_verified: 0,
-    otp_count: otpCount + 1,
-    msg: `Your OTP is ${otp}`,
-  });
+  try {
+    await Otp.create({
+      phone_number,
+      otp,
+      created_date: now,
+      valid_till: validTill,
+      is_verified: 0,
+      otp_count: otpCount + 1,
+      msg: `Your OTP is ${otp}`,
+    });
+    console.log(`Successfully saved OTP to DB for phone: ${phone_number}`);
+  } catch (err) {
+    console.error("Database error while creating OTP record:", err);
+    throw err;
+  }
 
   return true;
 };
@@ -127,22 +134,18 @@ if (!updated[0]) {
     throw new AppError("Invalid OTP", 400);
   }
 
-  await cleanInvalidSessions(user.vendor_id);
+  const { accessToken, refreshToken } = generateAuthTokens(user);
 
-  const sessionId = uuidv4();
-
-  const loginHistoryId = await createLoginHistory(
+  await createLoginHistory(
     user,
     ip,
     deviceId,
-    sessionId
+    refreshToken
   );
 
-
-  await createSession(user, loginHistoryId, sessionId);
-
   return {
-    sessionId,
+    accessToken,
+    refreshToken,
     user: {
       id: user.vendor_id,
       email: user.email,

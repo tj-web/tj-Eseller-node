@@ -29,8 +29,7 @@ import sequelize from "../db/connection.js";
 
 export const brand_arr = async (req, res) => {
   try {
-    const { vendor_id } = req.query;
-    // const vendor_id = req.user.vendor_id; // fixed !!
+    const vendor_id = req.user?.vendor_id;
 
     if (!vendor_id) {
       return res
@@ -58,8 +57,7 @@ export const brand_arr = async (req, res) => {
 
 export const fetchVendorProducts = async (req, res) => {
   try {
-    const vendor_id = req.user?.vendor_id || req.query.vendor_id;
-    // const vendor_id = req.user.vendor_id; // fixed !!
+    const vendor_id = req.user?.vendor_id;
     if (!vendor_id) {
       return res
         .status(400)

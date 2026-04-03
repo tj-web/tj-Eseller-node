@@ -3,16 +3,13 @@ import VendorAuth from "../models/auth/vendorAuth.js";
 import Vendor from "../models/vendor.js";
 import { verifyEmailService } from "../services/emailService.js";
 import { verifyOtpService, sendOtpService } from "../services/otpService.js";
-import {AppError} from "../utilis/appError.js";
+import { AppError } from "../utilis/appError.js";
 import {
   findUserByEmail,
 } from "../services/userService.js";
 
 import {
-  createSession,
-  setSessionCookie,
-  getSession,
-  cleanInvalidSessions,
+  generateAuthTokens,
   createLoginHistory,
   verifyPassword,
   registerVendor,
@@ -21,25 +18,26 @@ import {
   changePasswordService,
   logoutService,
 } from "../services/authService.js";
+import LoginHistory from "../models/auth/loginHistory.js";
 
 VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
 /* ======================================================
    LOGIN CONTROLLER
 ====================================================== */
-export const login = async (req, res , next) => {
+export const login = async (req, res, next) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
 
   const ip =
     req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-    const deviceId = req.headers["x-device-id"] || null;
+  const deviceId = req.headers["x-device-id"] || null;
 
   try {
     const user = await findUserByEmail(username);
 
-     if (!user) {
+    if (!user) {
       throw new AppError("Invalid credentials", 400);
-       }
+    }
 
     // PASSWORD CHECK
     const isValid = await verifyPassword(userpassword, user.password);
@@ -52,21 +50,29 @@ export const login = async (req, res , next) => {
       throw new AppError("Account disabled", 403);
     }
 
-    await cleanInvalidSessions(user.vendor_id);
+    const { accessToken, refreshToken } = generateAuthTokens(user);
 
-    const sessionId = uuidv4();
-
-    const loginHistoryId = await createLoginHistory(
+    await createLoginHistory(
       user,
       ip,
       deviceId,
-      sessionId,
+      refreshToken
     );
 
-    await createSession(user, loginHistoryId, sessionId);
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("access_token", accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 15 * 60 * 1000,
+    });
 
-    setSessionCookie(res, sessionId); // add secure when in production !
-    // to prevent csrf and xss attacks, also add sameSite attribute to cookie !
+    res.cookie("refresh_token", refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 10 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(200).json({
       message: "Login successful",
@@ -78,7 +84,7 @@ export const login = async (req, res , next) => {
       },
     });
   } catch (error) {
-     next(error);
+    next(error);
   }
 };
 
@@ -110,11 +116,11 @@ export const forgotPassword = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error); 
+    next(error);
   }
 };
 
-export const resetPassword = async (req, res , next) => {
+export const resetPassword = async (req, res, next) => {
   const { new_password, confirm_password } = req.body;
   const rawToken = req.query.token;
 
@@ -129,8 +135,8 @@ export const resetPassword = async (req, res , next) => {
       message: "Password reset successful",
     });
   } catch (error) {
-       next(error);
-    }
+    next(error);
+  }
 };
 
 /* ======================================================
@@ -138,15 +144,21 @@ export const resetPassword = async (req, res , next) => {
 ====================================================== */
 export const logOut = async (req, res, next) => {
   try {
-    const sessionId = req.cookies.session_token;
+    const refreshToken = req.cookies.refresh_token;
 
-    if (sessionId) {
-      await logoutService(sessionId);
+    if (refreshToken) {
+      await logoutService(refreshToken);
     }
 
-    res.clearCookie("session_token", {
+    const isProd = process.env.NODE_ENV === "production";
+    res.clearCookie("access_token", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProd,
+      sameSite: "lax",
+    });
+    res.clearCookie("refresh_token", {
+      httpOnly: true,
+      secure: isProd,
       sameSite: "lax",
     });
 
@@ -167,9 +179,9 @@ export const changePassword = async (req, res, next) => {
   const { old_password, new_password } = req.body;
 
   try {
-    const sessionId = req.cookies.session_token;
+    const vendorId = req.user?.vendor_id;
 
-    await changePasswordService(sessionId, old_password, new_password);
+    await changePasswordService(vendorId, old_password, new_password);
 
     return res.status(200).json({
       message: "Password changed successfully",
@@ -231,7 +243,20 @@ export const verifyOtp = async (req, res, next) => {
       deviceId
     );
 
-    setSessionCookie(res, result.sessionId);
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("access_token", result.accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie("refresh_token", result.refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 10 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(200).json({
       message: "Login successful via OTP",
