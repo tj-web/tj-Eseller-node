@@ -2,9 +2,10 @@ import { vendorOrders } from "../utilis/orders.utility.js";
 
 export const getOrders = async (req, res) => {
   try {
-    const { vendor_id } = req.query;
+    // const { vendor_id } = req.query;
+    const vendor_id = req.user.vendor_id; // fixed !!
 
-    const vendorId = +vendor_id;
+    // const vendorId = +vendor_id;
     const result = await vendorOrders({
       vendor_id,
     });

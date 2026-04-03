@@ -8,7 +8,8 @@ import {
 
 export const company_information = async (req, res) => {
   try {
-    const { profile_id } = req.body;
+    // const { profile_id } = req.body;
+    const profile_id = req.user.profile_id; // fixed !!
 
     let v_info = await getVendorData(parseInt(profile_id));
     if (!v_info) {
