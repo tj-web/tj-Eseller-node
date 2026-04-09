@@ -14,8 +14,11 @@ import {
 } from "../models/agreement.model.js";
 
 export const getAgreements = async (req, res) => {
-  const { vendor_id, profile_id } = req.body;
+  // const { vendor_id, profile_id } = req.body;
+  const vendor_id = req.user.vendor_id;
+  const profile_id = req.user.profile_id;
 
+// fixed both at top 
   const arr_designation = await getDesignation();
   const basic_data = await getVendorById(profile_id);
   const profile_data = await getVendorDetailById(vendor_id);
@@ -54,7 +57,10 @@ export const getAgreements = async (req, res) => {
 };
 
 export const agreementFormController = async (req, res)=>{
-  const { vendor_id, profile_id } = req.body;
+  // const { vendor_id, profile_id } = req.body;
+   const vendor_id = req.user.vendor_id;
+  const profile_id = req.user.profile_id;
+  
   const agreement_data = await getVendorAgreement(vendor_id, "WEB_VERSION");
   if (req.body.type === "agreement_form") {
     let form_data = {

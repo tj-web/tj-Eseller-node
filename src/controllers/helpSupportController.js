@@ -2,7 +2,8 @@ import { insertVendorHelpQuery } from "../models/help-Support/helpsupport.js";
 
 export const addHelpSupportQuery = async (req, res) => {
   try {
-    const { vendor_id, name, email, query } = req.body;
+    const {  name, email, query } = req.body;
+    const vendor_id = req.user.vendor_id; // fixed !!
 
     if (!vendor_id || !name || !email || !query) {
       return res.status(400).json({ success: false, message: "All fields are required" });

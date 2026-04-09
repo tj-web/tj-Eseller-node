@@ -26,7 +26,8 @@ export const totalLeadsCountInfo = async (req, res) => {
 // complete profile overview with the manager data
 export const getVendorOverview = async (req, res) => {
   try {
-    const { vendor_id } = req.query;
+    // const { vendor_id } = req.query;
+    const vendor_id = req.user.vendor_id; // fixed !!
 
     if (!vendor_id) {
       return res.status(400).json({ message: "vendor_id is required" });
@@ -93,7 +94,7 @@ import { analyticsInfo } from "../models/Dashboard/analytics.js";
 export const analyticsCount = async (req, res) => {
   try {
     const filter = {
-      vendor_id: req.query.vendor_id,
+      vendor_id: req.user.vendor_id, // fixed !!
       show_current_plan_data: req.query.show_current_plan_data || 0,
     };
 
@@ -109,8 +110,8 @@ import { getOemPlansWithRawSQL } from "../models/Dashboard/oemService.js";
 import { prepareOemPlansData } from "../helpers/oemHelper.js";
 
 export const fetchPlansInfo = async (req, res) => {
-  const { fetch_plans_info, vendor_id } = req.query;
-
+  const { fetch_plans_info } = req.query;
+    const vendor_id = req.user.vendor_id; // fixed !!
   if (fetch_plans_info == 1) {
     try {
       const rawPlans = await getOemPlansWithRawSQL(vendor_id);

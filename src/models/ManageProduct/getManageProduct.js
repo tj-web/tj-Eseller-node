@@ -18,6 +18,32 @@ export const getVendorBrands = async (vendor_id) => {
   return results.map(row => row.tbl_brand_id); // return brand_id array
 };
 
+// New function to get full brand details for product addition
+export const getVendorBrandsDetails = async (vendor_id) => {
+  const sql = `
+    SELECT
+      vbr.tbl_brand_id,
+      tb.brand_name,
+      tb.description,
+      tb.image,
+      tb.status AS brand_status,
+      vbr.status AS relation_status
+    FROM vendor_brand_relation AS vbr
+    INNER JOIN tbl_brand AS tb ON tb.brand_id = vbr.tbl_brand_id
+    WHERE vbr.tbl_brand_id != 0
+      AND vbr.vendor_id = :vendor_id
+      AND (vbr.status = 1 OR (tb.added_by = 'vendor' AND tb.added_by_id = :vendor_id))
+    ORDER BY tb.brand_name ASC
+  `;
+
+  const results = await sequelize.query(sql, {
+    replacements: { vendor_id },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  return results;
+};
+
 
 // ----------------------------------------GetProductList----------------------------
 

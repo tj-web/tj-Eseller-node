@@ -1,5 +1,3 @@
-
-
 import jwt from 'jsonwebtoken'
 
 const SECRET = 'myVerySecretKey'; 
