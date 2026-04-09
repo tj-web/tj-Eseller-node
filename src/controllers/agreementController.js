@@ -17,7 +17,6 @@ export const getAgreements = async (req, res) => {
   const vendor_id = req.body?.vendor_id || req.query?.vendor_id || req.user?.vendor_id;
   const profile_id = req.body?.profile_id || req.query?.profile_id || req.user?.profile_id;
 
-// fixed both at top 
   const arr_designation = await getDesignation();
   const basic_data = await getVendorById(profile_id);
   const profile_data = await getVendorDetailById(vendor_id);

@@ -18,7 +18,6 @@ import {
 import { uploadfile2 } from "../utilis/s3Uploader.js";
 import sequelize from "../db/connection.js";
 
-/*******   brand-list controller function   ******/
 
 export const getBrands = async (req, res) => {
   try {
@@ -31,7 +30,7 @@ export const getBrands = async (req, res) => {
       pagenumber,
     } = req.query;
    
-    const vendor_id = req.user.vendor_id; // fixed !!
+    const vendor_id = req.user.vendor_id; 
      
     const result = await get_vendor_brands({
       vendor_id,
@@ -51,8 +50,7 @@ export const getBrands = async (req, res) => {
   }
 };
 
-/****** Helper function for checking brand name availability ******/
-// can 2 vendors have same brand name ? if yes, then we need to pass vendor_id in the below function and exclude that vendor's brand while checking for name availability
+
 export const checkBrand = async (req, res) => {
   try {
     const { brand_id, brand_name } = req.body;
@@ -68,7 +66,6 @@ export const checkBrand = async (req, res) => {
   }
 };
 
-/*******  Main controller for adding a new brand  *******/
 
 export const addBrand = async (req, res) => {
 
@@ -86,7 +83,7 @@ export const addBrand = async (req, res) => {
       date_added: getCurrentDateTime(),
       status: 0,
       added_by: "vendor",
-      added_by_id: req.user.vendor_id,    // fixed !!
+      added_by_id: req.user.vendor_id, 
       image_name: "",
       brand_onboarded: 0,
       part_agree_date: getCurrentDateTime(),
@@ -122,7 +119,7 @@ export const addBrand = async (req, res) => {
     const brand_image = fileobj?await uploadfile2(fileobj):"";
 
     await saveVendorRelationBrand(
-      req.user.vendor_id,  // fixed !!
+      req.user.vendor_id,  
       save_brand_info_data.tbl_brand_id
     );
 
@@ -144,7 +141,7 @@ export const addBrand = async (req, res) => {
     await updateVendorLogs(
       updateArr,
       save_brand_info_data.tbl_brand_id,
-      req.user.vendor_id,  // fixed !!
+      req.user.vendor_id,
       0,
       "insert",
       "brand",
@@ -162,12 +159,10 @@ export const addBrand = async (req, res) => {
   }
 };
 
-/*********  Controller for editing/updating the existing brand ***********/
 
 export const updateBrandController = async (req, res) => {
   try {
-    // const { vendor_id } = req.body;
-    const vendor_id = req.user.vendor_id; // fixed !!
+    const vendor_id = req.user.vendor_id;
     const { brand_id } = req.params;
 
     if (!brand_id) {
@@ -242,7 +237,7 @@ export const updateBrandController = async (req, res) => {
       await updateVendorLogs(
         updateArr,
         brand_id,
-        req.user.vendor_id, // fixed !!
+        req.user.vendor_id,
         0,
         brand_id,
         "updated",
@@ -264,7 +259,6 @@ export const updateBrandController = async (req, res) => {
   }
 };
 
-/***********  controller for viewing an existing brand's information ***********/
 
 export const view_brand = async (req, res) => {
   const { brand_id } = req.params;

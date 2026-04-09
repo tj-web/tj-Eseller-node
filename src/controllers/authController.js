@@ -23,7 +23,7 @@ import LoginHistory from "../models/auth/loginHistory.js";
 VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
 /* ======================================================
-   LOGIN CONTROLLER
+   LOGIN FUNCTION
 ====================================================== */
 export const login = async (req, res, next) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
@@ -89,7 +89,7 @@ export const login = async (req, res, next) => {
 };
 
 /* ======================================================
-   SIGNUP CONTROLLER
+   SIGNUP
 ====================================================== */
 
 export const signup = async (req, res, next) => {
@@ -102,7 +102,7 @@ export const signup = async (req, res, next) => {
 };
 
 // // *******************************************************************
-// FORGOT PASSWORD CONTROLLER
+// FORGOT PASSWORD
 //  ************************************************************************
 
 export const forgotPassword = async (req, res, next) => {
@@ -140,7 +140,7 @@ export const resetPassword = async (req, res, next) => {
 };
 
 /* ======================================================
-   LOGOUT CONTROLLER
+   LOGOUT 
 ====================================================== */
 export const logOut = async (req, res, next) => {
   try {
@@ -173,7 +173,7 @@ export const logOut = async (req, res, next) => {
 
 
 /* ======================================================
-    CHANGE PASSWORD CONTROLLER
+    CHANGE PASSWORD
 ====================================================== */
 export const changePassword = async (req, res, next) => {
   const { old_password, new_password } = req.body;
@@ -208,7 +208,7 @@ export const verifyEmail = async (req, res, next) => {
 };
 
 /* ======================================================
-    OTP CONTROLLERS
+    OTP 
 ====================================================== */
 
 export const sendOtp = async (req, res, next) => {

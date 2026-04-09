@@ -1,7 +1,6 @@
 import { body, validationResult } from "express-validator";
 
 export const validateHelpSupportQuery = [
-   
     body("vendor_id")
         .optional()
         .isInt({ gt: 0 })

@@ -5,8 +5,7 @@ import { getDemosCount } from "../models/ManageLeads/myDemos.js";
 
 export const manageLeads = async (req, res) => {
   try {
-    // const vendor_id = req.query.vendor_id;
-    const vendor_id = req.user.vendor_id; // fixed !!
+    const vendor_id = req.user.vendor_id;
 
     if (!vendor_id) {
       return res.status(400).json({ error: "vendor_id is required" });

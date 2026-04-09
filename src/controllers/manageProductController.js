@@ -455,7 +455,6 @@ export const addGallery = async (req, res) => {
   try {
     const { title, description, product_id } = req.body;
     const files = req.files;
-    // console.log("Files received for gallery:", files);return;
 
     if (!files || files.length === 0) {
       return res
@@ -463,12 +462,11 @@ export const addGallery = async (req, res) => {
         .json({ message: "At least one image is required" });
     }
 
-    // Get existing gallery ids for this product
     const existingRows = await getSelectedCol({
       table: "tbl_description_gallery",
       columns: ["id"],
       where: { product_id: product_id },
-      records: "all", // fetch ALL instead of single
+      records: "all", 
     });
 
     const titleArr = Array.isArray(title) ? title : [title];
@@ -485,7 +483,7 @@ export const addGallery = async (req, res) => {
       const awsUrl = await uploadfile2({ ...file, key });
 
       uploadedFiles.push({
-        id: existingRows[i]?.id || null, // attach id if exists
+        id: existingRows[i]?.id || null,
         image: awsUrl,
         title: titleArr[i] || titleArr[0],
         description: descriptionArr[i] || descriptionArr[0],
@@ -508,7 +506,6 @@ export const addGallery = async (req, res) => {
 
 export const addVideo = async (req, res) => {
   try {
-    // console.log("Request body for videos:", req.body);return;
     const { product_id, data } = req.body;
 
     if (!product_id || !Array.isArray(data) || data.length === 0) {
@@ -516,8 +513,6 @@ export const addVideo = async (req, res) => {
         message: "Product ID and at least one video are required",
       });
     }
-
-    // Fetch all existing IDs for this product
     const existingRows = await getSelectedCol({
       table: "tbl_product_videos",
       columns: ["id"],
@@ -525,7 +520,6 @@ export const addVideo = async (req, res) => {
       records: "all",
     });
 
-    // Map videos with existing IDs if updating
     const videosToProcess = data.map((v, i) => ({
       id: existingRows[i]?.id || null,
       product_id,

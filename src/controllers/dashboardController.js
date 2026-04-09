@@ -26,7 +26,6 @@ export const totalLeadsCountInfo = async (req, res) => {
 // complete profile overview with the manager data
 export const getVendorOverview = async (req, res) => {
   try {
-    // const { vendor_id } = req.query;
     const vendor_id = req.user.vendor_id; // fixed !!
 
     if (!vendor_id) {
@@ -76,7 +75,7 @@ export const getVendorOverview = async (req, res) => {
       ? Math.round(scoreData.particular_score)
       : 0;
 
-    // Final merged response
+   
     return res.status(200).json({
       manager_data,
       profile_score: profileScore,

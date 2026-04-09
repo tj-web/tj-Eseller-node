@@ -32,7 +32,7 @@ const VendorReqQuery = sequelize.define(
   },
   {
     tableName: "vendor_req_query",
-    timestamps: false, // since you're manually handling created_at
+    timestamps: false, 
   }
 );
 
