@@ -47,7 +47,6 @@ export const validateSignup = [
     .isLength({ min: 8 })
     .withMessage("Password must be at least 8 characters"),
 
-  // 🔥 Block personal emails (same logic as service)
   body("email").custom((value) => {
     const blockedDomains = [
       "gmail.com",
@@ -66,7 +65,6 @@ export const validateSignup = [
     return true;
   }),
 
-  // 🔥 Final error handler
   (req, res, next) => {
     const errors = validationResult(req);
 

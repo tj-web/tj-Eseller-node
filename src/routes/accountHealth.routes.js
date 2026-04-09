@@ -2,7 +2,7 @@ import express from "express";
 import { getAccountHealth } from "../controllers/accountHealthController.js";
 const router = express.Router();
 
-router.get("/status", getAccountHealth);
+router.post("/status", getAccountHealth);
 
 
 export default router;

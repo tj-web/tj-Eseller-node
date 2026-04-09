@@ -3,7 +3,7 @@ import {
    login, signup, forgotPassword,
    logOut, resetPassword
    , changePassword, verifyEmail, sendOtp, verifyOtp
-} from "../controllers/auth.controller.js";
+} from "../controllers/authController.js";
 import { validateLogin } from "../validators/authValidators/loginValidation.js";
 import { validateSignup } from "../validators/authValidators/signupValidation.js";
 import { validateForgotPassword } from "../validators/authValidators/forgotPasswordValidation.js";

@@ -1,4 +1,3 @@
-// this file contains all auth related services
 import { hashPassword, generateToken } from "../helpers/cryptoHelper.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -191,7 +190,6 @@ export const registerVendor = async (data) => {
     throw new AppError("Invalid phone number", 400);
   }
 
-  // ✅ DB checks (business logic)
   if (await isEmailExists(normalizedEmail)) {
     throw new AppError("Your email is already registered", 400);
   }
@@ -295,7 +293,7 @@ export const registerVendor = async (data) => {
       transaction
     );
 
-    // ✅ EMAILS
+ 
     await sendVerificationEmail(normalizedEmail, token, vendor.id, transaction);
 
     await sendAdminNotification(

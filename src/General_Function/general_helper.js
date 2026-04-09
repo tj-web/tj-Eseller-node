@@ -64,6 +64,7 @@ export const updateRecord = async (table, where, data) => {
       .join(" AND ");
 
     const replacements = {};
+    
 
     Object.entries(data).forEach(([key, value]) => {
       replacements[`set_${key}`] = value;

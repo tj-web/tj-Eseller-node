@@ -1,5 +1,5 @@
 import { DataTypes } from "sequelize";
-import sequelize from "../../db/connection.js";
+import sequelize from "../db/connection.js";
 
 const Designation = sequelize.define(
   "Designation",
@@ -62,7 +62,7 @@ const Designation = sequelize.define(
   },
   {
     tableName: "tbl_designation",
-    timestamps: false, // DB handles timestamps
+    timestamps: false,
   }
 );
 

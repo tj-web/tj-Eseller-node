@@ -2,8 +2,7 @@ import {getVendorProductIds,getReviewsData,getAnalyticsData} from "../models/Acc
 
 export const getAccountHealth =  async (req, res) => {
  try {
-  const vendorId = req.user.vendor_id; //  fixed !!
-  
+  const vendorId = req.body.vendor_id; 
   if (!vendorId) {
     return res.status(400).json({ error: "vendorId query parameter is required" });
   }

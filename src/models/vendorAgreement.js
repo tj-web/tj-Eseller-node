@@ -1,5 +1,5 @@
 import { DataTypes } from "sequelize";
-import sequelize from "../../db/connection.js";
+import sequelize from "../db/connection.js";
 
 const VendorAgreement = sequelize.define(
   "VendorAgreement",

@@ -40,7 +40,7 @@ export const brand_arr = async (req, res) => {
     // Fetch full brand details for the vendor using the exact condition
     const brands = await getVendorBrandsDetails(vendor_id);
 
-    return res.status(200).json({
+    return res.status(200).json({ 
       status: true,
       message: "Brands fetched successfully",
       data: brands,

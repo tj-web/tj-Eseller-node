@@ -241,5 +241,3 @@ export const getAnalyticsData = async (filter) => {
     return { show_analytics: showAnalytics, analytics: [] };
   }
 };
-
-

@@ -1,14 +1,12 @@
 import { body, validationResult } from "express-validator";
 
 export const validateForgotPassword = [
-  // 🔸 Form type
   body("frmtype")
     .notEmpty()
     .withMessage("Form type is required")
     .equals("forget_password")
     .withMessage("Invalid form type"),
 
-  // 🔸 Email
   body("email")
     .notEmpty()
     .withMessage("Email is required")
@@ -19,7 +17,6 @@ export const validateForgotPassword = [
     .trim()
     .toLowerCase(),
 
-  // 🔥 Final error handler (same as yours)
   (req, res, next) => {
     const errors = validationResult(req);
 

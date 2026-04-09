@@ -11,12 +11,11 @@ import {
   getVendorDetailById,
   isPreviousSigned,
   getBrands
-} from "../models/agreement.model.js";
+} from "../services/agreementService.js";
 
 export const getAgreements = async (req, res) => {
-  // const { vendor_id, profile_id } = req.body;
-  const vendor_id = req.user.vendor_id;
-  const profile_id = req.user.profile_id;
+  const vendor_id = req.body?.vendor_id || req.query?.vendor_id || req.user?.vendor_id;
+  const profile_id = req.body?.profile_id || req.query?.profile_id || req.user?.profile_id;
 
 // fixed both at top 
   const arr_designation = await getDesignation();
@@ -57,14 +56,14 @@ export const getAgreements = async (req, res) => {
 };
 
 export const agreementFormController = async (req, res)=>{
-  // const { vendor_id, profile_id } = req.body;
-   const vendor_id = req.user.vendor_id;
-  const profile_id = req.user.profile_id;
+  const vendor_id = req.body?.vendor_id || req.query?.vendor_id || req.user?.vendor_id;
+  const profile_id = req.body?.profile_id || req.query?.profile_id || req.user?.profile_id;
   
-  const agreement_data = await getVendorAgreement(vendor_id, "WEB_VERSION");
+  const version = req.body.version ?? "v1";
+  const agreement_data = await getVendorAgreement(vendor_id, version);
   if (req.body.type === "agreement_form") {
     let form_data = {
-      version: req.body.version ?? "v1",
+      version: version,
       first_name: req.body.first_name,
       last_name: req.body.last_name,
       place: req.body.place,
@@ -73,16 +72,17 @@ export const agreementFormController = async (req, res)=>{
       agreement_by: req.body.agreement_by,
     };
     if (agreement_data) {
-      await updateRecord("vendor_agreement",agreement_data.id, form_data);
+      await updateRecord("vendor_agreement", { id: agreement_data.id }, form_data);
     } else {
       form_data = {
-        ...form_data,
+        ...form_data, 
         vendor_id: vendor_id,
         is_signed: 0,
       };
 
       await insertRecordWithoutId("vendor_agreement", form_data);
     }
+    return res.status(200).json({ success: true, message: "Agreement details saved successfully." });
   }
   if (req.body.type === "acceptance_form") {
     if (!agreement_data || !agreement_data.company) {
@@ -92,14 +92,14 @@ export const agreementFormController = async (req, res)=>{
     } else {
       const data = {
         agreement_date: getCurrentDateNoHIs(),
-        agreement_by: agreement_by,
+        agreement_by: agreement_data.agreement_by,
         is_signed: 1,
       };
-      if (updateRecord("vendor_agreement", agreement_data.id, data)) {
+      if (await updateRecord("vendor_agreement", { id: agreement_data.id }, data)) {
         const data2 = {
           vendor_mode: 2,
         };
-        await updateRecord("vendors", vendor_id, data2);
+        await updateRecord("vendors", { id: vendor_id }, data2);
         return res
           .status(200)
           .json({ success: true, message: "Agreement Signed Successfully" });
@@ -110,4 +110,5 @@ export const agreementFormController = async (req, res)=>{
       }
     }
   }
+  return res.status(400).json({ success: false, message: "Invalid or missing 'type' in request body." });
 }

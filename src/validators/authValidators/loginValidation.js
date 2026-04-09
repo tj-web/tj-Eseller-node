@@ -25,7 +25,6 @@ export const validateLogin = [
     .isIn(["0", "1", 0, 1])
     .withMessage("Remember me must be 0 or 1"),
 
-  // 🔥 Final error handler
   (req, res, next) => {
     const errors = validationResult(req);
 

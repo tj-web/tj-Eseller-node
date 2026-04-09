@@ -63,10 +63,10 @@ export const authenticate = async (req, res, next) => {
     return res.status(401).json({ message: "Refresh token expired or invalid" });
   }
 
-  // RACE CONDITION HANDLER:
-  // If multiple concurrent requests hit this logic within seconds of each other,
-  // the first one updates the DB. The subsequent ones will read the exact same 
-  // old refresh token, but it will no longer be valid in the DB!
+  /* RACE CONDITION HANDLER:
+     If multiple concurrent requests hit this logic within seconds of each other,
+     the first one updates the DB. The subsequent ones will read the exact same 
+     old refresh token, but it will no longer be valid in the DB! */
   if (refreshCache.has(refreshToken)) {
     const cached = refreshCache.get(refreshToken);
     // Ensure cache is not older than 15 seconds
