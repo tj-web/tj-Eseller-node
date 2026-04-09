@@ -375,7 +375,6 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
 
   if (!brand) return null;
 
-  // Emulates the old raw SQL flat structure output precisely
   const plainBrand = brand.get({ plain: true });
   const info = plainBrand.BrandInfo || {};
 

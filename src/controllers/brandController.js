@@ -17,7 +17,7 @@ import { uploadfile2 } from "../utilis/s3Uploader.js";
 import sequelize from "../db/connection.js";
 import VendorLog from "../models/vendorLog.js";
 
-/*******   brand-list controller function   ******/
+/*******   brand-list function   ******/
 
 export const getBrands = async (req, res) => {
   try {
@@ -92,7 +92,7 @@ export const checkBrand = async (req, res) => {
   }
 };
 
-/*******  Main controller for adding a new brand  *******/
+/*******  Main function for adding a new brand  *******/
 
 export const addBrand = async (req, res) => {
   try {
@@ -128,10 +128,9 @@ export const addBrand = async (req, res) => {
   }
 };
 
-/*********  Controller for editing/updating the existing brand ***********/
+/*********  Function for editing/updating the existing brand ***********/
 
 export const updateBrand = async (req, res) => {
-  // Lock update directly behind a transaction instance locally
   const transaction = await sequelize.transaction();
 
   try {
@@ -187,7 +186,6 @@ export const updateBrand = async (req, res) => {
     if (brandDiff && Object.keys(brandDiff).length > 0) {
       const profileId = req.body.profile_id || 0;
       const flatLogArr = Object.entries(brandDiff).map(([col, values]) => {
-        // Sort tables manually
         const isCore = col === "brand_name" || col === "image";
         return {
           item_id: brand_id,
@@ -206,7 +204,6 @@ export const updateBrand = async (req, res) => {
           updated_at: new Date(),
         };
       });
-      // Fire Bulk Insert to record the changes
       await VendorLog.bulkCreate(flatLogArr, { transaction });
     }
 
@@ -226,7 +223,7 @@ export const updateBrand = async (req, res) => {
   }
 };
 
-/***********  controller for viewing an existing brand's information ***********/
+/***********  Function for viewing an existing brand's information ***********/
 
 export const view_brand = async (req, res) => {
   try {
@@ -259,7 +256,7 @@ export const view_brand = async (req, res) => {
   }
 };
 
-/***********  controller for Requesting a brand ***********/
+/***********  Function for Requesting a brand ***********/
 export const requestBrand = async (req, res) => {
   try {
     const { brand, vendor_id } = req.body;
