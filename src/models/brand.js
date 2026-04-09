@@ -1,5 +1,5 @@
 import { DataTypes } from "sequelize";
-import sequelize from "../../db/connection.js";
+import sequelize from "../db/connection.js";
 
 const Brand = sequelize.define(
   "Brand",
@@ -292,7 +292,7 @@ const Brand = sequelize.define(
   {
     tableName: "tbl_brand",
     timestamps: false,
-  }
+  },
 );
 
 export default Brand;

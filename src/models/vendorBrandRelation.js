@@ -1,5 +1,5 @@
 import { DataTypes } from "sequelize";
-import sequelize from "../../db/connection.js";
+import sequelize from "../db/connection.js";
 
 const VendorBrandRelation = sequelize.define(
   "VendorBrandRelation",
@@ -45,7 +45,7 @@ const VendorBrandRelation = sequelize.define(
   {
     tableName: "vendor_brand_relation",
     timestamps: false, // IMPORTANT: because DB handles timestamps
-  }
+  },
 );
 
 export default VendorBrandRelation;

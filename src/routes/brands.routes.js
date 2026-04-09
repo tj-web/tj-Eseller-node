@@ -6,7 +6,8 @@ import {
   getBrands,
   updateBrand,
   view_brand,
-} from "../controllers/brands.controller.js";
+  requestBrand,
+} from "../controllers/brandController.js";
 import multer from "multer";
 const router = express.Router();
 const storage = multer.memoryStorage();
@@ -32,5 +33,8 @@ router.get("/viewbrand/:brand_id", view_brand);
 
 /***** Dynamic route for viewing brands based on page number (pagination). ******/
 router.get("/:pagenumber", getBrands);
+
+/****** Route for Requesting a brand *********/
+router.post("/request-brand", requestBrand);
 
 export default router;

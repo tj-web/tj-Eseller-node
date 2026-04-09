@@ -5,25 +5,25 @@ import {
   getVendorCountryStateCity,
 } from "../models/companyInformation.model.js";
 
-
 export const company_information = async (req, res) => {
   try {
-    // const { profile_id } = req.body;
-    const profile_id = req.user.profile_id; // fixed !!
+    const { profile_id } = req.body;
 
     let v_info = await getVendorData(parseInt(profile_id));
     if (!v_info) {
-      return res.status(404).json({ success: false, message: "Vendor not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Vendor not found" });
     }
-    
+
     let arr_designation = await getDesignation();
-    
+
     const billing_address = await getBillingCountryStateCity({
       billing_country: v_info.billing_country,
       billing_state: v_info.billing_state,
       billing_city: v_info.billing_city,
     });
-    
+
     v_info.billing_country_name = billing_address.billing_country_name;
     v_info.billing_state_name = billing_address.billing_state_name;
     v_info.billing_city_name = billing_address.billing_city_name;
@@ -33,7 +33,7 @@ export const company_information = async (req, res) => {
       state: v_info.state,
       city: v_info.city,
     });
-    
+
     v_info.country_name = oem_address.country_name;
     v_info.state_name = oem_address.state_name;
     v_info.city_name = oem_address.city_name;
