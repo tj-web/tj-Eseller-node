@@ -6,7 +6,7 @@ export const validateLogin = [
     .withMessage("Form type is required")
     .equals("vendor_login")
     .withMessage("Invalid form type"),
-    
+
   body("username")
     .notEmpty()
     .withMessage("Username is required")
@@ -15,9 +15,7 @@ export const validateLogin = [
     .trim()
     .toLowerCase(),
 
-  body("userpassword")
-    .notEmpty()
-    .withMessage("Password is required"),
+  body("userpassword").notEmpty().withMessage("Password is required"),
 
   body("rememberme")
     .notEmpty()
@@ -25,7 +23,7 @@ export const validateLogin = [
     .isIn(["0", "1", 0, 1])
     .withMessage("Remember me must be 0 or 1"),
 
-  // 🔥 Final error handler
+  // Final error handler
   (req, res, next) => {
     const errors = validationResult(req);
 

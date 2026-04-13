@@ -2,14 +2,14 @@ import { body, validationResult } from "express-validator";
 import validator from "validator";
 
 export const validateVerifyOtp = [
-  // 🔸 Form type
+  // Form type
   body("frmtype")
     .notEmpty()
     .withMessage("Form type is required")
     .equals("verify_otp")
     .withMessage("Invalid form type"),
 
-  // 🔸 Phone number
+  // Phone number
   body("phone_number")
     .notEmpty()
     .withMessage("Phone number is required")
@@ -21,7 +21,7 @@ export const validateVerifyOtp = [
     })
     .trim(),
 
-  // 🔸 OTP
+  // OTP
   body("otp")
     .notEmpty()
     .withMessage("OTP is required")
@@ -30,7 +30,7 @@ export const validateVerifyOtp = [
     .isNumeric()
     .withMessage("OTP must be numeric"),
 
-  // 🔥 Final error handler
+  // Final error handler
   (req, res, next) => {
     const errors = validationResult(req);
 

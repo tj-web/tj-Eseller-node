@@ -1,17 +1,17 @@
 import { body, query, validationResult } from "express-validator";
 
 export const validateResetPassword = [
-  // 🔸 Token (from query)
+  // Token (from query)
   query("token").notEmpty().withMessage("Token is required").trim(),
 
-  // 🔸 New password
+  // New password
   body("new_password")
     .notEmpty()
     .withMessage("New password is required")
     .isLength({ min: 8, max: 50 })
     .withMessage("Password must be between 8 and 50 characters"),
 
-  // 🔸 Confirm password
+  // Confirm password
   body("confirm_password")
     .notEmpty()
     .withMessage("Confirm password is required")
@@ -22,7 +22,7 @@ export const validateResetPassword = [
       return true;
     }),
 
-  // 🔥 Final error handler
+  // Final error handler
   (req, res, next) => {
     const errors = validationResult(req);
 
