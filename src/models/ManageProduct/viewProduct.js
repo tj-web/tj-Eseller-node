@@ -1,263 +1,278 @@
 import sequelize from "../../db/connection.js";
-import { QueryTypes } from "sequelize";
+import { QueryTypes, Op } from "sequelize";
+import Product from "../product.js";
+import ProductImage from "../productImage.js";
+import ProductSpecification from "../productSpecification.model.js";
+import ProductDescription from "../productDescription.model.js";
+import ProductCategory from "../productCategory.js";
+import Category from "../category.js";
+import OperatingSystem from "../operatingSystem.model.js";
+import ProductIndustry from "../productIndustry.model.js";
+import BusinessType from "../businessType.model.js";
+import ProductFaq from "../productFaqs.model.js";
+import ProductScreenshot from "../productScreenshot.js";
+import ProductVideo from "../productVideo.js";
 
-export const getProductDetail = async (product_id) => {
-  try {
-    // Get main product data with joins
-    const productQuery = `
-      SELECT 
-  tp.product_name,
-  tpd.overview,
-  tpd.description,
-  tpi.image,
-  tp.status,
-  tps.industries,
-  tps.business,
-  tps.deployment,
-  tps.device,
-  tps.operating_system,
-  tps.hw_configuration,
-  tps.sw_configuration,
-  tp.brand_id,
-  tp.website_url,
 
-  -- Operating System
-  (
-    SELECT GROUP_CONCAT(os.os_name)
-    FROM tbl_operating_systems os
-    WHERE FIND_IN_SET(os.id, IFNULL(tps.operating_system, ''))
-  ) AS operating_system_names,
 
-  (
-    SELECT GROUP_CONCAT(os.os_image)
-    FROM tbl_operating_systems os
-    WHERE FIND_IN_SET(os.id, IFNULL(tps.operating_system, ''))
-  ) AS operating_system_images,
+// Setup associations for product details
+Product.hasOne(ProductDescription, { foreignKey: 'product_id' });
+Product.hasOne(ProductSpecification, { foreignKey: 'product_id' });
+Product.hasMany(ProductImage, { foreignKey: 'product_id' });
+Product.hasMany(ProductFaq, { foreignKey: 'product_id' });
+Product.hasMany(ProductScreenshot, { foreignKey: 'product_id' });
+Product.hasMany(ProductVideo, { foreignKey: 'product_id' });
 
-  -- Industries
-  (
-    SELECT GROUP_CONCAT(pi.name)
-    FROM tbl_product_industry pi
-    WHERE FIND_IN_SET(pi.id, IFNULL(tps.industries, ''))
-  ) AS industries_names,
+// Associations for category selection logic
+Product.belongsTo(ProductCategory, { foreignKey: 'product_id' });
+ProductCategory.belongsTo(Category, { foreignKey: 'category_id' });
 
-  -- Business Type
-  (
-    SELECT GROUP_CONCAT(bt.business_type_name)
-    FROM tbl_business_type bt
-    WHERE FIND_IN_SET(bt.id, IFNULL(tps.business, ''))
-  ) AS business_names
+// export const getProductDetail = async (product_id) => {
+//   try {
+//     const product = await Product.findOne({
+//       attributes: [
+//         'product_name', 'status', 'brand_id', 'website_url',
+//         // Comma-separated ID mapping logic moved to literals for performance/simplicity
+//         [sequelize.literal(`(SELECT GROUP_CONCAT(os.os_name) FROM tbl_operating_systems os WHERE FIND_IN_SET(os.id, IFNULL(ProductSpecification.operating_system, '')))`), 'operating_system_names'],
+//         [sequelize.literal(`(SELECT GROUP_CONCAT(os.os_image) FROM tbl_operating_systems os WHERE FIND_IN_SET(os.id, IFNULL(ProductSpecification.operating_system, '')))`), 'operating_system_images'],
+//         [sequelize.literal(`(SELECT GROUP_CONCAT(pi.name) FROM tbl_product_industry pi WHERE FIND_IN_SET(pi.id, IFNULL(ProductSpecification.industries, '')))`), 'industries_names'],
+//         [sequelize.literal(`(SELECT GROUP_CONCAT(bt.business_type_name) FROM tbl_business_type bt WHERE FIND_IN_SET(bt.id, IFNULL(ProductSpecification.business, '')))`), 'business_names']
+//       ],
+//       where: { product_id },
+//       include: [
+//         { model: ProductDescription, attributes: ['overview', 'description'] },
+//         { model: ProductSpecification, attributes: ['industries', 'business', 'deployment', 'device', 'operating_system', 'hw_configuration', 'sw_configuration'] },
+//         { model: ProductImage, attributes: ['image'], limit: 1 }
+//       ],
+//       nest: true,
+//       raw: true
+//     });
 
-FROM tbl_product tp
+//     if (!product) return null;
 
-LEFT JOIN tbl_product_specification tps
-  ON tps.product_id = tp.product_id
+//     // Fetch related lists separately to avoid heavy joins
+//     const faqs = await ProductFaq.findAll({
+//       attributes: ['question', 'answer'],
+//       where: { product_id },
+//       raw: true
+//     });
 
-LEFT JOIN tbl_product_description tpd
-  ON tpd.product_id = tp.product_id
+//     const screenshots = await ProductScreenshot.findAll({
+//       attributes: ['id', 'image'],
+//       where: { product_id },
+//       raw: true
+//     });
 
-LEFT JOIN tbl_product_image tpi
-  ON tpi.product_id = tp.product_id
+//     const videos = await ProductVideo.findAll({
+//       attributes: ['id', 'video_url'],
+//       where: { product_id },
+//       raw: true
+//     });
 
-WHERE tp.product_id = :product_id
-LIMIT 1
-    `;
-  
-    try {
-      const results = await sequelize.query(productQuery, {
-        replacements: { product_id },
-        type: QueryTypes.SELECT,
-      });
+//     // Format data to match original output
+//     return {
+//       product_name: product.product_name,
+//       overview: product.ProductDescription?.overview,
+//       description: product.ProductDescription?.description,
+//       image: product.ProductImage?.image,
+//       status: product.status,
+//       industries: product.ProductSpecification?.industries,
+//       business: product.ProductSpecification?.business,
+//       deployment: product.ProductSpecification?.deployment,
+//       device: product.ProductSpecification?.device,
+//       operating_system: product.ProductSpecification?.operating_system,
+//       hw_configuration: product.ProductSpecification?.hw_configuration,
+//       sw_configuration: product.ProductSpecification?.sw_configuration,
+//       brand_id: product.brand_id,
+//       website_url: product.website_url,
+//       operating_system_names: product.operating_system_names,
+//       operating_system_images: product.operating_system_images,
+//       industries_names: product.industries_names,
+//       business_names: product.business_names,
+//       faqs,
+//       screenshot: screenshots,
+//       videos
+//     };
 
-      const product = results[0] || null;
-
-      if (!product) return null;
-
-      // Get Product FAQs
-      const faqsQuery = `
-        SELECT question, answer 
-        FROM tbl_product_faqs
-        WHERE product_id = :product_id
-      `;
-      const faqs = await sequelize.query(faqsQuery, {
-        replacements: { product_id },
-        type: QueryTypes.SELECT
-      });
-
-      // Get Product Screenshots
-      const screenshotsQuery = `
-        SELECT id, image 
-        FROM tbl_product_screenshots
-        WHERE product_id = :product_id
-      `;
-      const screenshots = await sequelize.query(screenshotsQuery, {
-        replacements: { product_id },
-        type: QueryTypes.SELECT
-      });
-
-      // Get Product Videos
-      const videosQuery = `
-        SELECT id, video_url 
-        FROM tbl_product_videos
-        WHERE product_id = :product_id
-      `;
-      const videos = await sequelize.query(videosQuery, {
-        replacements: { product_id },
-        type: QueryTypes.SELECT
-      });
-
-      // Combine all data
-      return {
-        ...product,
-        faqs,
-        screenshot: screenshots,
-        videos
-      };
-
-    } catch (error) {
-      console.error("PRODUCT QUERY ERROR:", error);
-      throw error;
-    }
-
-  } catch (error) {
-    console.error("Error in getProductDetail:", error);
-    throw error;
-  }
-};
+//   } catch (error) {
+//     console.error("Error in getProductDetail service:", error);
+//     throw error;
+//   }
+// };
 
 
 //--------------This function will fetch the data of the existing product for editing purpose----------------
 
-export const geteditProductDetail = async (productId) => {
+export const getProductDetail = async (product_id) => {
   try {
-    // 1. Product details
-    const productSql = `
-      SELECT *
-      FROM tbl_product AS tp
-      WHERE tp.product_id = :productId
-    `;
-    const product = await sequelize.query(productSql, {
-      replacements: { productId },
-      type: QueryTypes.SELECT,
+    // 1. Fetch main product data with basic associations
+    const product = await Product.findOne({
+      where: { product_id },
+      include: [
+        { model: ProductDescription, attributes: ['overview', 'description'] },
+        { model: ProductSpecification },
+        { model: ProductImage, attributes: ['image'] }
+      ]
     });
 
-    if (!product.length) return null;
-    const productRow = product[0];
+    if (!product) return null;
 
-    // 2. Product image
-    const imageSql = `
-      SELECT image_id, image
-      FROM tbl_product_image
-      WHERE product_id = :productId
-      LIMIT 1
-    `;
-    const image = await sequelize.query(imageSql, {
-      replacements: { productId },
-      type: QueryTypes.SELECT,
-    });
+    // 2. Fetch all secondary data in parallel for speed
+    const [faqs, screenshots, videos, allOS, allIndustries, allBusiness] = await Promise.all([
+      ProductFaq.findAll({ where: { product_id }, attributes: ['question', 'answer'], raw: true }),
+      ProductScreenshot.findAll({ where: { product_id }, attributes: ['id', 'image'], raw: true }),
+      ProductVideo.findAll({ where: { product_id }, attributes: ['id', 'video_url'], raw: true }),
+      OperatingSystem.findAll({ raw: true }),
+      ProductIndustry.findAll({ raw: true }),
+      BusinessType.findAll({ raw: true })
+    ]);
 
-    // 3. Product description
-    const descSql = `
-      SELECT id, overview
-      FROM tbl_product_description
-      WHERE product_id = :productId
-      LIMIT 1
-    `;
-    const description = await sequelize.query(descSql, {
-      replacements: { productId },
-      type: QueryTypes.SELECT,
-    });
-
-    // 4. Product categories
-    const catSql = `
-      SELECT tpc.id, tc.parent_id, tc.category_id, tc.category_name
-      FROM tbl_product_category AS tpc
-      INNER JOIN tbl_category AS tc ON tc.category_id = tpc.category_id
-      WHERE tpc.product_id = :productId
-        AND tc.status = 1
-        AND tc.is_deleted = 0
-    `;
-    const categories = await sequelize.query(catSql, {
-      replacements: { productId },
-      type: QueryTypes.SELECT,
-    });
-
-    // 5. Build final data object
-    return {
-      product_id: productRow.product_id,
-      product_name: productRow.product_name,
-      brand_id: productRow.brand_id,
-      website_url: productRow.website_url,
-      trial_available: productRow.trial_available,
-      free_downld_available: productRow.free_downld_available,
-      pricing_document: productRow.pricing_document,
-      image: image.length ? image[0].image : null,
-      overview: description.length ? description[0].overview : null,
-      arr_cat_selected: categories,
+    // 3. Logic to handle comma-separated IDs (The "Developer way" to replace FIND_IN_SET)
+    const spec = product.ProductSpecification || {};
+    
+    // Helper function to filter lookup tables based on comma-separated IDs in the spec
+    const getNames = (ids, lookupTable, key, returnAttr) => {
+      if (!ids) return "";
+      const idArray = ids.split(',').map(Number);
+      return lookupTable
+        .filter(item => idArray.includes(item[key]))
+        .map(item => item[returnAttr])
+        .join(',');
     };
+
+    // 4. Combine and return formatted data
+    return {
+      product_name: product.product_name,
+      status: product.status,
+      brand_id: product.brand_id,
+      website_url: product.website_url,
+      overview: product.ProductDescription?.overview,
+      description: product.ProductDescription?.description,
+      image: product.ProductImages?.[0]?.image || product.ProductImage?.image || null,
+      
+      // Specification Data
+      industries: spec.industries,
+      business: spec.business,
+      deployment: spec.deployment,
+      device: spec.device,
+      operating_system: spec.operating_system,
+      hw_configuration: spec.hw_configuration,
+      sw_configuration: spec.sw_configuration,
+
+      // Mapped Names (Replacing the raw SQL literals)
+      operating_system_names: getNames(spec.operating_system, allOS, 'id', 'os_name'),
+      operating_system_images: getNames(spec.operating_system, allOS, 'id', 'os_image'),
+      industries_names: getNames(spec.industries, allIndustries, 'id', 'name'),
+      business_names: getNames(spec.business, allBusiness, 'id', 'business_type_name'),
+
+      // Related Lists
+      faqs,
+      screenshot: screenshots,
+      videos
+    };
+
   } catch (error) {
-    console.error("Error in geteditProductDetail:", error);
+    console.error("Error in getProductDetail service:", error);
     throw error;
   }
 };
 
-//---------------------w cwd c clw c/////////////
-// import { QueryTypes } from "sequelize";
-// import sequelize from "../db/connection.js"; // adjust path to your DB connection
+
+
+
+
+
+export const geteditProductDetail = async (productId) => {
+  try {
+
+    const product = await Product.findOne({
+      where: { product_id: productId },
+      include: [
+        { model: ProductDescription, attributes: ['id', 'overview'] },
+        { model: ProductImage, attributes: ['image_id', 'image'] }
+      ],
+      nest: true,
+      raw: true
+    });
+
+    if (!product) return null;
+
+    // Fetch categories with nested JOIN
+    const categories = await ProductCategory.findAll({
+      attributes: ['id'],
+      where: { product_id: productId },
+      include: [{
+        model: Category,
+        attributes: ['parent_id', 'category_id', 'category_name'],
+        where: { status: 1, is_deleted: 0 },
+        required: true
+      }],
+      nest: true,
+      raw: true
+    });
+
+    // Map categories to match old flat output
+    const formattedCategories = categories.map(c => ({
+      id: c.id,
+      parent_id: c.Category.parent_id,
+      category_id: c.Category.category_id,
+      category_name: c.Category.category_name
+    }));
+
+    return {
+      product_id: product.product_id,
+      product_name: product.product_name,
+      brand_id: product.brand_id,
+      website_url: product.website_url,
+      trial_available: product.trial_available,
+      free_downld_available: product.free_downld_available,
+      pricing_document: product.pricing_document,
+      image: product.ProductImages?.[0]?.image || product.ProductImage?.image || null,
+      overview: product.ProductDescription?.overview || null,
+      arr_cat_selected: formattedCategories,
+    };
+  } catch (error) {
+    console.error("Error in geteditProductDetail service:", error);
+    throw error;
+  }
+};
+
 
 export const getSelectedCol = async ({
   table,
   columns = [],
   where = {},
   records = "single",
-  flag = false,
   order_by = null
 }) => {
   try {
-    // Build SELECT part
-    const cols = columns.length > 0 ? columns.join(", ") : "*";
+    
+    const Model = sequelize.models[table];
 
-    // Build WHERE part
-    let whereClause = "";
-    let replacements = {};
-    if (Object.keys(where).length > 0) {
-      const conditions = [];
-      Object.entries(where).forEach(([key, value], index) => {
-        conditions.push(`${key} = :${key}`);
-        replacements[key] = value;
-      });
-      whereClause = "WHERE " + conditions.join(" AND ");
+    if (!Model) {
+      throw new Error(`Model for table '${table}' not found. Make sure it's imported in your connection file.`);
     }
 
-    // Build ORDER BY part
-    let orderClause = "";
+    let order = [];
     if (order_by && Object.keys(order_by).length > 0) {
-      const key = Object.keys(order_by)[0];
-      const direction = order_by[key];
-      orderClause = `ORDER BY ${key} ${direction}`;
+      order = Object.entries(order_by).map(([key, value]) => [key, value]);
     }
 
-    // Final query
-    const query = `
-      SELECT ${cols}
-      FROM ${table}
-      ${whereClause}
-      ${orderClause}
-    `;
+    const options = {
+      attributes: columns.length > 0 ? columns : undefined, // undefined returns all cols
+      where: where,
+      order: order,
+      raw: true, 
+    };
 
-    const result = await sequelize.query(query, {
-      replacements,
-      type: QueryTypes.SELECT,
-    });
-
-    // Handle single/multiple like CI
     if (records === "single") {
-      return result.length > 0 ? (flag ? result[0] : result[0]) : null;
+      return await Model.findOne(options);
     } else {
-      return flag ? result : result;
+      return await Model.findAll(options);
     }
+
   } catch (error) {
-    console.error("Error in getSelectedColumns:", error);
+    console.error(`Error in getSelectedCol for table ${table}:`, error);
     throw error;
   }
 };

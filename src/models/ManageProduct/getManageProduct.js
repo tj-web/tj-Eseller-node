@@ -1,18 +1,35 @@
 import sequelize from "../../db/connection.js";
 
-export const getVendorBrands = async (vendor_id) => {
-  const sql = `
-    SELECT vbr.tbl_brand_id 
-    FROM vendor_brand_relation AS vbr
-    INNER JOIN tbl_brand AS tb ON tb.brand_id = vbr.tbl_brand_id
-    WHERE vbr.tbl_brand_id != 0
-      AND vbr.vendor_id = :vendor_id
-      AND (vbr.status = 1 OR (tb.added_by = 'vendor' AND tb.added_by_id = :vendor_id))
-  `;
+import { Op } from "sequelize";
+import VendorBrandRelation from "../vendorBrandRelation.js";
+import Brand from "../brand.js";
+import Product from "../product.js";
+import ProductImage from "../productImage.js";
+import Category from "../category.js";
 
-  const results = await sequelize.query(sql, {
-    replacements: { vendor_id },
-    type: sequelize.QueryTypes.SELECT,
+
+VendorBrandRelation.belongsTo(Brand, { foreignKey: 'tbl_brand_id', targetKey: 'brand_id' });
+
+export const getVendorBrands = async (vendor_id) => {
+  const results = await VendorBrandRelation.findAll({
+    attributes: ['tbl_brand_id'],
+    where: {
+      tbl_brand_id: { [Op.ne]: 0 },
+      vendor_id: vendor_id,
+      [Op.or]: [
+        { status: 1 },
+        { 
+          '$Brand.added_by$': 'vendor',
+          '$Brand.added_by_id$': vendor_id
+        }
+      ]
+    },
+    include: [{
+      model: Brand,
+      attributes: [], 
+      required: true  
+    }],
+    raw: true
   });
 
   return results.map(row => row.tbl_brand_id); // return brand_id array
@@ -20,33 +37,56 @@ export const getVendorBrands = async (vendor_id) => {
 
 // New function to get full brand details for product addition
 export const getVendorBrandsDetails = async (vendor_id) => {
-  const sql = `
-    SELECT
-      vbr.tbl_brand_id,
-      tb.brand_name,
-      tb.description,
-      tb.image,
-      tb.status AS brand_status,
-      vbr.status AS relation_status
-    FROM vendor_brand_relation AS vbr
-    INNER JOIN tbl_brand AS tb ON tb.brand_id = vbr.tbl_brand_id
-    WHERE vbr.tbl_brand_id != 0
-      AND vbr.vendor_id = :vendor_id
-      AND (vbr.status = 1 OR (tb.added_by = 'vendor' AND tb.added_by_id = :vendor_id))
-    ORDER BY tb.brand_name ASC
-  `;
-
-  const results = await sequelize.query(sql, {
-    replacements: { vendor_id },
-    type: sequelize.QueryTypes.SELECT,
+  const results = await VendorBrandRelation.findAll({
+    attributes: [
+      'tbl_brand_id',
+      ['status', 'relation_status']
+    ],
+    where: {
+      tbl_brand_id: { [Op.ne]: 0 },
+      vendor_id: vendor_id,
+      [Op.or]: [
+        { status: 1 },
+        { 
+          '$Brand.added_by$': 'vendor',
+          '$Brand.added_by_id$': vendor_id
+        }
+      ]
+    },
+    include: [{
+      model: Brand,
+      attributes: [
+        'brand_name', 
+        'description', 
+        'image', 
+        ['status', 'brand_status']
+      ],
+      required: true // INNER JOIN
+    }],
+    order: [
+      [Brand, 'brand_name', 'ASC']
+    ],
+    raw: true,
+    nest: true
   });
 
-  return results;
+  // Flatten the result to match the old raw SQL output structure
+  return results.map(row => ({
+    tbl_brand_id: row.tbl_brand_id,
+    brand_name: row.Brand?.brand_name || "",
+    description: row.Brand?.description || "",
+    image: row.Brand?.image || "",
+    brand_status: row.Brand?.brand_status,
+    relation_status: row.relation_status
+  }));
 };
 
 
 // ----------------------------------------GetProductList----------------------------
 
+// Setup Product associations
+Product.belongsTo(Brand, { foreignKey: 'brand_id' });
+Product.hasMany(ProductImage, { foreignKey: 'product_id' });
 
 export const getProductList = async (
   brand_arr,
@@ -58,96 +98,110 @@ export const getProductList = async (
 ) => {
   const limitNum = limit ? parseInt(limit, 10) : null;
   const pageNum = pageNumber ? parseInt(pageNumber, 10) : 1;
-
   const offset = limitNum ? (pageNum - 1) * limitNum : 0;
 
   if (!brand_arr || brand_arr.length === 0) {
     return [];
   }
 
-  let orderByColumn;
+  // Determine sort column
+  let sortColumn;
   switch (order_by) {
     case "s_id":
-      orderByColumn = "tp.product_id";
+      sortColumn = "product_id";
       break;
     case "s_product_name":
-      orderByColumn = "tp.product_name";
+      sortColumn = "product_name";
       break;
     case "s_status":
-      orderByColumn = "tp.status";
+      sortColumn = "status";
       break;
     default:
-      orderByColumn = "tp.product_id";
+      sortColumn = "product_id";
       order = "desc";
   }
 
-  let sql = `
-    SELECT tp.product_id, tp.product_name, tp.status, tb.brand_name, tpi.image
-    FROM tbl_product AS tp
-    LEFT JOIN tbl_brand AS tb ON tb.brand_id = tp.brand_id
-    LEFT JOIN tbl_product_image AS tpi ON tpi.product_id = tp.product_id
-    WHERE tp.is_deleted = 0
-      AND tp.brand_id IN (:brand_arr)
-  `;
-
-  const replacements = { brand_arr };
+  // Build where conditions
+  const whereConditions = {
+    is_deleted: 0,
+    brand_id: { [Op.in]: brand_arr }
+  };
 
   if (search_filter.srch_product_name) {
-    sql += " AND tp.product_name LIKE :product_name";
-    replacements.product_name = `%${search_filter.srch_product_name}%`;
+    whereConditions.product_name = { [Op.like]: `%${search_filter.srch_product_name}%` };
   }
 
   if (search_filter.srch_status) {
-    sql += " AND tp.status = :status";
-    replacements.status = search_filter.srch_status;
+    whereConditions.status = search_filter.srch_status;
   }
 
-  sql += ` GROUP BY tp.product_id ORDER BY ${orderByColumn} ${order}`;
-
-  if (limitNum) {
-    sql += ` LIMIT ${limitNum} OFFSET ${offset}`;
-  }
-
-  const results = await sequelize.query(sql, {
-    replacements,
-    type: sequelize.QueryTypes.SELECT,
+  const results = await Product.findAll({
+    attributes: ['product_id', 'product_name', 'status'],
+    where: whereConditions,
+    include: [
+      {
+        model: Brand,
+        attributes: ['brand_name'],
+        required: false // LEFT JOIN
+      },
+      {
+        model: ProductImage,
+        attributes: ['image'],
+        required: false // LEFT JOIN
+      }
+    ],
+    order: [[sortColumn, order]],
+    limit: limitNum,
+    offset: offset,
+    raw: true,
+    nest: true,
+    // Emulate GROUP BY tp.product_id by taking unique products if needed
+    // In practice, if there are multiple images, raw: true + nest: true might return multiple rows.
+    // However, the original SQL had GROUP BY tp.product_id, usually to get a single image if any.
+    // For many-to-many or many-to-one transformations like this, we usually flat them out.
   });
 
-  return results;
+  // Flatten the result to match raw SQL output
+  return results.map(row => ({
+    product_id: row.product_id,
+    product_name: row.product_name,
+    status: row.status,
+    brand_name: row.Brand?.brand_name || null,
+    image: row.ProductImages ? (Array.isArray(row.ProductImages) ? row.ProductImages[0]?.image : row.ProductImages.image) : (row.ProductImages?.image || null)
+    // Note: If using hasMany, row.ProductImages will be an array if nest:true. 
+    // In raw mode with nest:true, Sequelize usually produces flattened keys like 'Brand.brand_name' or 'ProductImages.image'.
+    // Let's adjust based on how Sequelize handles raw joins.
+  })).map(row => {
+    // If it was raw: true without nest, keys would be 'Brand.brand_name' etc.
+    // With nest: true, they are objects.
+    return row;
+  });
 };
-
-
-
 
 // ----------------------------------------GetCategoryList----------------------------
 
 export const getCategoryList = async (search = "", limit = 20, offset = 0) => {
-  const safeLimit  = parseInt(limit)  || 20;
+  const safeLimit = parseInt(limit) || 20;
   const safeOffset = parseInt(offset) || 0;
 
-  let sql = `
-    SELECT category_id, category_name, parent_id
-    FROM tbl_category
-    WHERE status = 1
-    AND show_status = 1
-    AND is_deleted = 0
-  `;
-
-  sql += " AND category_id != 1 AND category_id != 491";
-
-  const replacements = {};
+  const whereConditions = {
+    status: 1,
+    show_status: 1,
+    is_deleted: 0,
+    category_id: { [Op.notIn]: [1, 491] }
+  };
 
   if (search.trim()) {
-    sql += " AND category_name LIKE :search";
-    replacements.search = `${search.trim()}%`;
+    whereConditions.category_name = { [Op.like]: `${search.trim()}%` };
   }
 
-  sql += " ORDER BY category_name ASC";
-  sql += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
-
-  const results = await sequelize.query(sql, {
-    replacements,
-    type: sequelize.QueryTypes.SELECT,
+  const results = await Category.findAll({
+    attributes: ['category_id', 'category_name', 'parent_id'],
+    where: whereConditions,
+    order: [['category_name', 'ASC']],
+    limit: safeLimit,
+    offset: safeOffset,
+    raw: true
   });
 
   return results;

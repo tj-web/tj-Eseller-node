@@ -1,4 +1,4 @@
-import { isVendorProduc } from "../models/ManageProduct/editProduct.js";
+import { isVendorProduct } from "../models/ManageProduct/isVendorProduct.js";
 import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
 import { addVideoModel } from "../models/ManageProduct/addVideos.js";
 import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
@@ -9,17 +9,22 @@ import {
   getVendorBrandsDetails,
   getCategoryList,
 } from "../models/ManageProduct/getManageProduct.js";
+import Setting from "../models/websiteSetting.js";
 import {
   getSelectedColumns,
   saveProduct,
 } from "../models/ManageProduct/addBasicDetails.js";
-import { saveOrUpdateProductSpecification } from "../models/ManageProduct/productSpecification.js";
+import { 
+   getLanguageList,
+  saveOrUpdateProductSpecification,
+  getProductSpecificationDetails
+} from "../models/ManageProduct/productSpecification.js";
 import { getSelectedCol } from "../models/ManageProduct/viewProduct.js";
-import { saveOrUpdateProductFeature } from "../models/ManageProduct/getFeatures.js";
+import { saveOrUpdateProductFeature } from "../models/ManageProduct/saveOrUpdateFeature.js";
 import {
-  isVendorProduct,
   getAllFeatures,
-} from "../models/ManageProduct/featuresAddlist.js";
+  getProductFeatures
+} from "../models/ManageProduct/getFeatures.js";
 import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
 import { imageSize } from "image-size";
 import { upsertEnrichmentImages } from "../models/ManageProduct/addenrichment.js";
@@ -30,7 +35,7 @@ import sequelize from "../db/connection.js";
 
 export const brand_arr = async (req, res) => {
   try {
-    const vendor_id = req.user?.vendor_id;
+    const vendor_id = req.query.vendor_id;
 
     if (!vendor_id) {
       return res
@@ -58,7 +63,7 @@ export const brand_arr = async (req, res) => {
 
 export const fetchVendorProducts = async (req, res) => {
   try {
-    const vendor_id = req.user?.vendor_id;
+    const vendor_id = req.query.vendor_id;
     if (!vendor_id) {
       return res
         .status(400)
@@ -122,7 +127,7 @@ export const searchCategories = async (req, res) => {
 export const basicDetails = async (req, res) => {
   try {
     const post = req.body;
-    const vendorId = req.user?.vendor_id || 0;
+    const vendor_id = req.query.vendor_id;
     // const vendorId = req.user.vendor_id; // fixed ??
     const product_id = req.params.product_id || null;
 
@@ -188,7 +193,7 @@ export const basicDetails = async (req, res) => {
       status: 0,
       date_added: new Date(),
       added_by: "vendor",
-      added_by_id: vendorId ?? "",
+      added_by_id: vendor_id ?? "",
       product_code: post?.product_code ?? "TP01",
       similar_product: post?.similar_product ?? "",
       price: post?.price || 10.2,
@@ -238,6 +243,7 @@ export const basicDetails = async (req, res) => {
 
     // Insert product
     const productId = await saveProduct(save, secondImageUrl, product_id);
+    console.log("Product saved with ID:", productId);
 
     // Update pricing_document if documents were uploaded
     if (pricingDocument) {
@@ -272,24 +278,40 @@ export const basicDetails = async (req, res) => {
       for (let index = 0; index < categories.length; index++) {
         const categoryId = categories[index];
         if (categoryId) {
-          // Fetch parent_id from tbl_category
-          const [categoryData] = await sequelize.query(
-            `SELECT parent_id FROM tbl_category WHERE category_id = :categoryId AND status = 1 AND show_status = 1
-    AND is_deleted = 0`,
-            {
-              replacements: { categoryId },
-              type: sequelize.QueryTypes.SELECT,
+          let parentId;
+          // If the form sent category_parent_id (from the same category search response), use it and skip a DB read.
+          // Otherwise load parent_id from tbl_category (older clients / extra categories without a matching field).
+          let usedClientParent = false;
+          if (Object.prototype.hasOwnProperty.call(post, "category_parent_id")) {
+            const sent = post.category_parent_id;
+            let raw =
+              Array.isArray(sent) ? sent[index] : categories.length === 1 ? sent : index === 0 ? sent : undefined;
+            if (raw !== undefined) {
+              usedClientParent = true;
+              parentId =
+                raw === "" || raw === null ? null : parseInt(raw, 10);
+              if (Number.isNaN(parentId)) parentId = null;
             }
-          );
-
-          if (!categoryData) {
-            console.warn(`Category ${categoryId} not found or inactive, skipping...`);
-            continue;
           }
 
-          const parentId = categoryData.parent_id;
+          if (!usedClientParent) {
+            const [categoryData] = await sequelize.query(
+              `SELECT parent_id FROM tbl_category WHERE category_id = :categoryId AND status = 1 AND show_status = 1
+    AND is_deleted = 0`,
+              {
+                replacements: { categoryId },
+                type: sequelize.QueryTypes.SELECT,
+              }
+            );
 
-          // Insert with correct SQL syntax
+            if (!categoryData) {
+              console.warn(`Category ${categoryId} not found or inactive, skipping...`);
+              continue;
+            }
+
+            parentId = categoryData.parent_id;
+          }
+
           await sequelize.query(
             `INSERT INTO tbl_product_category (product_id, parent_id, category_id, sort_order, is_primary) 
              VALUES (:productId, :parentId, :categoryId, :sortOrder, :isPrimary)`,
@@ -324,6 +346,65 @@ export const basicDetails = async (req, res) => {
 
 // ------------Product Specification -------------------------------------------
 
+export const getProductSpecification = async (req, res) => {
+  try {
+    const { product_id } = req.query;
+
+    if (!product_id) {
+      return res.status(400).json({ error: "product_id is required" });
+    }
+
+    const specification = await getProductSpecificationDetails(product_id);
+
+    if (!specification) {
+      return res.status(404).json({ message: "No specification found for this product", data: null });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Specification fetched successfully",
+      data: specification,
+    });
+  } catch (error) {
+    console.error("Error fetching product specification:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+
+
+/* Controller to fetch all supported languages  */
+
+export const getLanguages = async (req, res) => {
+  try {
+    
+    const languages = await getLanguageList();
+  
+    if (!languages || languages.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No languages found",
+        data: []
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: languages.length,
+      data: languages
+    });
+
+  } catch (error) {
+    console.error("Error in getLanguages controller:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message
+    });
+  }
+};
+
+
 export const ProductSpecification = async (req, res) => {
   try {
     const {
@@ -333,7 +414,7 @@ export const ProductSpecification = async (req, res) => {
       operating_system,
       organization_type,
       languages,
-    } = req.query;
+    } = req.body;
 
     if (!deployment || !device || !operating_system || !organization_type) {
       return res.status(400).json({ error: "Required fields are missing" });
@@ -351,9 +432,9 @@ export const ProductSpecification = async (req, res) => {
     };
 
     const data = await getSelectedCol({
-      table: "tbl_product_specification", //  real table name
-      columns: ["id"], // select only id
-      where: { product_id: product_id }, // condition
+      table: "tbl_product_specification", 
+      columns: ["id"], 
+      where: { product_id: product_id }, 
       records: "single",
     });
     const id = data?.id || null;
@@ -369,31 +450,31 @@ export const ProductSpecification = async (req, res) => {
   }
 };
 
+
+
 //--------------------------------------------features part of the form--------------
 
 export const saveProductFeature = async (req, res) => {
   try {
-    const post = req.query;
-    // console.log("Received product feature data:", post);return;
+    const post = req.body;
 
     if (!post.product_id) {
       return res.status(400).json({ error: "product_id is required" });
     }
- 
-    //something goes on herr , ownership check !
-  //  const check = await checkProductIdOwnership(post.product_id, req.user.vendor_id);
+    if (post.section_id === undefined || post.section_id === null || post.section_id === "") {
+      return res.status(400).json({ error: "section_id is required" });
+    }
 
+    // One product can have many feature rows. Each row is product_id + section_id (same as feature_id in tbl_feature).
     const data = await getSelectedCol({
-      table: "tbl_product_features", //  real table name
-      columns: ["id"], // select only id
-      where: { product_id: post.product_id }, // condition
+      table: "tbl_product_features",
+      columns: ["id"],
+      where: { product_id: post.product_id, section_id: post.section_id },
       records: "single",
     });
     const id = data?.id || null;
 
-    // Call model to handle DB operation
     const result = await saveOrUpdateProductFeature(id, post);
-
     if (result.action === "update") {
       return res.status(200).json({
         message: "Feature updated",
@@ -416,23 +497,23 @@ export const saveProductFeature = async (req, res) => {
   }
 };
 
-//-------------function for getting the list of the features added --------------------
+//-------------function for getting the master list of features--------------------
 
-export const getProductFeatures = async (req, res) => {
+
+export const getAllFeaturesList = async (req, res) => {
   try {
     const { product_id, vendor_id } = req.query;
 
     if (product_id) {
       // Get brand array
       const brand = await getVendorBrands(vendor_id);
-      brand.push(9868);
 
       // Check if vendor owns this product
       const check = await isVendorProduct(product_id, brand);
-
+      
       if (check) {
-        // Fetch all features
-        const allFeatures = await getAllFeatures(product_id);
+        // Fetch all features for the product
+        const allFeatures = await getAllFeatures();
 
         return res.status(200).json({
           success: true,
@@ -456,18 +537,39 @@ export const getProductFeatures = async (req, res) => {
   }
 };
 
+//-------------function for getting the list of the features added --------------------
+
+export const getProductFeaturesList = async (req, res) => {
+  const product_id = req.query.product_id;
+
+  if (!product_id) {
+    return res.status(400).json({ error: "product_id is required" });
+  }
+  
+  try {
+    const productFeatures = await getProductFeatures(product_id);
+    return res.status(200).json({
+      success: true,
+      productFeatures,
+    });
+  } catch (error) {
+    console.error("Error fetching feature list:", error);
+    return res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+};
+
 //----------------------------Add screenshots----------------------------
 
 export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
     const files = req.files; // depends on multer config
-    let alt_text = req.body.alt_text; // can be string or array 
+    let alt_text = req.body.alt_text; // can be string or array  
 
-    if (!product_id || !files || files.length === 0) {
+    if (!product_id || !files || files.length === 0 || !alt_text) {    // validation alt_text ke uper lagana hai..
       return res
         .status(400)
-        .json({ error: "Product ID and screenshots are required" });
+        .json({ error: "Product ID, screenshots and alt_text are required" });
     }
 
     const existingRows = await getSelectedCol({
@@ -490,28 +592,28 @@ export const addScreenshots = async (req, res) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const originalName = file.originalname.replace(/\s+/g, "-");
+      const dbImageName = `${product_id}_${originalName}`;
       const key = `web/assets/images/techjockey/products/screenshots/${Date.now()}-${originalName}`;
 
       // Upload to S3
-      const s3Url = await uploadfile2({ ...file, key });
+      // NOTE: `uploadfile2` ignores `key` and uses `file.originalname` for S3 Key.
+      // So we change `originalname` temporarily to keep uploaded filename consistent with DB.
+      await uploadfile2({ ...file, originalname: dbImageName, key });
 
       screenshotsData.push({
         product_id,
-        image: s3Url, // S3 URL
+        image: dbImageName, // filename only
         alt_text: altArray[i] || null,
         id: existingRows[i]?.id || null, // attach id if exists
       });
     }
     const result = await insertProductScreenshots(screenshotsData);
 
-    let message = "No changes applied";
-    if (result.inserted > 0 && result.updated > 0) {
-      message = "Screenshots added and updated successfully";
-    } else if (result.inserted > 0) {
-      message = "Screenshots added successfully";
-    } else if (result.updated > 0) {
-      message = "Screenshots updated successfully";
-    }
+    const totalProcessed = result?.totalProcessed ?? 0;
+    const message =
+      totalProcessed > 0
+        ? "Screenshots added/updated successfully"
+        : "No changes applied";
 
     res.status(200).json({
       success: true,
@@ -530,8 +632,13 @@ export const addScreenshots = async (req, res) => {
 export const addGallery = async (req, res) => {
   try {
     const { title, description, product_id } = req.body;
+
+    if (!product_id || !title || !description) {
+      return res.status(400).json({ message: "Product ID, title, and description are required" });
+    }
+
     const files = req.files;
-    // console.log("Files received for gallery:", files);return;
+    // console.log("Files received for gallery:", files);
 
     if (!files || files.length === 0) {
       return res
@@ -569,14 +676,14 @@ export const addGallery = async (req, res) => {
     }
 
     const result = await addGalleryModel(uploadedFiles, product_id);
-
+    // console.log(result);
     return res.status(201).json({
       message: "Gallery added/updated successfully",
       gallery: result,
     });
   } catch (error) {
     console.error("Error adding gallery:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: error.message });
   }
 };
 
@@ -584,7 +691,7 @@ export const addGallery = async (req, res) => {
 
 export const addVideo = async (req, res) => {
   try {
-    // console.log("Request body for videos:", req.body);return;
+    console.log("Request body for videos:", req.body);
     const { product_id, data } = req.body;
 
     if (!product_id || !Array.isArray(data) || data.length === 0) {
@@ -603,7 +710,7 @@ export const addVideo = async (req, res) => {
 
     // Map videos with existing IDs if updating
     const videosToProcess = data.map((v, i) => ({
-      id: existingRows[i]?.id || null,
+      id: existingRows[i]?.id,
       product_id,
       video_title: v.video_title || "",
       video_url: v.video_url || "",
@@ -620,7 +727,7 @@ export const addVideo = async (req, res) => {
 
   } catch (error) {
     console.error("Error adding videos:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: error.message });
   }
 };
 
@@ -657,7 +764,7 @@ export const checkVendorProduct = async (req, res) => {
     const { product_id, vendor_id } = req.body;
 
     const brandArr = await getVendorBrands(vendor_id);
-    const isVendor = await isVendorProduc(product_id, brandArr);
+    const isVendor = await isVendorProduct(product_id, brandArr);
 
     return res.json({
       success: true,
@@ -674,10 +781,10 @@ export const checkVendorProduct = async (req, res) => {
 export const editProduct = async (req, res) => {
   try {
     const productId = req.params.product_id;
-    const replacements = { productId: productId }; // plain object
+    const replacements = { productId: productId };
 
     const productData = await geteditProductDetail(replacements.productId);
-
+    
     if (!productData) {
       return res.status(404).json({ message: "Product not found" });
     }
@@ -740,7 +847,7 @@ export const enrichment = async (req, res) => {
     const existingRows = await getSelectedCol({
       table: "tbl_product_enrichment_images",
       columns: ["id", "type"],
-      where: { product_id, is_deleted: 0 },
+      where: { product_id },
       records: "multiple",
     });
 
