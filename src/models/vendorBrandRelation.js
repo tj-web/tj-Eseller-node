@@ -44,7 +44,7 @@ const VendorBrandRelation = sequelize.define(
   },
   {
     tableName: "vendor_brand_relation",
-    timestamps: false, // IMPORTANT: because DB handles timestamps
+    timestamps: false,
   },
 );
 

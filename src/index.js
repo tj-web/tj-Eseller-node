@@ -10,7 +10,7 @@ import orderRoutes from "./routes/orders.routes.js";
 import brandRoutes from "./routes/brands.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import manageLeads from "./routes/manageLeads.routes.js";
-import manageProduct from "./routes/manageProduct.routes.js";
+import manageProduct from "./modules/product/product.route.js";
 import agreementRoutes from "./routes/agreement.routes.js";
 import helpSupportRoutes from "./routes/help-support.routes.js";
 import companyInformationRoutes from "./routes/companyInformation.routes.js";
