@@ -9,7 +9,7 @@ export const sendVerificationEmail = async (
   email,
   token,
   vendorId,
-  transaction
+  transaction,
 ) => {
   const link = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
 
@@ -31,7 +31,7 @@ export const sendVerificationEmail = async (
       created_at: new Date(),
       updated_at: new Date(),
     },
-    { transaction }
+    { transaction },
   );
 };
 
@@ -42,7 +42,7 @@ export const sendAdminNotification = async (
   dial_code,
   phone,
   vendorId,
-  transaction
+  transaction,
 ) => {
   const body = `
     <h3>New Vendor Registration</h3>
@@ -63,28 +63,22 @@ export const sendAdminNotification = async (
       created_at: new Date(),
       updated_at: new Date(),
     },
-    { transaction }
+    { transaction },
   );
 };
-
 
 export const verifyEmailService = async (token) => {
   if (!token) {
     throw new AppError("Token missing", 400);
   }
 
-  const hashedToken = crypto
-    .createHash("sha256")
-    .update(token)
-    .digest("hex");
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
   const transaction = await sequelize.transaction();
 
   try {
     const user = await Vendor.findOne({
       where: { hash_string: hashedToken },
-      transaction,
-      lock:true,
     });
 
     if (!user) {
@@ -98,7 +92,7 @@ export const verifyEmailService = async (token) => {
       {
         where: { id: user.id },
         transaction,
-      }
+      },
     );
 
     await VendorAuth.update(
@@ -108,12 +102,11 @@ export const verifyEmailService = async (token) => {
       {
         where: { vendor_id: user.id },
         transaction,
-      }
+      },
     );
 
     await transaction.commit();
     return true;
-
   } catch (error) {
     await transaction.rollback();
     throw error;

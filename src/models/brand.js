@@ -292,7 +292,7 @@ const Brand = sequelize.define(
   {
     tableName: "tbl_brand",
     timestamps: false,
-  }
+  },
 );
 
 export default Brand;

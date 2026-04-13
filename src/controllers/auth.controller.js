@@ -4,9 +4,7 @@ import Vendor from "../models/vendor.js";
 import { verifyEmailService } from "../services/emailService.js";
 import { verifyOtpService, sendOtpService } from "../services/otpService.js";
 import { AppError } from "../utilis/appError.js";
-import {
-  findUserByEmail,
-} from "../services/userService.js";
+import { findUserByEmail } from "../services/userService.js";
 
 import {
   generateAuthTokens,
@@ -52,12 +50,7 @@ export const login = async (req, res, next) => {
 
     const { accessToken, refreshToken } = generateAuthTokens(user);
 
-    await createLoginHistory(
-      user,
-      ip,
-      deviceId,
-      refreshToken
-    );
+    await createLoginHistory(user, ip, deviceId, refreshToken);
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("access_token", accessToken, {
@@ -114,7 +107,6 @@ export const forgotPassword = async (req, res, next) => {
     return res.status(200).json({
       message: "Please check your Email.",
     });
-
   } catch (error) {
     next(error);
   }
@@ -165,12 +157,10 @@ export const logOut = async (req, res, next) => {
     return res.status(200).json({
       message: "Logged out successfully",
     });
-
   } catch (error) {
     next(error);
   }
 };
-
 
 /* ======================================================
     CHANGE PASSWORD CONTROLLER
@@ -186,7 +176,6 @@ export const changePassword = async (req, res, next) => {
     return res.status(200).json({
       message: "Password changed successfully",
     });
-
   } catch (error) {
     next(error);
   }
@@ -201,7 +190,6 @@ export const verifyEmail = async (req, res, next) => {
     return res.status(200).json({
       message: "Email verified successfully",
     });
-
   } catch (error) {
     next(error);
   }
@@ -220,12 +208,10 @@ export const sendOtp = async (req, res, next) => {
     return res.status(200).json({
       message: "OTP sent successfully",
     });
-
   } catch (error) {
     next(error);
   }
 };
-
 
 export const verifyOtp = async (req, res, next) => {
   const { phone_number, otp } = req.body;
@@ -236,12 +222,7 @@ export const verifyOtp = async (req, res, next) => {
   const deviceId = req.headers["x-device-id"] || null;
 
   try {
-    const result = await verifyOtpService(
-      phone_number,
-      otp,
-      ip,
-      deviceId
-    );
+    const result = await verifyOtpService(phone_number, otp, ip, deviceId);
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("access_token", result.accessToken, {
@@ -262,7 +243,6 @@ export const verifyOtp = async (req, res, next) => {
       message: "Login successful via OTP",
       user: result.user,
     });
-
   } catch (error) {
     next(error);
   }

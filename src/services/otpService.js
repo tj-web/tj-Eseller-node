@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import Otp from "../models/auth/otp.js";
 import { findUserByPhone } from "./userService.js";
 import { AppError } from "../utilis/appError.js";
-import { createLoginHistory, generateAuthTokens } from "./authService.js";  
+import { createLoginHistory, generateAuthTokens } from "./authService.js";
 
 /* =========================================
    SEND OTP
@@ -14,7 +14,6 @@ export const sendOtpService = async (phone_number) => {
     throw new AppError("Invalid phone number", 400);
   }
 
-  /* ---------- reuse service ---------- */
   const user = await findUserByPhone(phone_number);
 
   if (!user) {
@@ -33,10 +32,7 @@ export const sendOtpService = async (phone_number) => {
   if (lastOtp) {
     const diff = now - new Date(lastOtp.created_date);
     if (diff < 30 * 1000) {
-      throw new AppError(
-        "Wait 30 seconds before requesting OTP again",
-        429
-      );
+      throw new AppError("Wait 30 seconds before requesting OTP again", 429);
     }
   }
 
@@ -55,7 +51,7 @@ export const sendOtpService = async (phone_number) => {
   if (otpCount >= 5) {
     throw new AppError(
       "Maximum OTP limit reached. Try again after 12 hours.",
-      429
+      429,
     );
   }
 
@@ -86,12 +82,7 @@ export const sendOtpService = async (phone_number) => {
    VERIFY OTP
 ========================================= */
 
-export const verifyOtpService = async (
-  phone_number,
-  otp,
-  ip,
-  deviceId
-) => {
+export const verifyOtpService = async (phone_number, otp, ip, deviceId) => {
   const now = new Date();
 
   /* ---------- find OTP ---------- */
@@ -113,35 +104,29 @@ export const verifyOtpService = async (
 
   /* ---------- mark used ---------- */
   const updated = await Otp.update(
-  { is_verified: 1 },
-  {
-    where: {
-      id: record.id,
-      is_verified: 0,
+    { is_verified: 1 },
+    {
+      where: {
+        id: record.id,
+        is_verified: 0,
+      },
     },
-  }
-);
+  );
 
-if (!updated[0]) {
-  throw new AppError("OTP already used", 400);
-}
+  if (!updated[0]) {
+    throw new AppError("OTP already used", 400);
+  }
 
   /* ---------- get user ---------- */
   const user = await findUserByPhone(phone_number);
 
-
-   if (!user || user.Vendor.status === 0) {
+  if (!user || user.Vendor.status === 0) {
     throw new AppError("Invalid OTP", 400);
   }
 
   const { accessToken, refreshToken } = generateAuthTokens(user);
 
-  await createLoginHistory(
-    user,
-    ip,
-    deviceId,
-    refreshToken
-  );
+  await createLoginHistory(user, ip, deviceId, refreshToken);
 
   return {
     accessToken,

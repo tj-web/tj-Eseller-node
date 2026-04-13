@@ -1,4 +1,3 @@
-
 import dotenv from "dotenv";
 dotenv.config({ debug: false });
 
@@ -28,10 +27,12 @@ global.CONSTANTS = AWS_paths();
 const app = express();
 
 // Middlewares
-app.use(cors({
-  origin: "http://localhost:5173",
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: ["http://localhost:5000", "http://localhost:5173"],
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -56,12 +57,22 @@ app.use(process.env.API_VERSION_PATH + "/manage", manageLeads);
 app.use(process.env.API_VERSION_PATH + "/orders", orderRoutes);
 app.use(process.env.API_VERSION_PATH + "/brands", brandRoutes);
 app.use(process.env.API_VERSION_PATH + "/product", manageProduct);
-app.use(process.env.API_VERSION_PATH + "/eseller-agreement",authenticate, agreementRoutes);
+app.use(
+  process.env.API_VERSION_PATH + "/eseller-agreement",
+  authenticate,
+  agreementRoutes,
+);
 app.use(process.env.API_VERSION_PATH + "/help-support", helpSupportRoutes);
-app.use(process.env.API_VERSION_PATH + "/company-information", companyInformationRoutes);
-app.use(process.env.API_VERSION_PATH + "/account-health", authenticate , accountHealthRoutes);
+app.use(
+  process.env.API_VERSION_PATH + "/company-information",
+  companyInformationRoutes,
+);
+app.use(
+  process.env.API_VERSION_PATH + "/account-health",
+  authenticate,
+  accountHealthRoutes,
+);
 app.use(process.env.API_VERSION_PATH + "/auth", authRoutes);
-
 
 // Global error handler
 // app.use((err, req, res, next) => {

@@ -1,8 +1,14 @@
 import express from "express";
 import {
-   login, signup, forgotPassword,
-   logOut, resetPassword
-   , changePassword, verifyEmail, sendOtp, verifyOtp
+  login,
+  signup,
+  forgotPassword,
+  logOut,
+  resetPassword,
+  changePassword,
+  verifyEmail,
+  sendOtp,
+  verifyOtp,
 } from "../controllers/auth.controller.js";
 import { validateLogin } from "../validators/authValidators/loginValidation.js";
 import { validateSignup } from "../validators/authValidators/signupValidation.js";
@@ -13,7 +19,6 @@ import { validateSendOtp } from "../validators/authValidators/sendOtpValidation.
 import { validateVerifyOtp } from "../validators/authValidators/verifyOtpValidation.js";
 
 const router = express.Router();
-
 
 /* ================================
    PUBLIC ROUTES
@@ -32,7 +37,6 @@ router.post("/verify-email", verifyEmail); // token based, validator optional
 router.post("/send-otp", validateSendOtp, sendOtp);
 
 router.post("/verify-otp", validateVerifyOtp, verifyOtp);
-
 
 /* ================================
    PROTECTED ROUTES  , use authenticate here !
