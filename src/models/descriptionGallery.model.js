@@ -18,11 +18,11 @@ const DescriptionGallery = sequelize.define("DescriptionGallery", {
     defaultValue: null,
   },
   title: {
-    type: DataTypes.TEXT('medium'), // mediumtext
+    type: DataTypes.TEXT('medium'), 
     allowNull: false,
   },
   description: {
-    type: DataTypes.TEXT('medium'), // mediumtext
+    type: DataTypes.TEXT('medium'), 
     allowNull: false,
   },
   product_id: {
@@ -32,7 +32,7 @@ const DescriptionGallery = sequelize.define("DescriptionGallery", {
   created_on: {
     type: DataTypes.DATE,
     allowNull: false,
-    defaultValue: DataTypes.NOW, // current_timestamp()
+    defaultValue: DataTypes.NOW, 
   },
   status: {
     type: DataTypes.INTEGER(11),

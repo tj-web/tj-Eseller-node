@@ -1,37 +1,9 @@
-import { isVendorProduct } from "../models/ManageProduct/isVendorProduct.js";
-import { getProductDetail } from "../models/ManageProduct/viewProduct.js";
-import { addVideoModel } from "../models/ManageProduct/addVideos.js";
-import { insertProductScreenshots } from "../models/ManageProduct/AddScreenshot.js";
-import { addGalleryModel } from "../models/ManageProduct/addGallery.js";
-import {
-  getProductList,
-  getVendorBrands,
-  getVendorBrandsDetails,
-  getCategoryList,
-} from "../models/ManageProduct/getManageProduct.js";
-import Setting from "../models/websiteSetting.js";
-import {
-  getSelectedColumns,
-  saveProduct,
-} from "../models/ManageProduct/addBasicDetails.js";
-import { 
-   getLanguageList,
-  saveOrUpdateProductSpecification,
-  getProductSpecificationDetails
-} from "../models/ManageProduct/productSpecification.js";
-import { getSelectedCol } from "../models/ManageProduct/viewProduct.js";
-import { saveOrUpdateProductFeature } from "../models/ManageProduct/saveOrUpdateFeature.js";
-import {
-  getAllFeatures,
-  getProductFeatures
-} from "../models/ManageProduct/getFeatures.js";
-import { geteditProductDetail } from "../models/ManageProduct/viewProduct.js";
-import { imageSize } from "image-size";
-import { upsertEnrichmentImages } from "../models/ManageProduct/addenrichment.js";
-import { uploadfile2 } from "../utilis/s3Uploader.js";
+import * as productService from "./product.service.js";
+import { uploadfile2 } from "../../utilis/s3Uploader.js";
+import sequelize from "../../db/connection.js";
 import fs from "fs";
 import path from "path";
-import sequelize from "../db/connection.js";
+import sizeOf from "image-size";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -44,7 +16,7 @@ export const brand_arr = async (req, res) => {
     }
 
     // Fetch full brand details for the vendor using the exact condition
-    const brands = await getVendorBrandsDetails(vendor_id);
+    const brands = await productService.getVendorBrandsDetails(vendor_id);
 
     return res.status(200).json({
       status: true,
@@ -80,10 +52,10 @@ export const fetchVendorProducts = async (req, res) => {
     const limit = req.query.limit;
     const pageNumber = req.query.pageNumber;
 
-    const brand_arr = await getVendorBrands(vendor_id);
+    const brand_arr = await productService.getVendorBrands(vendor_id);
     console.log("Vendor brands:", brand_arr); // Debug log
 
-    const products = await getProductList(
+    const products = await productService.getProductList(
       brand_arr,
       search_filter,
       order_by,
@@ -109,7 +81,7 @@ export const searchCategories = async (req, res) => {
   try {
     const { search = "", limit = 20, offset = 0 } = req.query;
 
-    const categories = await getCategoryList(search, limit, offset);
+    const categories = await productService.getCategoryList(search, limit, offset);
     console.log("Fetched categories:", categories); // Debug log
 
     return res.status(200).json({
@@ -232,7 +204,7 @@ export const basicDetails = async (req, res) => {
 
 
 
-    const maxSlug = await getSelectedColumns(
+    const maxSlug = await productService.getSelectedColumns(
       "tbl_website_settings",
       ["setting_value"],
       { var_name: "MAX_SLUG_ID" }
@@ -242,7 +214,7 @@ export const basicDetails = async (req, res) => {
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
     // Insert product
-    const productId = await saveProduct(save, secondImageUrl, product_id);
+    const productId = await productService.saveProduct(save, secondImageUrl, product_id);
     console.log("Product saved with ID:", productId);
 
     // Update pricing_document if documents were uploaded
@@ -354,7 +326,7 @@ export const getProductSpecification = async (req, res) => {
       return res.status(400).json({ error: "product_id is required" });
     }
 
-    const specification = await getProductSpecificationDetails(product_id);
+    const specification = await productService.getProductSpecificationDetails(product_id);
 
     if (!specification) {
       return res.status(404).json({ message: "No specification found for this product", data: null });
@@ -378,7 +350,7 @@ export const getProductSpecification = async (req, res) => {
 export const getLanguages = async (req, res) => {
   try {
     
-    const languages = await getLanguageList();
+    const languages = await productService.getLanguageList();
   
     if (!languages || languages.length === 0) {
       return res.status(200).json({
@@ -431,14 +403,14 @@ export const ProductSpecification = async (req, res) => {
       languages,
     };
 
-    const data = await getSelectedCol({
+    const data = await productService.getSelectedCol({
       table: "tbl_product_specification", 
       columns: ["id"], 
       where: { product_id: product_id }, 
       records: "single",
     });
     const id = data?.id || null;
-    const result = await saveOrUpdateProductSpecification(id, productData);
+    const result = await productService.saveOrUpdateProductSpecification(id, productData);
 
     return res.status(200).json({
       message: "Changes have been recorded successfully!",
@@ -466,7 +438,7 @@ export const saveProductFeature = async (req, res) => {
     }
 
     // One product can have many feature rows. Each row is product_id + section_id (same as feature_id in tbl_feature).
-    const data = await getSelectedCol({
+    const data = await productService.getSelectedCol({
       table: "tbl_product_features",
       columns: ["id"],
       where: { product_id: post.product_id, section_id: post.section_id },
@@ -474,7 +446,7 @@ export const saveProductFeature = async (req, res) => {
     });
     const id = data?.id || null;
 
-    const result = await saveOrUpdateProductFeature(id, post);
+    const result = await productService.saveOrUpdateProductFeature(id, post);
     if (result.action === "update") {
       return res.status(200).json({
         message: "Feature updated",
@@ -506,14 +478,14 @@ export const getAllFeaturesList = async (req, res) => {
 
     if (product_id) {
       // Get brand array
-      const brand = await getVendorBrands(vendor_id);
+      const brand = await productService.getVendorBrands(vendor_id);
 
       // Check if vendor owns this product
-      const check = await isVendorProduct(product_id, brand);
+      const check = await productService.isVendorProduct(product_id, brand);
       
       if (check) {
         // Fetch all features for the product
-        const allFeatures = await getAllFeatures();
+        const allFeatures = await productService.getAllFeatures();
 
         return res.status(200).json({
           success: true,
@@ -547,7 +519,7 @@ export const getProductFeaturesList = async (req, res) => {
   }
   
   try {
-    const productFeatures = await getProductFeatures(product_id);
+    const productFeatures = await productService.getProductFeatures(product_id);
     return res.status(200).json({
       success: true,
       productFeatures,
@@ -572,7 +544,7 @@ export const addScreenshots = async (req, res) => {
         .json({ error: "Product ID, screenshots and alt_text are required" });
     }
 
-    const existingRows = await getSelectedCol({
+    const existingRows = await productService.getSelectedCol({
       table: "tbl_product_screenshots",
       columns: ["id"],
       where: { product_id: product_id },
@@ -607,7 +579,7 @@ export const addScreenshots = async (req, res) => {
         id: existingRows[i]?.id || null, // attach id if exists
       });
     }
-    const result = await insertProductScreenshots(screenshotsData);
+    const result = await productService.insertProductScreenshots(screenshotsData);
 
     const totalProcessed = result?.totalProcessed ?? 0;
     const message =
@@ -647,7 +619,7 @@ export const addGallery = async (req, res) => {
     }
 
     // Get existing gallery ids for this product
-    const existingRows = await getSelectedCol({
+    const existingRows = await productService.getSelectedCol({
       table: "tbl_description_gallery",
       columns: ["id"],
       where: { product_id: product_id },
@@ -675,7 +647,7 @@ export const addGallery = async (req, res) => {
       });
     }
 
-    const result = await addGalleryModel(uploadedFiles, product_id);
+    const result = await productService.addGalleryModel(uploadedFiles, product_id);
     // console.log(result);
     return res.status(201).json({
       message: "Gallery added/updated successfully",
@@ -701,7 +673,7 @@ export const addVideo = async (req, res) => {
     }
 
     // Fetch all existing IDs for this product
-    const existingRows = await getSelectedCol({
+    const existingRows = await productService.getSelectedCol({
       table: "tbl_product_videos",
       columns: ["id"],
       where: { product_id },
@@ -718,7 +690,7 @@ export const addVideo = async (req, res) => {
     }));
 
     // Save videos in DB
-    const result = await addVideoModel(videosToProcess);
+    const result = await productService.addVideoModel(videosToProcess);
 
     return res.status(201).json({
       message: "Videos added/updated successfully",
@@ -740,7 +712,7 @@ export const viewProduct = async (req, res) => {
       return res.redirect("/product-list");
     }
 
-    const productData = await getProductDetail(product_id);
+    const productData = await productService.getProductDetail(product_id);
     // getProductSpecs(productData.operating_system);
     console.log("Fetched product data:", productData); // Debug log
     if (!productData) {
@@ -763,8 +735,8 @@ export const checkVendorProduct = async (req, res) => {
   try {
     const { product_id, vendor_id } = req.body;
 
-    const brandArr = await getVendorBrands(vendor_id);
-    const isVendor = await isVendorProduct(product_id, brandArr);
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
 
     return res.json({
       success: true,
@@ -783,7 +755,7 @@ export const editProduct = async (req, res) => {
     const productId = req.params.product_id;
     const replacements = { productId: productId };
 
-    const productData = await geteditProductDetail(replacements.productId);
+    const productData = await productService.geteditProductDetail(replacements.productId);
     
     if (!productData) {
       return res.status(404).json({ message: "Product not found" });
@@ -800,13 +772,6 @@ export const editProduct = async (req, res) => {
 };
 
 //----------this for the enrichment part of the form-----------------
-
-// import sizeOf from "image-size";
-// import path from "path";
-// import { upsertEnrichmentImages } from "../models/enrichmentModel.js";
-// import { getSelectedCol } from "../helpers/common.js";
-import sizeOf from "image-size";
-
 export const enrichment = async (req, res) => {
   try {
     const { product_id, type } = req.body;
@@ -844,7 +809,7 @@ export const enrichment = async (req, res) => {
     }
 
     // Fetch existing enrichment images for this product
-    const existingRows = await getSelectedCol({
+    const existingRows = await productService.getSelectedCol({
       table: "tbl_product_enrichment_images",
       columns: ["id", "type"],
       where: { product_id },
@@ -872,7 +837,7 @@ export const enrichment = async (req, res) => {
       };
     });
 
-    const saved = await upsertEnrichmentImages(enrichmentData);
+    const saved = await productService.upsertEnrichmentImages(enrichmentData);
 
     return res.json({
       success: true,

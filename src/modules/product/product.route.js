@@ -17,10 +17,8 @@ import {
   checkVendorProduct,
   editProduct,
   enrichment,
-} from "../controllers/manageProductController.js";
+} from "./product.controller.js";
 import multer from "multer";
-import { getAllFeatures } from "../models/ManageProduct/getFeatures.js";
-
 const router = express.Router();
 
 const storage = multer.memoryStorage();
