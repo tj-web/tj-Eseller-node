@@ -29,7 +29,7 @@ export const resetPasswordService = async (token, newPassword) => {
   });
 
   if (!record) {
-    throw new AppError("Invalid or expired token", 400);
+    throw new AppError( 400);
   }
 
   const now = new Date();
@@ -161,7 +161,7 @@ export const registerVendor = async (data) => {
     dial_code,
     contact_number,
     password,
-    company_name,
+    company_name=" ",
   } = data;
 
   const normalizedEmail = email.trim().toLowerCase();

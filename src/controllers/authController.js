@@ -78,7 +78,7 @@ export const login = async (req, res, next) => {
       message: "Login successful",
       status: 1,
       user: {
-        id: user.vendor_id,
+        vendor_id: user.vendor_id,
         email: user.email,
         name: `${user.Vendor?.first_name} ${user.Vendor?.last_name}`,
       },

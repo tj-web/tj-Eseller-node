@@ -13,7 +13,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import manageLeads from "./routes/manageLeads.routes.js";
 import manageProduct from "./routes/manageProduct.routes.js";
 import agreementRoutes from "./routes/agreement.routes.js";
-import helpSupportRoutes from "./routes/help-support.routes.js";
+import helpSupportRoutes from "./routes/helpSupport.routes.js";
 import companyInformationRoutes from "./routes/companyInformation.routes.js";
 import accountHealthRoutes from "./routes/accountHealth.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -30,8 +30,7 @@ const app = express();
 
 // Middlewares
 app.use(cors({
-  origin: "http://localhost:5173",
-  credentials: true,
+  origin: "*",
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

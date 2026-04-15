@@ -1,13 +1,14 @@
 import { Op } from "sequelize";
-import Designation from "./designation.js";
-import VendorAuth from "./auth/vendorAuth.js";
-import VendorDetails from "./vendorDetails.js";
-import VendorAgreement from "./vendorAgreement.js";
-import VendorBrandRelation from "./vendorBrandRelation.js";
-import Brand from "./brand.js";
-import Product from "./product.js";
-import Plan from "./plan.js";
-import TblPlanSpec from "./planSpec.js";
+// import Designation from "./designation.js";
+import Designation from "../models/designation.js";
+import VendorAuth from "../models/auth/vendorAuth.js";
+import VendorDetails from "../models/vendorDetails.js";
+import VendorAgreement from "../models/vendorAgreement.js";
+import VendorBrandRelation from "../models/vendorBrandRelation.js";
+import Brand from "../models/brand.js";
+import Product from "../models/product.js";
+import Plan from "../models/plan.js";
+import TblPlanSpec from "../models/planSpec.js";
 
 // --- Establish temporary relationships for these queries ---
 VendorBrandRelation.belongsTo(Brand, { foreignKey: "tbl_brand_id", targetKey: "brand_id" });

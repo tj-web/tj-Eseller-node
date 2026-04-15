@@ -1,5 +1,5 @@
 
-import VendorReqQuery from "../models/help-Support/helpAndSupport.js";
+import VendorReqQuery from "../models/helpAndSupport.js";
 
 export const insertVendorHelpQuery = async (helpData) => {
     try {

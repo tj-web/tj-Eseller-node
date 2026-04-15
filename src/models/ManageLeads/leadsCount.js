@@ -365,14 +365,14 @@ export const getLeadsCount = async (
       ORDER BY tl.id DESC
       LIMIT ${limit} OFFSET ${offset}
     ) AS tl
-    LEFT JOIN tbl_request_callbacks tr ON tr.acd_uuid = tl.acd_uuid
+    LEFT JOIN tbl_request_callbacks tr ON tr.acd_uuid = tl.acd_d
     LEFT JOIN tbl_product tp ON tp.product_id = tl.product_id
     LEFT JOIN tbl_leads_status tls ON tls.id = tl.lead_action
     ORDER BY tl.id DESC;
   `;
 
   const result = await sequelize.query(query, {
-    replacements,
+    replacements,  
     type: sequelize.QueryTypes.SELECT,
   });
 
