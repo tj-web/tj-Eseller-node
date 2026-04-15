@@ -38,7 +38,7 @@ const Setting = sequelize.define(
   },
   {
     tableName: "tbl_website_settings", 
-    timestamps: false, // Set to true if you want Sequelize to handle date_added/date_modified automatically
+    timestamps: false, 
   }
 );
 

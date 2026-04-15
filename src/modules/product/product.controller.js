@@ -61,7 +61,7 @@ export const fetchVendorProducts = async (req, res) => {
       order_by,
       order,
       limit,
-      pageNumber
+      pageNumber,
     );
     console.log("Fetched products:", products); // Debug log
 
@@ -81,7 +81,11 @@ export const searchCategories = async (req, res) => {
   try {
     const { search = "", limit = 20, offset = 0 } = req.query;
 
-    const categories = await productService.getCategoryList(search, limit, offset);
+    const categories = await productService.getCategoryList(
+      search,
+      limit,
+      offset,
+    );
     console.log("Fetched categories:", categories); // Debug log
 
     return res.status(200).json({
@@ -202,19 +206,20 @@ export const basicDetails = async (req, res) => {
       manual_reviews: post?.manual_reviews ?? "1",
     };
 
+    const maxSlug = await productService.getSelectedCol({
+      table: "Setting",
+      columns: ["setting_value"],
+      where: { var_name: "MAX_SLUG_ID" },
+    });
 
-
-    const maxSlug = await productService.getSelectedColumns(
-      "tbl_website_settings",
-      ["setting_value"],
-      { var_name: "MAX_SLUG_ID" }
-    );
-
-    // Increment slug_id
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
     // Insert product
-    const productId = await productService.saveProduct(save, secondImageUrl, product_id);
+    const productId = await productService.saveProduct(
+      save,
+      secondImageUrl,
+      product_id,
+    );
     console.log("Product saved with ID:", productId);
 
     // Update pricing_document if documents were uploaded
@@ -225,7 +230,7 @@ export const basicDetails = async (req, res) => {
         {
           replacements: { pricingDoc: pricingDocValue, productId },
           type: sequelize.QueryTypes.UPDATE,
-        }
+        },
       );
     }
 
@@ -233,9 +238,13 @@ export const basicDetails = async (req, res) => {
     if (post?.product_category) {
       // Verify product was created successfully
       if (!productId) {
-        throw new Error("Product ID verification failed - cannot insert categories");
+        throw new Error(
+          "Product ID verification failed - cannot insert categories",
+        );
       }
-      const categories = Array.isArray(post.product_category) ? post.product_category : [post.product_category];
+      const categories = Array.isArray(post.product_category)
+        ? post.product_category
+        : [post.product_category];
 
       // Delete old mapping if exists
       await sequelize.query(
@@ -243,7 +252,7 @@ export const basicDetails = async (req, res) => {
         {
           replacements: { productId },
           type: sequelize.QueryTypes.DELETE,
-        }
+        },
       );
 
       // Insert new mappings
@@ -254,14 +263,20 @@ export const basicDetails = async (req, res) => {
           // If the form sent category_parent_id (from the same category search response), use it and skip a DB read.
           // Otherwise load parent_id from tbl_category (older clients / extra categories without a matching field).
           let usedClientParent = false;
-          if (Object.prototype.hasOwnProperty.call(post, "category_parent_id")) {
+          if (
+            Object.prototype.hasOwnProperty.call(post, "category_parent_id")
+          ) {
             const sent = post.category_parent_id;
-            let raw =
-              Array.isArray(sent) ? sent[index] : categories.length === 1 ? sent : index === 0 ? sent : undefined;
+            let raw = Array.isArray(sent)
+              ? sent[index]
+              : categories.length === 1
+                ? sent
+                : index === 0
+                  ? sent
+                  : undefined;
             if (raw !== undefined) {
               usedClientParent = true;
-              parentId =
-                raw === "" || raw === null ? null : parseInt(raw, 10);
+              parentId = raw === "" || raw === null ? null : parseInt(raw, 10);
               if (Number.isNaN(parentId)) parentId = null;
             }
           }
@@ -273,11 +288,13 @@ export const basicDetails = async (req, res) => {
               {
                 replacements: { categoryId },
                 type: sequelize.QueryTypes.SELECT,
-              }
+              },
             );
 
             if (!categoryData) {
-              console.warn(`Category ${categoryId} not found or inactive, skipping...`);
+              console.warn(
+                `Category ${categoryId} not found or inactive, skipping...`,
+              );
               continue;
             }
 
@@ -291,12 +308,12 @@ export const basicDetails = async (req, res) => {
               replacements: {
                 productId,
                 categoryId,
-                parentId,        // ✅ Properly bound parameter
+                parentId, // ✅ Properly bound parameter
                 sortOrder: 0,
-                isPrimary: 1
+                isPrimary: 1,
               },
               type: sequelize.QueryTypes.INSERT,
-            }
+            },
           );
         }
       }
@@ -326,10 +343,16 @@ export const getProductSpecification = async (req, res) => {
       return res.status(400).json({ error: "product_id is required" });
     }
 
-    const specification = await productService.getProductSpecificationDetails(product_id);
+    const specification =
+      await productService.getProductSpecificationDetails(product_id);
 
     if (!specification) {
-      return res.status(404).json({ message: "No specification found for this product", data: null });
+      return res
+        .status(404)
+        .json({
+          message: "No specification found for this product",
+          data: null,
+        });
     }
 
     return res.status(200).json({
@@ -343,39 +366,34 @@ export const getProductSpecification = async (req, res) => {
   }
 };
 
-
-
 /* Controller to fetch all supported languages  */
 
 export const getLanguages = async (req, res) => {
   try {
-    
     const languages = await productService.getLanguageList();
-  
+
     if (!languages || languages.length === 0) {
       return res.status(200).json({
         success: true,
         message: "No languages found",
-        data: []
+        data: [],
       });
     }
 
     return res.status(200).json({
       success: true,
       count: languages.length,
-      data: languages
+      data: languages,
     });
-
   } catch (error) {
     console.error("Error in getLanguages controller:", error);
     return res.status(500).json({
       success: false,
       message: "Internal Server Error",
-      error: error.message
+      error: error.message,
     });
   }
 };
-
 
 export const ProductSpecification = async (req, res) => {
   try {
@@ -404,13 +422,16 @@ export const ProductSpecification = async (req, res) => {
     };
 
     const data = await productService.getSelectedCol({
-      table: "tbl_product_specification", 
-      columns: ["id"], 
-      where: { product_id: product_id }, 
+      table: "ProductSpecification", 
+      columns: ["id"],
+      where: { product_id: product_id },
       records: "single",
     });
     const id = data?.id || null;
-    const result = await productService.saveOrUpdateProductSpecification(id, productData);
+    const result = await productService.saveOrUpdateProductSpecification(
+      id,
+      productData,
+    );
 
     return res.status(200).json({
       message: "Changes have been recorded successfully!",
@@ -422,8 +443,6 @@ export const ProductSpecification = async (req, res) => {
   }
 };
 
-
-
 //--------------------------------------------features part of the form--------------
 
 export const saveProductFeature = async (req, res) => {
@@ -433,13 +452,17 @@ export const saveProductFeature = async (req, res) => {
     if (!post.product_id) {
       return res.status(400).json({ error: "product_id is required" });
     }
-    if (post.section_id === undefined || post.section_id === null || post.section_id === "") {
+    if (
+      post.section_id === undefined ||
+      post.section_id === null ||
+      post.section_id === ""
+    ) {
       return res.status(400).json({ error: "section_id is required" });
     }
 
     // One product can have many feature rows. Each row is product_id + section_id (same as feature_id in tbl_feature).
     const data = await productService.getSelectedCol({
-      table: "tbl_product_features",
+      table: "ProductFeature",
       columns: ["id"],
       where: { product_id: post.product_id, section_id: post.section_id },
       records: "single",
@@ -471,7 +494,6 @@ export const saveProductFeature = async (req, res) => {
 
 //-------------function for getting the master list of features--------------------
 
-
 export const getAllFeaturesList = async (req, res) => {
   try {
     const { product_id, vendor_id } = req.query;
@@ -482,7 +504,7 @@ export const getAllFeaturesList = async (req, res) => {
 
       // Check if vendor owns this product
       const check = await productService.isVendorProduct(product_id, brand);
-      
+
       if (check) {
         // Fetch all features for the product
         const allFeatures = await productService.getAllFeatures();
@@ -517,7 +539,7 @@ export const getProductFeaturesList = async (req, res) => {
   if (!product_id) {
     return res.status(400).json({ error: "product_id is required" });
   }
-  
+
   try {
     const productFeatures = await productService.getProductFeatures(product_id);
     return res.status(200).json({
@@ -526,7 +548,9 @@ export const getProductFeaturesList = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching feature list:", error);
-    return res.status(500).json({ success: false, error: "Internal Server Error" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Internal Server Error" });
   }
 };
 
@@ -536,21 +560,21 @@ export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
     const files = req.files; // depends on multer config
-    let alt_text = req.body.alt_text; // can be string or array  
+    let alt_text = req.body.alt_text; // can be string or array
 
-    if (!product_id || !files || files.length === 0 || !alt_text) {    // validation alt_text ke uper lagana hai..
+    if (!product_id || !files || files.length === 0 || !alt_text) {
+      // validation alt_text ke uper lagana hai..
       return res
         .status(400)
         .json({ error: "Product ID, screenshots and alt_text are required" });
     }
 
     const existingRows = await productService.getSelectedCol({
-      table: "tbl_product_screenshots",
+      table: "ProductScreenshot",
       columns: ["id"],
       where: { product_id: product_id },
-      records: "all", // fetch ALL instead of single
+      records: "all", 
     });
-
 
     // Ensure alt_text is always an array
     let altArray = [];
@@ -579,7 +603,8 @@ export const addScreenshots = async (req, res) => {
         id: existingRows[i]?.id || null, // attach id if exists
       });
     }
-    const result = await productService.insertProductScreenshots(screenshotsData);
+    const result =
+      await productService.insertProductScreenshots(screenshotsData);
 
     const totalProcessed = result?.totalProcessed ?? 0;
     const message =
@@ -598,7 +623,6 @@ export const addScreenshots = async (req, res) => {
   }
 };
 
-
 //-----------------------------Add gallery-----------------------------------------
 
 export const addGallery = async (req, res) => {
@@ -606,7 +630,9 @@ export const addGallery = async (req, res) => {
     const { title, description, product_id } = req.body;
 
     if (!product_id || !title || !description) {
-      return res.status(400).json({ message: "Product ID, title, and description are required" });
+      return res
+        .status(400)
+        .json({ message: "Product ID, title, and description are required" });
     }
 
     const files = req.files;
@@ -620,10 +646,10 @@ export const addGallery = async (req, res) => {
 
     // Get existing gallery ids for this product
     const existingRows = await productService.getSelectedCol({
-      table: "tbl_description_gallery",
+      table: "DescriptionGallery",
       columns: ["id"],
       where: { product_id: product_id },
-      records: "all", // fetch ALL instead of single
+      records: "all", 
     });
 
     const titleArr = Array.isArray(title) ? title : [title];
@@ -647,7 +673,10 @@ export const addGallery = async (req, res) => {
       });
     }
 
-    const result = await productService.addGalleryModel(uploadedFiles, product_id);
+    const result = await productService.addGalleryModel(
+      uploadedFiles,
+      product_id,
+    );
     // console.log(result);
     return res.status(201).json({
       message: "Gallery added/updated successfully",
@@ -674,7 +703,7 @@ export const addVideo = async (req, res) => {
 
     // Fetch all existing IDs for this product
     const existingRows = await productService.getSelectedCol({
-      table: "tbl_product_videos",
+      table: "ProductVideo",
       columns: ["id"],
       where: { product_id },
       records: "all",
@@ -696,7 +725,6 @@ export const addVideo = async (req, res) => {
       message: "Videos added/updated successfully",
       result,
     });
-
   } catch (error) {
     console.error("Error adding videos:", error);
     return res.status(500).json({ error: error.message });
@@ -707,14 +735,13 @@ export const addVideo = async (req, res) => {
 export const viewProduct = async (req, res) => {
   try {
     const { product_id } = req.params;
-    // console.log("Product ID for viewing:", product_id); 
+
     if (!product_id) {
       return res.redirect("/product-list");
     }
 
     const productData = await productService.getProductDetail(product_id);
-    // getProductSpecs(productData.operating_system);
-    console.log("Fetched product data:", productData); // Debug log
+
     if (!productData) {
       return res.status(404).json({ message: "Product not found" });
     }
@@ -755,8 +782,10 @@ export const editProduct = async (req, res) => {
     const productId = req.params.product_id;
     const replacements = { productId: productId };
 
-    const productData = await productService.geteditProductDetail(replacements.productId);
-    
+    const productData = await productService.geteditProductDetail(
+      replacements.productId,
+    );
+
     if (!productData) {
       return res.status(404).json({ message: "Product not found" });
     }
@@ -802,15 +831,16 @@ export const enrichment = async (req, res) => {
       if (typeCount[t] < 4) {
         return res.status(400).json({
           success: false,
-          message: `Please upload at least 4 images for type ${Number(t) === 1 ? "desktop" : "mobile"
-            }`,
+          message: `Please upload at least 4 images for type ${
+            Number(t) === 1 ? "desktop" : "mobile"
+          }`,
         });
       }
     }
 
     // Fetch existing enrichment images for this product
     const existingRows = await productService.getSelectedCol({
-      table: "tbl_product_enrichment_images",
+      table: "ProductEnrichmentImage",
       columns: ["id", "type"],
       where: { product_id },
       records: "multiple",
@@ -822,7 +852,7 @@ export const enrichment = async (req, res) => {
 
       // Match existing row by type (first match)
       const existingIndex = existingRows.findIndex(
-        (row) => row.type === typeArr[index]
+        (row) => row.type === typeArr[index],
       );
       const existing =
         existingIndex !== -1 ? existingRows.splice(existingIndex, 1)[0] : null;
