@@ -308,7 +308,7 @@ export const basicDetails = async (req, res) => {
               replacements: {
                 productId,
                 categoryId,
-                parentId, // ✅ Properly bound parameter
+                parentId, 
                 sortOrder: 0,
                 isPrimary: 1,
               },
