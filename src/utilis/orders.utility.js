@@ -1,7 +1,7 @@
 import { or, Sequelize } from "sequelize";
 import sequelize from "../db/connection.js";
 import { unserialize } from "php-serialize";
-import {getAllOrders} from "../models/orders.model.js";
+import {getAllOrders} from "../modules/order/orders.model.js";
 
 
 // async function getAllOrders({

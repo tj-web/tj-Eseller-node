@@ -1,7 +1,7 @@
 import sequelize from "../../db/connection.js";
 import { Op, QueryTypes } from "sequelize";
-import VendorBrandRelation from "../../models/vendorBrandRelation.js";
-import Brand from "../../models/brand.js";
+import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
+import Brand from "../../models/brand.model.js";
 import Product from "../../models/product.js";
 import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
