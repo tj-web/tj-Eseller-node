@@ -26,13 +26,11 @@ export const totalLeadsCountInfo = async (req, res) => {
 // complete profile overview with the manager data
 export const getVendorOverview = async (req, res) => {
   try {
-    // const { vendor_id } = req.query;
-    const vendor_id = req.user.vendor_id; // fixed !!
+    const { vendor_id } = req.query;
 
     if (!vendor_id) {
       return res.status(400).json({ message: "vendor_id is required" });
     }
-    `+-`;
 
     // Get Manager Data
     const [managerData] = await sequelize.query(
@@ -53,7 +51,7 @@ export const getVendorOverview = async (req, res) => {
     );
 
     const manager_data = {
-      manager_name: managerData?.name ?? null,
+      manager_name: managerData?.name ?? "123456qwer",
       manager_email: managerData?.email ?? null,
       manager_phone: managerData?.phone ?? null,
       manager_img: managerData?.image ?? null,

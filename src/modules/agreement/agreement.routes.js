@@ -1,4 +1,4 @@
-import {agreementFormController, getAgreements} from "../controllers/agreementController.js";
+import {agreementFormController, getAgreements} from "./agreement.controller.js";
 import express from 'express';
 const router = express.Router();
 
