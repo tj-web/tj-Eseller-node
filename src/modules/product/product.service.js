@@ -6,6 +6,7 @@ import Product from "../../models/product.js";
 import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
 import ProductSpecification from "../../models/productSpecification.model.js";
+import Setting from "../../models/websiteSetting.js"
 import Language from "../../models/languages.model.js";
 import ProductFeature from "../../models/productFeature.model.js";
 import Feature from "../../models/features.model.js";
@@ -256,6 +257,7 @@ export const getCategoryList = async (search = "", limit = 20, offset = 0) => {
   return results;
 };
 
+
 export const getSelectedCol = async ({
   table,
   columns = [],
@@ -265,53 +267,37 @@ export const getSelectedCol = async ({
 }) => {
   try {
     
-    const Model = sequelize.models[table];
-
+    let Model = sequelize.models[table];
     if (!Model) {
-      throw new Error(`Model for table '${table}' not found. Make sure it's imported in your connection file.`);
+      Model = Object.values(sequelize.models).find(m => m.tableName === table);
     }
 
-    let order = [];
-    if (order_by && Object.keys(order_by).length > 0) {
-      order = Object.entries(order_by).map(([key, value]) => [key, value]);
+    if (!Model) {
+      throw new Error(`[Database Error] Model or Table '${table}' is not registered in Sequelize.`);
     }
 
     const options = {
-      attributes: columns.length > 0 ? columns : undefined, // undefined returns all cols
-      where: where,
-      order: order,
-      raw: true, 
+      attributes: columns.length > 0 ? columns : undefined,
+      where: where && typeof where === 'object' ? where : {},
+      raw: true,
     };
+
+    if (order_by && typeof order_by === 'object' && Object.keys(order_by).length > 0) {
+      options.order = Object.entries(order_by).map(([key, value]) => [key, value]);
+    }
 
     if (records === "single") {
       return await Model.findOne(options);
-    } else {
-      return await Model.findAll(options);
-    }
+    } 
+    
+    return await Model.findAll(options);
 
   } catch (error) {
-    console.error(`Error in getSelectedCol for table ${table}:`, error);
+    console.error(`getSelectedCol Error [Table: ${table}]:`, error.message);
     throw error;
   }
 };
 
-export const getSelectedColumns = async (tableName, columns = [], where = {}) => {
-  // 1. Find the model that matches the physical table name
-  const Model = Object.values(sequelize.models).find(
-    (m) => m.tableName === tableName
-  );
-
-  if (!Model) {
-    throw new Error(`No model found associated with the table: ${tableName}`);
-  }
-
-  // 2. Execute using Sequelize ORM logic
-  return await Model.findOne({
-    attributes: columns.length > 0 ? columns : undefined,
-    where: where,
-    raw: true,
-  });
-};
 
 export const saveProduct = async (save, imageUrl = null, productId = null) => {
   let newProductId;

@@ -11,7 +11,7 @@ const ProductDescription = sequelize.define("ProductDescription", {
   product_id: {
     type: DataTypes.INTEGER(11),
     allowNull: false,
-    // Typically this would have a reference to tbl_product
+   
   },
   brief: {
     type: DataTypes.TEXT('medium'),
@@ -41,8 +41,7 @@ const ProductDescription = sequelize.define("ProductDescription", {
   }
 }, {
   tableName: 'tbl_product_description',
-  timestamps: false, 
-
+  timestamps: false,
 });
 
 export default ProductDescription;

@@ -21,7 +21,7 @@ const ProductFeature = sequelize.define("ProductFeature", {
     allowNull: false,
   },
   description: {
-    type: DataTypes.TEXT('medium'), // mediumtext
+    type: DataTypes.TEXT('medium'), 
     allowNull: false,
   },
   image: {

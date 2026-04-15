@@ -9,7 +9,7 @@ const DescriptionGallery = sequelize.define("DescriptionGallery", {
     allowNull: false,
   },
   image: {
-    type: DataTypes.TEXT('medium'), // mediumtext
+    type: DataTypes.TEXT('medium'), 
     allowNull: false,
   },
   img_alt: {
