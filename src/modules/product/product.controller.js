@@ -4,6 +4,8 @@ import sequelize from "../../db/connection.js";
 import fs from "fs";
 import path from "path";
 import sizeOf from "image-size";
+import StatusCodes from "../../utilis/statusCodes.js";
+import SystemResponse from "../../utilis/systemResponse.js";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -65,14 +67,18 @@ export const fetchVendorProducts = async (req, res) => {
     );
     console.log("Fetched products:", products); // Debug log
 
-    return res.json({
-      status: true,
-      message: "Products fetched successfully",
-      products,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Products fetched successfully", products));
   } catch (error) {
     console.error("Error fetching vendor products:", error.message);
-    res.status(500).json({ status: false, message: "Internal Server Error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(
+        SystemResponse.internalServerError(
+          "Internal Server Error in vendor products",
+        ),
+      );
   }
 };
 
