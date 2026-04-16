@@ -185,7 +185,7 @@ export const getProductList = async (
     whereConditions.status = search_filter.srch_status;
   }
 
-  const results = await Product.findAll({
+  const results = await Product.findAndCountAll({
     attributes: ['product_id', 'product_name', 'status'],
     where: whereConditions,
     include: [
@@ -197,6 +197,7 @@ export const getProductList = async (
       {
         model: ProductImage,
         attributes: ['image'],
+        where: { default: 1 },
         required: false // LEFT JOIN
       }
     ],
@@ -205,6 +206,7 @@ export const getProductList = async (
     offset: offset,
     raw: true,
     nest: true,
+    logging:true
     // Emulate GROUP BY tp.product_id by taking unique products if needed
     // In practice, if there are multiple images, raw: true + nest: true might return multiple rows.
     // However, the original SQL had GROUP BY tp.product_id, usually to get a single image if any.
@@ -212,13 +214,13 @@ export const getProductList = async (
   });
 
   // Flatten the result to match raw SQL output
-  return results.map(row => ({
+  const flattenedResults = results.rows.map(row => ({
     product_id: row.product_id,
     product_name: row.product_name,
     status: row.status,
     brand_name: row.Brand?.brand_name || null,
     image: row.ProductImages ? (Array.isArray(row.ProductImages) ? row.ProductImages[0]?.image : row.ProductImages.image) : (row.ProductImages?.image || null)
-    // Note: If using hasMany, row.ProductImages will be an array if nest:true. 
+    // Note: If using hasMany, row.ProductImages will be an array if nest:true.
     // In raw mode with nest:true, Sequelize usually produces flattened keys like 'Brand.brand_name' or 'ProductImages.image'.
     // Let's adjust based on how Sequelize handles raw joins.
   })).map(row => {
@@ -226,6 +228,12 @@ export const getProductList = async (
     // With nest: true, they are objects.
     return row;
   });
+
+  // Return both count and data for pagination
+  return {
+    count: results.count,
+    rows: flattenedResults
+  };
 };
 
 // ----------------------------------------GetCategoryList----------------------------
@@ -329,6 +337,77 @@ export const saveProduct = async (save, imageUrl = null, productId = null) => {
   }
 
   return newProductId;
+};
+
+export const updateProductPricingDocument = async (productId, pricingDocument) => {
+  await Product.update(
+    { pricing_document: pricingDocument },
+    { where: { product_id: productId } }
+  );
+};
+
+const getActiveCategoryParentId = async (categoryId) => {
+  const category = await Category.findOne({
+    attributes: ["parent_id"],
+    where: {
+      category_id: categoryId,
+      status: 1,
+      show_status: 1,
+      is_deleted: 0,
+    },
+    raw: true,
+  });
+  return category?.parent_id ?? null;
+};
+
+export const replaceProductCategories = async ({
+  productId,
+  categories,
+  category_parent_id,
+}) => {
+  await ProductCategory.destroy({ where: { product_id: productId } });
+
+  const parentPayload = category_parent_id;
+
+  for (let index = 0; index < categories.length; index++) {
+    const categoryId = categories[index];
+    if (!categoryId) continue;
+
+    let parentId;
+    let hasClientParent = false;
+
+    if (category_parent_id !== undefined) {
+      const raw = Array.isArray(parentPayload)
+        ? parentPayload[index]
+        : categories.length === 1
+          ? parentPayload
+          : index === 0
+            ? parentPayload
+            : undefined;
+
+      if (raw !== undefined) {
+        hasClientParent = true;
+        parentId = raw === "" || raw === null ? null : parseInt(raw, 10);
+        if (Number.isNaN(parentId)) parentId = null;
+      }
+    }
+
+    if (!hasClientParent) {
+      parentId = await getActiveCategoryParentId(categoryId);
+      if (parentId === null) {
+        console.warn(`Category ${categoryId} not found or inactive, skipping...`);
+        continue;
+      }
+    }
+
+    await ProductCategory.create({
+      product_id: productId,
+      parent_id: parentId,
+      category_id: categoryId,
+      sort_order: 0,
+      is_primary: 1,
+    });
+  }
 };
 
 //--------------This function will fetch the data of the existing product for editing purpose----------------
