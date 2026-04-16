@@ -123,3 +123,18 @@ export const fetchPlansInfo = async (req, res) => {
 
   return res.status(400).json({ message: "fetch_plans_info is not set to 1" });
 };
+// *******************************************************************************
+export const getDashboardStats = async (req, res) => {
+  try {
+    const filter = {
+      vendor_id: req.query.vendor_id, 
+    };
+
+    const result = await dashboardStats(filter);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error(" Error in dashboardStats:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+// ******************************************
