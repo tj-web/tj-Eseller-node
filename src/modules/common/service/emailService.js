@@ -1,9 +1,10 @@
-import EmailQueue from "../../../models/emailQueue.js";
+import EmailQueue from "../../../models/emailQueue.model.js";
 import crypto from "crypto";
-import Vendor from "../../../models/vendor.js";
-import VendorAuth from "../../../models/vendorAuth.js";
+import Vendor from "../../../models/vendor.model.js";
+import VendorAuth from "../../../models/vendorAuth.model.js";
 import sequelize from "../../../db/connection.js";
 import { AppError } from "../../../utilis/appError.js";
+
 
 export const sendVerificationEmail = async (
   email,
@@ -109,6 +110,45 @@ export const verifyEmailService = async (token) => {
     return true;
   } catch (error) {
     await transaction.rollback();
+    throw error;
+  }
+};
+
+
+// ***************************************************** will just send a email :)
+
+
+export const queueEmail = async ({
+  to,
+  cc = null,
+  subject,
+  body,
+  type = "general",
+  app = "eseller",
+  table_column = null,
+  column_value = null,
+  transaction = null,
+}) => {
+  try {
+    await EmailQueue.create(
+      {
+        to,
+        cc,
+        subject,
+        body,
+        type,
+        app,
+        table_column,
+        column_value,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+      transaction ? { transaction } : {}
+    );
+
+    return true;
+  } catch (error) {
+    console.error("Error queueing email:", error);
     throw error;
   }
 };

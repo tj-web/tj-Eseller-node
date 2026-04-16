@@ -1,10 +1,10 @@
 import { Op } from "sequelize";
 import validator from "validator";
 import { v4 as uuidv4 } from "uuid";
-import Otp from "../../../models/otp.js";
+import Otp from "../../../models/otp.model.js";
 import { findUserByPhone } from "./userService.js";
 import { AppError } from "../../../utilis/appError.js";
-import { createLoginHistory, generateAuthTokens } from "../../auth/authService.js";
+import { createLoginHistory, generateAuthTokens } from "../../auth/auth.service.js";
 
 /* =========================================
    SEND OTP

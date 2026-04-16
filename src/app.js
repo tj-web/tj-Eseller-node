@@ -8,38 +8,35 @@ import brandRoutes from "./modules/brand/brands.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
 import manageLeads from "./modules/lead/manageLeads.routes.js";
 import manageProduct from "./modules/product/product.route.js";
-import agreementRoutes from "./routes/agreement.routes.js";
-import helpSupportRoutes from "./routes/help-support.routes.js";
+import agreementRoutes from "./modules/agreement/agreement.routes.js";
+import helpSupportRoutes from "./modules/helpSupport/helpSupport.routes.js";
 import companyInformationRoutes from "./modules/companyInfo/companyInformation.routes.js";
 import accountHealthRoutes from "./modules/accountHealth/accountHealth.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
 
-// Global constants
 global.CONSTANTS = AWS_paths();
 
 const app = express();
 
-// --- Middlewares ---
 app.use(
   cors({
     origin: ["http://localhost:5001", "http://localhost:5173"],
     credentials: true,
   }),
 );
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan("dev"));
 
-// --- Test Route ---
 app.get("/", (req, res) => {
   res.status(200).send("Eseller API is running.");
 });
 
-// --- API Routes ---
-const API_PREFIX = process.env.API_VERSION_PATH || "/api/v1";
+const API_PREFIX = process.env.API_VERSION_PATH ;
 
 app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
 app.use(`${API_PREFIX}/manage`, manageLeads);
@@ -50,11 +47,12 @@ app.use(`${API_PREFIX}/help-support`, helpSupportRoutes);
 app.use(`${API_PREFIX}/company-information`, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
 
-// Protected Routes
-app.use(`${API_PREFIX}/eseller-agreement`, authenticate, agreementRoutes);
-app.use(`${API_PREFIX}/account-health`, authenticate, accountHealthRoutes);
+// do not apply authenticate in authRoutes here , it should be done 
+// in specific routes inside route folder 
 
-// --- Global Error Handler ---
+app.use(`${API_PREFIX}/eseller-agreement`, agreementRoutes);
+app.use(`${API_PREFIX}/account-health`, accountHealthRoutes);
+
 app.use(errorHandler);
 
 export default app;
