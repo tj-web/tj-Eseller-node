@@ -2,7 +2,7 @@ import {
   getCurrentDateNoHIs,
   insertRecordWithoutId,
   updateRecord,
-} from "../General_Function/general_helper.js";
+} from "../../General_Function/general_helper.js";
 import {
   getAgreementProductPlans,
   getDesignation,
@@ -11,14 +11,11 @@ import {
   getVendorDetailById,
   isPreviousSigned,
   getBrands
-} from "../models/agreement.model.js";
+} from "./agreement.service.js";
 
 export const getAgreements = async (req, res) => {
-  // const { vendor_id, profile_id } = req.body;
-  const vendor_id = req.user.vendor_id;
-  const profile_id = req.user.profile_id;
+  const { vendor_id, profile_id } = req.body;
 
-// fixed both at top 
   const arr_designation = await getDesignation();
   const basic_data = await getVendorById(profile_id);
   const profile_data = await getVendorDetailById(vendor_id);
@@ -57,9 +54,7 @@ export const getAgreements = async (req, res) => {
 };
 
 export const agreementFormController = async (req, res)=>{
-  // const { vendor_id, profile_id } = req.body;
-   const vendor_id = req.user.vendor_id;
-  const profile_id = req.user.profile_id;
+  const { vendor_id, profile_id } = req.body;
   
   const agreement_data = await getVendorAgreement(vendor_id, "WEB_VERSION");
   if (req.body.type === "agreement_form") {

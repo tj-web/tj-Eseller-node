@@ -1,7 +1,7 @@
-import VendorAuth from "../../../models/vendorAuth.js";
-import Vendor from "../../../models/vendor.js";
-import VendorDetails from "../../../models/vendorDetail.js";
-import VendorsLeads from "../../../models/vendorLead.js";
+import VendorAuth from "../../../models/vendorAuth.model.js";
+import Vendor from "../../../models/vendor.model.js";
+import VendorDetails from "../../../models/vendorDetail.model.js";
+import VendorsLeads from "../../../models/vendorLead.model.js";
 import { AppError } from "../../../utilis/appError.js";
 import { Op } from "sequelize";
 

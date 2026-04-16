@@ -2,11 +2,11 @@ import sequelize from "../../db/connection.js";
 import { Op, QueryTypes } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import Brand from "../../models/brand.model.js";
-import Product from "../../models/product.js";
+import Product from "../../models/product.model.js";
 import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
 import ProductSpecification from "../../models/productSpecification.model.js";
-import Setting from "../../models/websiteSetting.js"
+import Setting from "../../models/websiteSetting.model.js"
 import Language from "../../models/languages.model.js";
 import ProductFeature from "../../models/productFeature.model.js";
 import Feature from "../../models/features.model.js";

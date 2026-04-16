@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
-import LoginHistory from "../models/loginHistory.js";
+import LoginHistory from "../models/loginHistory.model.js";
 import { findUserByEmail } from "../modules/common/service/userService.js";
-import { generateAuthTokens } from "../modules/auth/authService.js";
+import { generateAuthTokens } from "../modules/auth/auth.service.js";
 
 if (!process.env.ACCESS_TOKEN_SECRET) {
   throw new Error("Missing ACCESS_TOKEN_SECRET");

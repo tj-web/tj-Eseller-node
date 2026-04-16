@@ -1,4 +1,3 @@
-// this file contains all auth related services
 import { hashPassword, generateToken } from "../../helpers/cryptoHelper.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -16,13 +15,15 @@ import {
   sendAdminNotification,
 } from "../common/service/emailService.js";
 import validator from "validator";
-import Vendor from "../../models/vendor.js";
-import sequelize from "../../db/connection.js";
-import EmailQueue from "../../models/emailQueue.js";
-import PasswordReset from "../../models/passwordReset.js";
-import LoginHistory from "../../models/loginHistory.js";
-import VendorAuth from "../../models/vendorAuth.js";
+import Vendor from "../../models/vendor.model.js";
+import Otp from "../../models/otp.model.js";
+import EmailQueue from "../../models/emailQueue.model.js";
+import PasswordReset from "../../models/passwordReset.model.js";
+import LoginHistory from "../../models/loginHistory.model.js";
+import VendorAuth from "../../models/vendorAuth.model.js";
 import { AppError } from "../../utilis/appError.js";
+import StatusCodes from "../../utilis/statusCodes.js";
+import SystemResponse from "../../utilis/systemResponse.js";
 
 export const resetPasswordService = async (token, newPassword) => {
   const record = await PasswordReset.findOne({
@@ -166,9 +167,8 @@ export const registerVendor = async (data) => {
   } = data;
 
   const normalizedEmail = email.trim().toLowerCase();
-  // PHONE
   const countryMap = {
-    "+91": "en-IN", // India
+    "+91": "en-IN", 
     "+1": "en-US",
     "+44": "en-GB",
   };
@@ -191,7 +191,6 @@ export const registerVendor = async (data) => {
     throw new AppError("Invalid phone number", 400);
   }
 
-  // ✅ DB checks (business logic)
   if (await isEmailExists(normalizedEmail)) {
     throw new AppError("Your email is already registered", 400);
   }
@@ -268,7 +267,7 @@ export const registerVendor = async (data) => {
       transaction,
     );
 
-    // Step 3: Create vendor_details
+
     await createVendorDetails(
       {
         vendor_id: vendor.id,
@@ -278,7 +277,6 @@ export const registerVendor = async (data) => {
       transaction
     );
 
-    // Step 4: Create vendors_leads
     await createVendorLeads(
       {
         vendor_id: vendor.id,
@@ -295,7 +293,6 @@ export const registerVendor = async (data) => {
       transaction
     );
 
-    // ✅ EMAILS
     await sendVerificationEmail(normalizedEmail, token, vendor.id, transaction);
 
     await sendAdminNotification(
@@ -356,7 +353,6 @@ export const generateAuthTokens = (user) => {
   return { accessToken, refreshToken };
 };
 
-// ***************************** WILL ADD DATA TO LOGIN_HISTORY TABLE **********************
 
 export const createLoginHistory = async (user, ip, deviceId, refreshToken, loginVia = "native_auth") => {
   try {
