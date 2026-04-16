@@ -15,9 +15,9 @@ import {
   createLoginHistory,
   verifyPassword,
   registerVendor,
-  resetPasswordService,
-  forgotPasswordService,
-  changePasswordService,
+  handleResetPassword,
+  handleForgotPassword,
+  handleChangePassword,
   logoutService,
 } from "./auth.service.js";
 import LoginHistory from "../../models/loginHistory.model.js";
@@ -107,7 +107,7 @@ export const forgotPassword = async (req, res, next) => {
   const { email } = req.body;
 
   try {
-    await forgotPasswordService(email);
+    await handleForgotPassword(email);
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Please check your Email."));
   } catch (error) {
@@ -127,7 +127,7 @@ export const resetPassword = async (req, res, next) => {
     : null;
 
   try {
-    await resetPasswordService(token, new_password);
+    await handleResetPassword(token, new_password);
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Password reset successful"));
   } catch (error) {
@@ -180,7 +180,7 @@ export const changePassword = async (req, res, next) => {
   try {
     const vendorId = req.user?.vendor_id;
 
-    await changePasswordService(vendorId, old_password, new_password);
+    await handleChangePassword(vendorId, old_password, new_password);
 
     return res.status(StatusCodes.SUCCESS)
     .json(SystemResponse.success("Password changed successfully"));
