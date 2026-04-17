@@ -9,7 +9,7 @@ const connectDB = async () => {
     console.log("Database connected successfully");
   } catch (error) {
     console.error("Database connection failed:", error);
-    process.exit(1); 
+    process.exit(1);
   }
 };
 
@@ -17,7 +17,7 @@ const startServer = async () => {
   await connectDB();
 
   const PORT = process.env.BASE_PORT || 3000;
-  
+
   app.listen(PORT, () => {
     console.log(`App is listening on port ${PORT}`);
   });
