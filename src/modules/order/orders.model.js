@@ -76,6 +76,40 @@ export async function getAllOrders({
       : "AND tord.order_status IN (5,11,17)"}
   `;
 
+  const totalOrdersResult = await sequelize.query(`
+  SELECT COUNT(DISTINCT top.order_id) as total
+  FROM tbl_order_product top
+  JOIN tbl_order tord ON tord.order_id = top.order_id
+  WHERE top.vendor_id = :vendor_id
+`, {
+    replacements: { vendor_id },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const revenueResult = await sequelize.query(`
+  SELECT COALESCE(SUM(top.sub_total), 0) as total_revenue
+  FROM tbl_order_product top
+  JOIN tbl_order tord ON tord.order_id = top.order_id
+  WHERE top.vendor_id = :vendor_id
+  AND tord.order_status IN (5,11,17)
+`, {
+    replacements: { vendor_id },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const totalRevenue = revenueResult[0]?.total_revenue || 0;
+
+  const processingResult = await sequelize.query(`
+  SELECT COUNT(DISTINCT tord.order_id) as total
+  FROM tbl_order tord
+  JOIN tbl_order_product top ON top.order_id = tord.order_id
+  WHERE top.vendor_id = :vendor_id
+  AND tord.order_status = 2
+`, {
+    replacements: { vendor_id },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
   const [rows, countResult] = await Promise.all([
     sequelize.query(dataSql, {
       replacements: { vendor_id, limit, start },
@@ -88,6 +122,7 @@ export async function getAllOrders({
   ]);
 
   const total = countResult[0]?.total || 0;
-
-  return { rows, total };
+  const processingCount = processingResult[0]?.total || 0;
+  const totalOrders = totalOrdersResult[0]?.total || 0;
+  return { rows, total, processingCount, totalOrders, totalRevenue };
 }
