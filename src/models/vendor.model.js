@@ -120,11 +120,11 @@ const Vendor = sequelize.define(
       defaultValue: 0
     },
 
-    vendor_plan_type: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0
-    },
+    // vendor_plan_type: {
+    //   type: DataTypes.INTEGER,
+    //   allowNull: false,
+    //   defaultValue: 0
+    // },
 
     vendor_mode: {
       type: DataTypes.INTEGER,
