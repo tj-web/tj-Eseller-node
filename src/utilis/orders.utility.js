@@ -30,7 +30,7 @@ export async function vendorOrders({ vendor_id, params = {} }) {
 
   let orderProducts = {};
 
-  const { rows, total } = await getAllOrders({
+  const { rows, total, processingCount, totalOrders ,totalRevenue } = await getAllOrders({
     vendor_id,
     order_status,
     limit,
@@ -163,6 +163,6 @@ export async function vendorOrders({ vendor_id, params = {} }) {
 
   return {
     orders: orderProducts,
-    total,
+    total, processingCount, totalOrders ,totalRevenue
   };
 }

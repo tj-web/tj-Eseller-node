@@ -1,14 +1,17 @@
 import express from "express";
-import { totalLeadsCountInfo } from "./dashboardController.js";
-import { validateOemTotalLeadsQuery } from "../../middlewares/dashboardValidator.js";
-import { analyticsCount } from "./dashboardController.js";
-import { fetchPlansInfo } from "./dashboardController.js";
-import { getVendorOverview } from "./dashboardController.js";
+import {
+    totalLeadsCountInfo,
+    analyticsCount,
+    fetchPlansInfo,
+    getVendorOverview,
+    getDashboardStats,
+}   from "./dashboard.controller.js";
 const router = express.Router();
 
 router.get("/leadsCount", totalLeadsCountInfo);
 router.get("/analytics", analyticsCount);
 router.get("/profileOverview", getVendorOverview);
 router.get("/oemData", fetchPlansInfo);
+router.get("/dashboardStats", getDashboardStats);
 
 export default router;
