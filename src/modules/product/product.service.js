@@ -2,6 +2,7 @@ import sequelize from "../../db/connection.js";
 import { Op, QueryTypes } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import Brand from "../../models/brand.model.js";
+import TblLeads from "../../models/leads.model.js";
 import Product from "../../models/product.model.js";
 import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
@@ -26,6 +27,9 @@ VendorBrandRelation.belongsTo(Brand, { foreignKey: 'tbl_brand_id', targetKey: 'b
 // Setup Product associations
 Product.belongsTo(Brand, { foreignKey: 'brand_id' });
 Product.hasMany(ProductImage, { foreignKey: 'product_id' });
+
+Product.hasMany(TblLeads, { foreignKey: 'product_id' });
+TblLeads.belongsTo(Product, { foreignKey: 'product_id' });
 
 // Setup associations for product details
 Product.hasOne(ProductDescription, { foreignKey: 'product_id' });
@@ -182,7 +186,7 @@ export const getProductList = async (
   }
 
   if (search_filter.srch_status) {
-    whereConditions.status = search_filter.srch_status;
+    whereConditions.status = parseInt(search_filter.srch_status, 10);
   }
 
   const results = await Product.findAndCountAll({
@@ -234,6 +238,20 @@ export const getProductList = async (
     count: results.count,
     rows: flattenedResults
   };
+};
+
+export const getProductLeadsCount = async (productId) => {
+  try {
+    const count = await TblLeads.count({
+      where: {
+        product_id: productId
+      }
+    });
+    return count;
+  } catch (error) {
+    console.error("Error in getProductLeadsCount service:", error);
+    throw error;
+  }
 };
 
 // ----------------------------------------GetCategoryList----------------------------

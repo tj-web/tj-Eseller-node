@@ -41,7 +41,7 @@ export const fetchVendorProducts = async (req, res) => {
 
     const search_filter = {
       srch_product_name: req.query.srch_product_name || "",
-      srch_status: req.query.srch_status || "",
+      srch_status: req.query.srch_status || req.query.status || "",
     };
 
     const order_by = req.query.order_by || "s_id";
@@ -74,6 +74,33 @@ export const fetchVendorProducts = async (req, res) => {
           "Internal Server Error in vendor products",
         ),
       );
+  }
+};
+
+export const getLeadsCount = async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: "Product ID is required"
+      });
+    }
+
+    const count = await productService.getProductLeadsCount(productId);
+
+    return res.status(200).json({
+      success: true,
+      product_id: productId,
+      total_leads: count
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message
+    });
   }
 };
 
