@@ -237,6 +237,10 @@ export const getVendorBrandsService = async (params) => {
     foreignKey: "tbl_brand_id",
     targetKey: "brand_id",
   });
+  VendorBrandRelation.hasOne(BrandInfo, {
+    foreignKey: "tbl_brand_id",
+    sourceKey: "tbl_brand_id",
+  });
 
   const offset = (pagenumber - 1) * limit;
 
@@ -270,8 +274,13 @@ export const getVendorBrandsService = async (params) => {
         model: Brand,
         required: !!srch_brand_name, // Validates INNER if filtering, LEFT if just listing
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
-        attributes: ["brand_name", "description", "image", "status"],
+        attributes: ["brand_name", "description", "image", "status", "target_industry"],
       },
+      {
+        model: BrandInfo,
+        required: false,
+        attributes: ["industry"],
+      }
     ],
     order: orderLogic,
     offset: parseInt(offset),
