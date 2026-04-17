@@ -1,15 +1,5 @@
 import express from "express";
-<<<<<<< HEAD
-import {
-    totalLeadsCountInfo,
-    analyticsCount,
-    fetchPlansInfo,
-    getVendorOverview,
-    getDashboardStats,
-}   from "./dashboard.controller.js";
-=======
-import { totalLeadsCountInfo, analyticsCount,fetchPlansInfo,getVendorOverview } from "./dashboard.controller.js";
->>>>>>> main
+import { totalLeadsCountInfo, analyticsCount, fetchPlansInfo, getVendorOverview, getDashboardStats, } from "./dashboard.controller.js";
 const router = express.Router();
 
 router.get("/leadsCount", totalLeadsCountInfo);
