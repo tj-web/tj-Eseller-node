@@ -1,3 +1,4 @@
+import sequelize from "../../db/connection.js";
 import { hashPassword, generateToken } from "../../helpers/cryptoHelper.js";
 import jwt from "jsonwebtoken";
 
@@ -26,7 +27,7 @@ import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 
-export const resetPasswordService = async (token, newPassword) => {
+export const handleResetPassword = async (token, newPassword) => {
   const record = await PasswordReset.findOne({
     where: { token },
   });
@@ -115,7 +116,7 @@ export const logoutService = async (refreshToken) => {
 
 // ************************************************************************
 
-export const forgotPasswordService = async (email) => {
+export const handleForgotPassword = async (email) => {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await findUserByEmail(normalizedEmail);
 
@@ -395,7 +396,7 @@ export const clearAllSessionsByVendorId = async (vendorId) => {
   }
 };
 
-export const changePasswordService = async (
+export const handleChangePassword = async (
   vendorId,
   oldPassword,
   newPassword
