@@ -1,5 +1,5 @@
 import { oemTotalLeadsCountInfo } from "./dashboard.js";
-import { dashboardStats } from "./dashboard.service.js"
+import { dashboardStats } from "./dashboard.service.js";
 //sniih eovehiv eaybevbe
 import sequelize from "../../db/connection.js";
 export const totalLeadsCountInfo = async (req, res) => {

@@ -1,7 +1,6 @@
 import sequelize from "../../db/connection.js";
 import { hashPassword, generateToken } from "../../helpers/cryptoHelper.js";
 import jwt from "jsonwebtoken";
-
 import crypto from "crypto";
 import {
   isEmailExists,

@@ -4,7 +4,6 @@ import TblLeads from "../../models/leads.model.js";
 import TblRequestCallbacks from "../../models/requestCallback.model.js";
 import { Op, fn, col } from "sequelize";
 
-
 export const dashboardStats = async ({ vendor_id }) => {
   try {
     if (!vendor_id) {
