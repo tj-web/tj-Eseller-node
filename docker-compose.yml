@@ -1,12 +1,13 @@
+version: "3.5"
 services:
   # Node.js App Service
-  server:
+  eseller-node-backend:
     build: .
     container_name: eseller-node-server
     ports:
-      - "3000:3000"
+      - "5002:5002"
     environment:
-      - PORT=3000
+      - PORT=5002
     volumes:
       # Syncs your local code with the container for live-reloading
       - .:/app

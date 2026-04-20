@@ -36,6 +36,10 @@ app.get("/", (req, res) => {
   res.status(200).send("Eseller API is running.");
 });
 
+app.get('/health', function (req, res) {
+  res.send('Ok');
+});
+
 const API_PREFIX = process.env.API_VERSION_PATH ;
 
 app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
