@@ -7,6 +7,7 @@ import {
   updateBrand,
   view_brand,
   requestBrand,
+  searchBrandsForRequest,
 } from "./brand.controller.js";
 import multer from "multer";
 const router = express.Router();
@@ -30,6 +31,9 @@ router.post("/addbrand/:brand_id", upload.single("image"), updateBrand);
 
 /***** Route for viewing the brand information. ******/
 router.get("/viewbrand/:brand_id", view_brand);
+
+/****** Route for Searching Global Brands to request a Brand *****/
+router.get("/search-brands", searchBrandsForRequest);
 
 /***** Dynamic route for viewing brands based on page number (pagination). ******/
 router.get("/:pagenumber", getBrands);
