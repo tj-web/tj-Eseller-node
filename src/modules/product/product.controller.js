@@ -1,6 +1,5 @@
 import * as productService from "./product.service.js";
 import { uploadfile2 } from "../../utilis/s3Uploader.js";
-import sequelize from "../../db/connection.js";
 import fs from "fs";
 import path from "path";
 import sizeOf from "image-size";
@@ -13,25 +12,21 @@ export const brand_arr = async (req, res) => {
 
     if (!vendor_id) {
       return res
-        .status(400)
-        .json({ status: false, message: "vendor_id is required" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("vendor_id is required"));
     }
 
     // Fetch full brand details for the vendor using the exact condition
     const brands = await productService.getVendorBrandsDetails(vendor_id);
 
-    return res.status(200).json({
-      status: true,
-      message: "Brands fetched successfully",
-      data: brands,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Brands fetched successfully", brands));
   } catch (error) {
     console.error("Error fetching brands:", error);
-    return res.status(500).json({
-      status: false,
-      message: "Internal Server Error",
-      error: error.message,
-    });
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(
+      SystemResponse.internalServerError("Internal Server Error")
+    );
   }
 };
 
@@ -40,13 +35,13 @@ export const fetchVendorProducts = async (req, res) => {
     const vendor_id = req.query.vendor_id;
     if (!vendor_id) {
       return res
-        .status(400)
-        .json({ status: false, message: "vendor_id is required" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("vendor_id is required"));
     }
 
     const search_filter = {
       srch_product_name: req.query.srch_product_name || "",
-      srch_status: req.query.srch_status || "",
+      srch_status: req.query.srch_status || req.query.status || "",
     };
 
     const order_by = req.query.order_by || "s_id";
@@ -55,7 +50,7 @@ export const fetchVendorProducts = async (req, res) => {
     const pageNumber = req.query.pageNumber;
 
     const brand_arr = await productService.getVendorBrands(vendor_id);
-    console.log("Vendor brands:", brand_arr); // Debug log
+    // console.log("Vendor brands:", brand_arr); // Debug log
 
     const products = await productService.getProductList(
       brand_arr,
@@ -65,7 +60,7 @@ export const fetchVendorProducts = async (req, res) => {
       limit,
       pageNumber,
     );
-    console.log("Fetched products:", products); // Debug log
+    // console.log("Fetched products:", products); // Debug log
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -82,6 +77,33 @@ export const fetchVendorProducts = async (req, res) => {
   }
 };
 
+export const getLeadsCount = async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: "Product ID is required"
+      });
+    }
+
+    const count = await productService.getProductLeadsCount(productId);
+
+    return res.status(200).json({
+      success: true,
+      product_id: productId,
+      total_leads: count
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message
+    });
+  }
+};
+
 // search categories of products
 export const searchCategories = async (req, res) => {
   try {
@@ -92,15 +114,12 @@ export const searchCategories = async (req, res) => {
       limit,
       offset,
     );
-    console.log("Fetched categories:", categories); // Debug log
+    // console.log("Fetched categories:", categories); // Debug log
 
-    return res.status(200).json({
-      success: true,
-      categories: categories,
-    });
+    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Categories fetched successfully", categories));
   } catch (error) {
     console.error("Error fetching categories:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError("Internal Server Error in fetching categories"));
   }
 };
 
@@ -117,7 +136,7 @@ export const basicDetails = async (req, res) => {
     let secondImageUrl = "";
     if (req.files?.image) {
       const img = req.files.image[0];
-      console.log("Product image received:", img);
+      // console.log("Product image received:", img);
 
       let originalName = img.originalname.replace(/\s+/g, "-");
       const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`;
@@ -228,16 +247,22 @@ export const basicDetails = async (req, res) => {
     );
     console.log("Product saved with ID:", productId);
 
+    // Save product description if provided
+    if (post?.brief || post?.overview || post?.description || post?.internal_description) {
+      const descriptionData = {
+        product_id: productId,
+        brief: post?.brief ?? "",
+        overview: post?.overview ?? "",
+        description: post?.description ?? "",
+        internal_description: post?.internal_description ?? "",
+      };
+      await productService.saveProductDescription(descriptionData);
+    }
+    
     // Update pricing_document if documents were uploaded
     if (pricingDocument) {
       const pricingDocValue = `${productId}_${pricingDocument}`;
-      await sequelize.query(
-        `UPDATE tbl_product SET pricing_document = :pricingDoc WHERE product_id = :productId`,
-        {
-          replacements: { pricingDoc: pricingDocValue, productId },
-          type: sequelize.QueryTypes.UPDATE,
-        },
-      );
+      await productService.updateProductPricingDocument(productId, pricingDocValue);
     }
 
     // Save product category association
@@ -251,91 +276,24 @@ export const basicDetails = async (req, res) => {
       const categories = Array.isArray(post.product_category)
         ? post.product_category
         : [post.product_category];
-
-      // Delete old mapping if exists
-      await sequelize.query(
-        `DELETE FROM tbl_product_category WHERE product_id = :productId`,
-        {
-          replacements: { productId },
-          type: sequelize.QueryTypes.DELETE,
-        },
-      );
-
-      // Insert new mappings
-      for (let index = 0; index < categories.length; index++) {
-        const categoryId = categories[index];
-        if (categoryId) {
-          let parentId;
-          // If the form sent category_parent_id (from the same category search response), use it and skip a DB read.
-          // Otherwise load parent_id from tbl_category (older clients / extra categories without a matching field).
-          let usedClientParent = false;
-          if (
-            Object.prototype.hasOwnProperty.call(post, "category_parent_id")
-          ) {
-            const sent = post.category_parent_id;
-            let raw = Array.isArray(sent)
-              ? sent[index]
-              : categories.length === 1
-                ? sent
-                : index === 0
-                  ? sent
-                  : undefined;
-            if (raw !== undefined) {
-              usedClientParent = true;
-              parentId = raw === "" || raw === null ? null : parseInt(raw, 10);
-              if (Number.isNaN(parentId)) parentId = null;
-            }
-          }
-
-          if (!usedClientParent) {
-            const [categoryData] = await sequelize.query(
-              `SELECT parent_id FROM tbl_category WHERE category_id = :categoryId AND status = 1 AND show_status = 1
-    AND is_deleted = 0`,
-              {
-                replacements: { categoryId },
-                type: sequelize.QueryTypes.SELECT,
-              },
-            );
-
-            if (!categoryData) {
-              console.warn(
-                `Category ${categoryId} not found or inactive, skipping...`,
-              );
-              continue;
-            }
-
-            parentId = categoryData.parent_id;
-          }
-
-          await sequelize.query(
-            `INSERT INTO tbl_product_category (product_id, parent_id, category_id, sort_order, is_primary) 
-             VALUES (:productId, :parentId, :categoryId, :sortOrder, :isPrimary)`,
-            {
-              replacements: {
-                productId,
-                categoryId,
-                parentId, 
-                sortOrder: 0,
-                isPrimary: 1,
-              },
-              type: sequelize.QueryTypes.INSERT,
-            },
-          );
-        }
-      }
+      await productService.replaceProductCategories({
+        productId,
+        categories,
+        category_parent_id: post.category_parent_id,
+      });
     }
 
-    res.status(201).json({
-      success: true,
-      message: "Product saved successfully",
-      product_id: productId,
-      // fileUrl: fileUrls.length > 0 ? fileUrls : null,
-      imageUrl: secondImageUrl || null,
-      documentUrls: documentUrls.length > 0 ? documentUrls : null,
-    });
+    return res.status(StatusCodes.SUCCESS).json(
+      SystemResponse.success("Product saved successfully", {
+        product_id: productId,
+        imageUrl: secondImageUrl || null,
+        documentUrls: documentUrls.length > 0 ? documentUrls : null,
+      })
+    );
   } catch (error) {
-    console.error("Error saving product:", error);
-    res.status(500).json({ success: false, error: error.message });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message, "Internal Server Error in saving product"));      
   }
 };
 
@@ -346,7 +304,9 @@ export const getProductSpecification = async (req, res) => {
     const { product_id } = req.query;
 
     if (!product_id) {
-      return res.status(400).json({ error: "product_id is required" });
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
     }
 
     const specification =
@@ -354,21 +314,17 @@ export const getProductSpecification = async (req, res) => {
 
     if (!specification) {
       return res
-        .status(404)
-        .json({
-          message: "No specification found for this product",
-          data: null,
-        });
+        .status(StatusCodes.NOT_FOUND)
+        .json(SystemResponse.badRequestError("No specification found for this product"));
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "Specification fetched successfully",
-      data: specification,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Specification fetched successfully", specification));
   } catch (error) {
-    console.error("Error fetching product specification:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal server error"));
   }
 };
 
@@ -379,25 +335,19 @@ export const getLanguages = async (req, res) => {
     const languages = await productService.getLanguageList();
 
     if (!languages || languages.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No languages found",
-        data: [],
-      });
+      return res
+        .status(StatusCodes.SUCCESS)
+        .json(SystemResponse.success("No languages found", []));
     }
 
-    return res.status(200).json({
-      success: true,
-      count: languages.length,
-      data: languages,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Languages fetched successfully", languages));
   } catch (error) {
     console.error("Error in getLanguages controller:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error: error.message,
-    });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error"));
   }
 };
 
@@ -405,6 +355,7 @@ export const ProductSpecification = async (req, res) => {
   try {
     const {
       product_id,
+      vendor_id,
       deployment,
       device,
       operating_system,
@@ -412,23 +363,44 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.body;
 
-    if (!deployment || !device || !operating_system || !organization_type) {
-      return res.status(400).json({ error: "Required fields are missing" });
+    if (!product_id || !vendor_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id and vendor_id are required"));
     }
 
-    // Convert arrays → CSV
-    // const toCSV = (val) => (Array.isArray(val) ? val.join(",") : val);
+    if (!deployment || !device || !operating_system || !organization_type) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Required fields are missing"));
+    }
+
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    console.log(brandArr);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+    console.log("Is vendor product:", isVendor);
+   
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
+
+    const toCSV = (val) =>
+      Array.isArray(val) ? val.join(",") : val || "";
+
     const productData = {
       product_id,
-      deployment,
-      device,
-      operating_system,
-      organization_type,
-      languages,
+      deployment: toCSV(deployment),
+      device: toCSV(device),
+      operating_system: toCSV(operating_system),
+      organization_type: toCSV(organization_type),
+      languages: toCSV(languages),
     };
 
     const data = await productService.getSelectedCol({
-      table: "ProductSpecification", 
+      table: "ProductSpecification",
       columns: ["id"],
       where: { product_id: product_id },
       records: "single",
@@ -437,16 +409,18 @@ export const ProductSpecification = async (req, res) => {
     const result = await productService.saveOrUpdateProductSpecification(
       id,
       productData,
+      vendor_id,
     );
 
-    return res.status(200).json({
-      message: "Changes have been recorded successfully!",
-      data: result,
-    });
-  } catch (error) {
-    console.error("Error updating product specification:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+    return res.status(StatusCodes.SUCCESS)
+     .json(SystemResponse.success("Changes have been recorded successfully!", result));
+     } catch (error) { 
+      return res.status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError({
+        message: error.message
+      },
+        "Internal server error"));
+    }
 };
 
 //--------------------------------------------features part of the form--------------
@@ -456,14 +430,18 @@ export const saveProductFeature = async (req, res) => {
     const post = req.body;
 
     if (!post.product_id) {
-      return res.status(400).json({ error: "product_id is required" });
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
     }
     if (
       post.section_id === undefined ||
       post.section_id === null ||
       post.section_id === ""
     ) {
-      return res.status(400).json({ error: "section_id is required" });
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("section_id is required"));
     }
 
     // One product can have many feature rows. Each row is product_id + section_id (same as feature_id in tbl_feature).
@@ -477,24 +455,18 @@ export const saveProductFeature = async (req, res) => {
 
     const result = await productService.saveOrUpdateProductFeature(id, post);
     if (result.action === "update") {
-      return res.status(200).json({
-        message: "Feature updated",
-        id: result.id,
-        product_id: post.product_id,
-      });
+      return res
+        .status(StatusCodes.SUCCESS)
+        .json(SystemResponse.success("Feature updated", { id: result.id, product_id: post.product_id }));
     } else {
-      return res.status(201).json({
-        message: "success",
-        response:
-          "We have recorded your changes! We will review and update soon.",
-        id: result.id,
-        result,
-        product_id: post.product_id,
-      });
+      return res
+        .status(StatusCodes.CREATED)
+        .json(SystemResponse.success("Changes recorded! We will review and update soon.", { id: result.id, product_id: post.product_id }));
     }
   } catch (error) {
-    console.error("Error saving product feature (controller):", error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal server error in saving product feature"));
   }
 };
 
@@ -502,7 +474,7 @@ export const saveProductFeature = async (req, res) => {
 
 export const getAllFeaturesList = async (req, res) => {
   try {
-    const { product_id, vendor_id } = req.query;
+    const { product_id, vendor_id, search } = req.query;
 
     if (product_id) {
       // Get brand array
@@ -512,28 +484,26 @@ export const getAllFeaturesList = async (req, res) => {
       const check = await productService.isVendorProduct(product_id, brand);
 
       if (check) {
-        // Fetch all features for the product
-        const allFeatures = await productService.getAllFeatures();
+        // Fetch all features for the product with optional search
+        const allFeatures = await productService.getAllFeatures(search);
 
-        return res.status(200).json({
-          success: true,
-          allFeatures,
-        });
+        return res
+          .status(StatusCodes.SUCCESS)
+          .json(SystemResponse.success("Features fetched successfully", allFeatures));
       } else {
-        return res.status(403).json({
-          success: false,
-          message: "Unauthorized: Product does not belong to vendor",
-        });
+        return res
+          .status(StatusCodes.FORBIDDEN)
+          .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
       }
     } else {
-      return res.status(400).json({
-        success: false,
-        message: "Product ID is required",
-      });
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Product ID is required"));
     }
   } catch (error) {
-    console.error("Error getting product features:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal server error in getting features list"));
   }
 };
 
@@ -543,20 +513,20 @@ export const getProductFeaturesList = async (req, res) => {
   const product_id = req.query.product_id;
 
   if (!product_id) {
-    return res.status(400).json({ error: "product_id is required" });
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError("product_id is required"));
   }
 
   try {
     const productFeatures = await productService.getProductFeatures(product_id);
-    return res.status(200).json({
-      success: true,
-      productFeatures,
-    });
-  } catch (error) {
-    console.error("Error fetching feature list:", error);
     return res
-      .status(500)
-      .json({ success: false, error: "Internal Server Error" });
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Product features fetched successfully", productFeatures));
+  } catch (error) {
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in fetching product features"));
   }
 };
 
@@ -569,10 +539,9 @@ export const addScreenshots = async (req, res) => {
     let alt_text = req.body.alt_text; // can be string or array
 
     if (!product_id || !files || files.length === 0 || !alt_text) {
-      // validation alt_text ke uper lagana hai..
       return res
-        .status(400)
-        .json({ error: "Product ID, screenshots and alt_text are required" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Product ID, screenshots and alt_text are required"));
     }
 
     const existingRows = await productService.getSelectedCol({
@@ -618,14 +587,13 @@ export const addScreenshots = async (req, res) => {
         ? "Screenshots added/updated successfully"
         : "No changes applied";
 
-    res.status(200).json({
-      success: true,
-      message,
-      data: screenshotsData,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success(message, screenshotsData));
   } catch (error) {
-    console.error("Error adding screenshots:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in adding screenshots"));
   }
 };
 
@@ -637,8 +605,8 @@ export const addGallery = async (req, res) => {
 
     if (!product_id || !title || !description) {
       return res
-        .status(400)
-        .json({ message: "Product ID, title, and description are required" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Product ID, title, and description are required"));
     }
 
     const files = req.files;
@@ -646,8 +614,8 @@ export const addGallery = async (req, res) => {
 
     if (!files || files.length === 0) {
       return res
-        .status(400)
-        .json({ message: "At least one image is required" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("At least one image is required"));
     }
 
     // Get existing gallery ids for this product
@@ -684,13 +652,13 @@ export const addGallery = async (req, res) => {
       product_id,
     );
     // console.log(result);
-    return res.status(201).json({
-      message: "Gallery added/updated successfully",
-      gallery: result,
-    });
+    return res
+      .status(StatusCodes.CREATED)
+      .json(SystemResponse.success("Gallery added/updated successfully", result));
   } catch (error) {
-    console.error("Error adding gallery:", error);
-    return res.status(500).json({ error: error.message });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in adding gallery"));
   }
 };
 
@@ -702,9 +670,9 @@ export const addVideo = async (req, res) => {
     const { product_id, data } = req.body;
 
     if (!product_id || !Array.isArray(data) || data.length === 0) {
-      return res.status(400).json({
-        message: "Product ID and at least one video are required",
-      });
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Product ID and at least one video are required"));
     }
 
     // Fetch all existing IDs for this product
@@ -727,13 +695,13 @@ export const addVideo = async (req, res) => {
     // Save videos in DB
     const result = await productService.addVideoModel(videosToProcess);
 
-    return res.status(201).json({
-      message: "Videos added/updated successfully",
-      result,
-    });
+    return res
+      .status(StatusCodes.CREATED)
+      .json(SystemResponse.success("Videos added/updated successfully", result));
   } catch (error) {
-    console.error("Error adding videos:", error);
-    return res.status(500).json({ error: error.message });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in adding videos"));
   }
 };
 
@@ -743,22 +711,29 @@ export const viewProduct = async (req, res) => {
     const { product_id } = req.params;
 
     if (!product_id) {
-      return res.redirect("/product-list");
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
     }
 
     const productData = await productService.getProductDetail(product_id);
 
     if (!productData) {
-      return res.status(404).json({ message: "Product not found" });
+      return res
+        .status(StatusCodes.NOT_FOUND)
+        .json(SystemResponse.badRequestError("Product not found"));
     }
 
-    return res.json({
-      active_tab: "view_product",
-      product_data: productData,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Product fetched successfully", {
+        active_tab: "view_product",
+        product_data: productData,
+      }));
   } catch (error) {
-    console.error("Error fetching product:", error.message);
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in viewing product"));
   }
 };
 
@@ -771,13 +746,13 @@ export const checkVendorProduct = async (req, res) => {
     const brandArr = await productService.getVendorBrands(vendor_id);
     const isVendor = await productService.isVendorProduct(product_id, brandArr);
 
-    return res.json({
-      success: true,
-      isVendorProduct: isVendor,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Vendor product check successful", { isVendorProduct: isVendor }));
   } catch (err) {
-    console.error("Error in checkVendorProduct:", err);
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in check vendor product"));
   }
 };
 
@@ -793,16 +768,18 @@ export const editProduct = async (req, res) => {
     );
 
     if (!productData) {
-      return res.status(404).json({ message: "Product not found" });
+      return res
+        .status(StatusCodes.NOT_FOUND)
+        .json(SystemResponse.badRequestError("Product not found"));
     }
 
-    return res.status(200).json({
-      success: true,
-      product: productData,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Product fetched successfully", productData));
   } catch (error) {
-    console.error("Error fetching product for edit:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in editing product"));
   }
 };
 
@@ -822,8 +799,8 @@ export const enrichment = async (req, res) => {
       typeArr = Array(files.length).fill(Number(type));
     } else {
       return res
-        .status(400)
-        .json({ success: false, message: "Type is required for each image" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Type is required for each image"));
     }
 
     // Now validate counts per type
@@ -835,12 +812,9 @@ export const enrichment = async (req, res) => {
     // Dynamic validation
     for (const t in typeCount) {
       if (typeCount[t] < 4) {
-        return res.status(400).json({
-          success: false,
-          message: `Please upload at least 4 images for type ${
-            Number(t) === 1 ? "desktop" : "mobile"
-          }`,
-        });
+        return res
+          .status(StatusCodes.BAD_REQUEST)
+          .json(SystemResponse.badRequestError(`Please upload at least 4 images for type ${Number(t) === 1 ? "desktop" : "mobile"}`));
       }
     }
 
@@ -875,13 +849,12 @@ export const enrichment = async (req, res) => {
 
     const saved = await productService.upsertEnrichmentImages(enrichmentData);
 
-    return res.json({
-      success: true,
-      message: "Enrichment images processed successfully",
-      saved, // only newly inserted/updated images
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Enrichment images processed successfully", saved));
   } catch (error) {
-    console.error("Error in enrichmentController:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in enrichment images"));
   }
 };

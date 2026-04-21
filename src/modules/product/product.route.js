@@ -16,6 +16,7 @@ const productBasicUpload = upload.fields([
 
 // --- 1. PRODUCT DISCOVERY & LISTING ---
 router.get("/product_list", productController.fetchVendorProducts);
+router.get("/:productId/leads-count", productController.getLeadsCount);
 router.get("/product_brands", productController.brand_arr);
 router.get("/categories", productController.searchCategories);
 router.get("/languages", productController.getLanguages);
