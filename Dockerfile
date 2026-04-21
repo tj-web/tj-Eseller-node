@@ -22,7 +22,7 @@ COPY . .
 
 # Expose the port the app runs on.
 # Make sure this matches the port in your application's configuration.
-EXPOSE 3000
+EXPOSE 5002
 
 # The command to start your application.
 # This directly starts your index.js file.

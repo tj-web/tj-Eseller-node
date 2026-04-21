@@ -12,6 +12,7 @@ import {
   viewBrandService,
   getBrandLocationService,
   requestBrandService,
+  searchBrandsForRequestService,
 } from "./brand.service.js";
 import { uploadfile2 } from "../../utilis/s3Uploader.js";
 import sequelize from "../../db/connection.js";
@@ -35,13 +36,13 @@ export const getBrands = async (req, res) => {
     const vendor_id = req.query.vendor_id; // fixed !!
 
     const result = await getVendorBrandsService({
-      vendor_id,
+      vendor_id: vendor_id || 1, // Fallback to 1 if not provided, as requested
       orderby,
       order,
       srch_brand_name,
       srch_status,
-      limit,
-      pagenumber,
+      limit: limit || 10,
+      pagenumber: pagenumber || 1,
     });
     return res
       .status(StatusCodes.SUCCESS)
@@ -196,7 +197,7 @@ export const updateBrand = async (req, res) => {
       founded_on,
       founders,
       company_size,
-      image: imageName,
+      ...(imageName !== null && { image: imageName }),
     };
 
     const brandDiff = findDifferences(brandDetails, brandSave);
@@ -319,5 +320,32 @@ export const requestBrand = async (req, res) => {
           "Internal Server Error in requesting brand",
         ),
       );
+  }
+};
+
+/***********  Function for Searching Global Brands ***********/
+export const searchBrandsForRequest = async (req, res) => {
+  try {
+    const { vendor_id, srch_brand_name = "" } = req.query;
+
+    if (!vendor_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("vendor_id is required"));
+    }
+
+    const brands = await searchBrandsForRequestService(
+      vendor_id,
+      srch_brand_name,
+    );
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Available Brands Fetched Successfully.", brands));
+  } catch (error) {
+    console.error("Error searching brands for request:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error"));
   }
 };
