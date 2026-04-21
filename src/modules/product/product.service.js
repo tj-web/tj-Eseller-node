@@ -7,6 +7,7 @@ import Product from "../../models/product.model.js";
 import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
 import ProductSpecification from "../../models/productSpecification.model.js";
+import VendorLog from "../../models/vendorLog.model.js";
 import Setting from "../../models/websiteSetting.model.js"
 import Language from "../../models/languages.model.js";
 import ProductFeature from "../../models/productFeature.model.js";
@@ -326,42 +327,107 @@ export const getSelectedCol = async ({
 
 
 export const saveProduct = async (save, imageUrl = null, productId = null) => {
+  const transaction = await Product.sequelize.transaction();
   let newProductId;
 
-  if (productId) {
-    // --- Update existing product ---
-    await Product.update(save, {
-      where: { product_id: productId },
-    });
-    newProductId = productId;
-  } else {
-    // --- Insert new product ---
-    const product = await Product.create(save);
-    newProductId = product.product_id;
+  try {
+    if (productId) {
+      // --- Update existing product ---
+      await Product.update(save, {
+        where: { product_id: productId },
+        transaction,
+      });
+      newProductId = productId;
+    } else {
+      // --- Insert new product ---
+      const product = await Product.create(save, { transaction });
+      newProductId = product.product_id;
+    }
+
+    // --- Handle Image Insertion ---
+    if (imageUrl) {
+      const fileName = imageUrl.split("/").pop(); 
+      const imageName = fileName.replace(/\.[^/.]+$/, ""); 
+
+      await ProductImage.create({
+        product_id: newProductId,
+        image: newProductId + "_" + fileName,
+        image_name: imageName,
+        // 'default', 'status', and 'dominant_color' will use the 
+        // defaultValue defined in your schema automatically.
+      }, { transaction });
+    }
+
+    await transaction.commit();
+    return newProductId;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
+};
 
-  // --- Handle Image Insertion ---
-  if (imageUrl) {
-    const fileName = imageUrl.split("/").pop(); 
-    const imageName = fileName.replace(/\.[^/.]+$/, ""); 
+export const saveProductDescription = async (descriptionData) => {
+  const transaction = await ProductDescription.sequelize.transaction();
 
-    await ProductImage.create({
-      product_id: newProductId,
-      image: fileName,
-      image_name: imageName,
-      // 'default', 'status', and 'dominant_color' will use the 
-      // defaultValue defined in your schema automatically.
+  try {
+    const { product_id, brief, overview, description, internal_description } = descriptionData;
+
+    const existingDesc = await ProductDescription.findOne({
+      where: { product_id },
+      transaction, 
     });
-  }
 
-  return newProductId;
+    if (existingDesc) {
+      await ProductDescription.update(
+        {
+          brief: brief || existingDesc.brief,
+          overview: overview || existingDesc.overview,
+          description: description || existingDesc.description,
+          internal_description: internal_description || existingDesc.internal_description,
+          updated_at: new Date().toISOString(), // or new Date() if DATE type
+        },
+        {
+          where: { product_id },
+          transaction, 
+        }
+      );
+    } else {
+      await ProductDescription.create(
+        {
+          product_id,
+          brief: brief || "",
+          overview: overview || "",
+          description: description || "",
+          internal_description: internal_description || "",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          transaction, 
+        }
+      );
+    }
+
+    await transaction.commit(); 
+  } catch (error) {
+    await transaction.rollback(); 
+    console.error("Error saving product description:", error);
+    throw error;
+  }
 };
 
 export const updateProductPricingDocument = async (productId, pricingDocument) => {
-  await Product.update(
-    { pricing_document: pricingDocument },
-    { where: { product_id: productId } }
-  );
+  const transaction = await Product.sequelize.transaction();
+  try {
+    await Product.update(
+      { pricing_document: pricingDocument },
+      { where: { product_id: productId }, transaction }
+    );
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 };
 
 const getActiveCategoryParentId = async (categoryId) => {
@@ -383,48 +449,56 @@ export const replaceProductCategories = async ({
   categories,
   category_parent_id,
 }) => {
-  await ProductCategory.destroy({ where: { product_id: productId } });
+  const transaction = await ProductCategory.sequelize.transaction();
+  try {
+    await ProductCategory.destroy({ where: { product_id: productId }, transaction });
 
-  const parentPayload = category_parent_id;
+    const parentPayload = category_parent_id;
 
-  for (let index = 0; index < categories.length; index++) {
-    const categoryId = categories[index];
-    if (!categoryId) continue;
+    for (let index = 0; index < categories.length; index++) {
+      const categoryId = categories[index];
+      if (!categoryId) continue;
 
-    let parentId;
-    let hasClientParent = false;
+      let parentId;
+      let hasClientParent = false;
 
-    if (category_parent_id !== undefined) {
-      const raw = Array.isArray(parentPayload)
-        ? parentPayload[index]
-        : categories.length === 1
-          ? parentPayload
-          : index === 0
+      if (category_parent_id !== undefined) {
+        const raw = Array.isArray(parentPayload)
+          ? parentPayload[index]
+          : categories.length === 1
             ? parentPayload
-            : undefined;
+            : index === 0
+              ? parentPayload
+              : undefined;
 
-      if (raw !== undefined) {
-        hasClientParent = true;
-        parentId = raw === "" || raw === null ? null : parseInt(raw, 10);
-        if (Number.isNaN(parentId)) parentId = null;
+        if (raw !== undefined) {
+          hasClientParent = true;
+          parentId = raw === "" || raw === null ? null : parseInt(raw, 10);
+          if (Number.isNaN(parentId)) parentId = null;
+        }
       }
+
+      if (!hasClientParent) {
+        parentId = await getActiveCategoryParentId(categoryId);
+        if (parentId === null) {
+          console.warn(`Category ${categoryId} not found or inactive, skipping...`);
+          continue;
+        }
+      }
+
+      await ProductCategory.create({
+        product_id: productId,
+        parent_id: parentId,
+        category_id: categoryId,
+        sort_order: 0,
+        is_primary: 1,
+      }, { transaction });
     }
 
-    if (!hasClientParent) {
-      parentId = await getActiveCategoryParentId(categoryId);
-      if (parentId === null) {
-        console.warn(`Category ${categoryId} not found or inactive, skipping...`);
-        continue;
-      }
-    }
-
-    await ProductCategory.create({
-      product_id: productId,
-      parent_id: parentId,
-      category_id: categoryId,
-      sort_order: 0,
-      is_primary: 1,
-    });
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
 };
 
@@ -641,29 +715,82 @@ const defaultCols = {
   
 };
 
-export const saveOrUpdateProductSpecification = async (id, productData) => {
+const createProductSpecificationVendorLogs = async ({
+  product_id,
+  vendor_id,
+  action_performed,
+  fields,
+  item_updated_id = 0,
+  transaction = null,
+}) => {
+  const logRows = [];
+  const p_key = action_performed === "insert" ? "" : "id";
+
+  for (const [column_name, value] of Object.entries(fields)) {
+    if (value === undefined || value === null || value === "") continue;
+
+    logRows.push({
+      item_id: product_id,
+      module: "product",
+      action_performed,
+      action_by: vendor_id,
+      table_name: "tbl_product_specification",
+      column_name,
+      p_key,
+      updated_column_value: value.toString(),
+      linked_attribute: "",
+      item_updated_id,
+      reject_reason: "",
+      status: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+  }
+
+  if (logRows.length) {
+    await VendorLog.bulkCreate(logRows, { transaction });
+  }
+
+  return logRows;
+};
+
+export const saveOrUpdateProductSpecification = async (
+  id,
+  productData,
+  vendor_id,
+) => {
+  const transaction = await VendorLog.sequelize.transaction();
   try {
-    // Merge defaults with incoming data
-    const dataPayload = { ...productData, ...defaultCols };
+    const fields = {
+      deployment: productData.deployment || "",
+      device: productData.device || "",
+      operating_system: productData.operating_system || "",
+      organization_type: productData.organization_type || "",
+      languages: productData.languages || "",
+    };
 
-    if (id) {
-      //  UPDATE
-      await ProductSpecification.update(dataPayload, {
-        where: { id: id }
-      });
+    const action_performed = id ? "updated" : "insert";
+    const item_updated_id = id || 0;
 
-      return { id, ...dataPayload, updated: true };
-    } else {
-      //  INSERT
-      const newSpec = await ProductSpecification.create(dataPayload);
+    const logs = await createProductSpecificationVendorLogs({
+      product_id: productData.product_id,
+      vendor_id,
+      action_performed,
+      fields,
+      item_updated_id,
+      transaction,
+    });
 
-      return { 
-        id: newSpec.id, 
-        ...dataPayload, 
-        created: true 
-      };
-    }
+    await transaction.commit();
+    return {
+      action: action_performed,
+      item_id: productData.product_id,
+      item_updated_id,
+      logs_created: logs.length,
+      fields,
+    };
   } catch (error) {
+    await transaction.rollback();
     console.error("Error in saveOrUpdateProductSpecification:", error);
     throw error;
   }
@@ -689,14 +816,21 @@ export const getProductFeatures = async (product_id) => {
   }
 };
 
-export const getAllFeatures = async () => {
+export const getAllFeatures = async (search = null) => {
   try {
+    const whereCondition = {
+      status: 1,
+      is_deleted: 0
+    };
+
+    // Add search filter if provided
+    if (search && search.trim()) {
+      whereCondition.feature_name = { [Op.like]: `%${search.trim()}%` };
+    }
+
     const features = await Feature.findAll({
       attributes: ['feature_id', 'feature_name'],
-      where: {
-        status: 1,
-        is_deleted: 0
-      },
+      where: whereCondition,
       order: [['feature_name', 'ASC']]
     });
 
@@ -708,6 +842,7 @@ export const getAllFeatures = async () => {
 };
 
 export const saveOrUpdateProductFeature = async (id, post) => {
+  const transaction = await ProductFeature.sequelize.transaction();
   try {
     if (id) {
       await ProductFeature.update(
@@ -719,8 +854,9 @@ export const saveOrUpdateProductFeature = async (id, post) => {
           type: post.type || 0,
           image: post.image || "",
         },
-        { where: { id } }
+        { where: { id }, transaction }
       );
+      await transaction.commit();
       return { action: "update", id };
     }
 
@@ -732,10 +868,12 @@ export const saveOrUpdateProductFeature = async (id, post) => {
       type: post.type || 0,
       image: post.image || "",
       created_at: post.created_at || new Date(),
-    });
+    }, { transaction });
 
+    await transaction.commit();
     return { action: "insert", id: newFeature.id };
   } catch (error) {
+    await transaction.rollback();
     console.error("Error in saveOrUpdateProductFeature (service):", error);
     throw error;
   }
@@ -743,8 +881,12 @@ export const saveOrUpdateProductFeature = async (id, post) => {
 
 
 export const insertProductScreenshots = async (screenshotsData) => {
+  const transaction = await ProductScreenshot.sequelize.transaction();
   try {
-    if (!screenshotsData || screenshotsData.length === 0) return { inserted: 0, updated: 0 };
+    if (!screenshotsData || screenshotsData.length === 0) {
+      await transaction.commit();
+      return { inserted: 0, updated: 0 };
+    }
 
     
     const formattedData = screenshotsData.map(item => ({
@@ -762,17 +904,21 @@ export const insertProductScreenshots = async (screenshotsData) => {
     // This will check the PRIMARY KEY (id). 
     // If ID exists, it UPDATES. If ID is null/doesn't exist, it INSERTS.
     const result = await ProductScreenshot.bulkCreate(formattedData, {
-      updateOnDuplicate: ["product_id", "image", "img_alt", "sort_order", "status", "is_deleted", "section_id"]
+      updateOnDuplicate: ["product_id", "image", "img_alt", "sort_order", "status", "is_deleted", "section_id"],
+      transaction,
     });
 
+    await transaction.commit();
     return { totalProcessed: result.length };
   } catch (error) {
+    await transaction.rollback();
     console.error("Error in insertProductScreenshots:", error);
     throw error;
   }
 };
 
 export const addGalleryModel = async (filesData, product_id) => {
+  const transaction = await DescriptionGallery.sequelize.transaction();
   try {
     const galleryData = [];
 
@@ -791,20 +937,23 @@ export const addGalleryModel = async (filesData, product_id) => {
       if (item.id) {
         // --- Update existing record ---
         await DescriptionGallery.update(dataPayload, {
-          where: { id: item.id }
+          where: { id: item.id },
+          transaction,
         });
 
         galleryData.push({ ...dataPayload, id: item.id });
       } else {
         // --- Insert new record ---
-        const newRecord = await DescriptionGallery.create(dataPayload);
+        const newRecord = await DescriptionGallery.create(dataPayload, { transaction });
 
         galleryData.push(newRecord.get({ plain: true }));
       }
     }
 
+    await transaction.commit();
     return galleryData;
   } catch (error) {
+    await transaction.rollback();
     console.error("Error in addGalleryModel:", error);
     throw error;
   }
@@ -812,6 +961,7 @@ export const addGalleryModel = async (filesData, product_id) => {
 
 
 export const upsertEnrichmentImages = async (enrichmentData) => {
+  const transaction = await ProductEnrichmentImage.sequelize.transaction();
   try {
     const saved = [];
 
@@ -828,6 +978,7 @@ export const upsertEnrichmentImages = async (enrichmentData) => {
           },
           {
             where: { id: item.id },
+            transaction,
           }
         );
 
@@ -840,14 +991,16 @@ export const upsertEnrichmentImages = async (enrichmentData) => {
           image_height: item.image_height,
           image: item.image,
           product_id: item.product_id,
-        });
+        }, { transaction });
 
         saved.push(newRecord.get({ plain: true }));
       }
     }
 
+    await transaction.commit();
     return saved;
   } catch (error) {
+    await transaction.rollback();
     console.error("Error in upsertEnrichmentImages:", error);
     throw error;
   }
@@ -855,8 +1008,12 @@ export const upsertEnrichmentImages = async (enrichmentData) => {
 
 
 export const addVideoModel = async (videos) => {
+  const transaction = await ProductVideo.sequelize.transaction();
   try {
-    if (!videos || videos.length === 0) return [];
+    if (!videos || videos.length === 0) {
+      await transaction.commit();
+      return [];
+    }
 
     // Map data to ensure all database fields from your image are handled
     const formattedVideos = videos.map(item => ({
@@ -887,19 +1044,23 @@ export const addVideoModel = async (videos) => {
         "publish_date",
         "is_deleted",
         "updated_at" 
-      ]
+      ],
+      transaction,
     });
 
     // Return the original formatted data with IDs from the result
     // This ensures correct timestamps in the response
-    return formattedVideos.map((item, index) => ({
+    const response = formattedVideos.map((item, index) => ({
       ...item,
       id: result[index]?.id || item.id, // Get the ID from the result if it was inserted
       created_at: item.created_at, 
       updated_at: item.updated_at  
     }));
+    await transaction.commit();
+    return response;
 
   } catch (error) {
+    await transaction.rollback();
     console.error("Error in addVideoModel:", error);
     throw error;
   }

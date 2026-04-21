@@ -136,7 +136,7 @@ export const basicDetails = async (req, res) => {
     let secondImageUrl = "";
     if (req.files?.image) {
       const img = req.files.image[0];
-      console.log("Product image received:", img);
+      // console.log("Product image received:", img);
 
       let originalName = img.originalname.replace(/\s+/g, "-");
       const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`;
@@ -247,6 +247,18 @@ export const basicDetails = async (req, res) => {
     );
     console.log("Product saved with ID:", productId);
 
+    // Save product description if provided
+    if (post?.brief || post?.overview || post?.description || post?.internal_description) {
+      const descriptionData = {
+        product_id: productId,
+        brief: post?.brief ?? "",
+        overview: post?.overview ?? "",
+        description: post?.description ?? "",
+        internal_description: post?.internal_description ?? "",
+      };
+      await productService.saveProductDescription(descriptionData);
+    }
+    
     // Update pricing_document if documents were uploaded
     if (pricingDocument) {
       const pricingDocValue = `${productId}_${pricingDocument}`;
@@ -271,7 +283,7 @@ export const basicDetails = async (req, res) => {
       });
     }
 
-    return res.status(StatusCodes.CREATED).json(
+    return res.status(StatusCodes.SUCCESS).json(
       SystemResponse.success("Product saved successfully", {
         product_id: productId,
         imageUrl: secondImageUrl || null,
@@ -281,7 +293,7 @@ export const basicDetails = async (req, res) => {
   } catch (error) {
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError("Internal Server Error in saving product"));
+      .json(SystemResponse.internalServerError(error.message, "Internal Server Error in saving product"));      
   }
 };
 
@@ -343,6 +355,7 @@ export const ProductSpecification = async (req, res) => {
   try {
     const {
       product_id,
+      vendor_id,
       deployment,
       device,
       operating_system,
@@ -350,25 +363,44 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.body;
 
+    if (!product_id || !vendor_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id and vendor_id are required"));
+    }
+
     if (!deployment || !device || !operating_system || !organization_type) {
       return res
         .status(StatusCodes.BAD_REQUEST)
         .json(SystemResponse.badRequestError("Required fields are missing"));
     }
 
-    // Convert arrays → CSV
-    // const toCSV = (val) => (Array.isArray(val) ? val.join(",") : val);
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    console.log(brandArr);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+    console.log("Is vendor product:", isVendor);
+   
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
+
+    const toCSV = (val) =>
+      Array.isArray(val) ? val.join(",") : val || "";
+
     const productData = {
       product_id,
-      deployment,
-      device,
-      operating_system,
-      organization_type,
-      languages,
+      deployment: toCSV(deployment),
+      device: toCSV(device),
+      operating_system: toCSV(operating_system),
+      organization_type: toCSV(organization_type),
+      languages: toCSV(languages),
     };
 
     const data = await productService.getSelectedCol({
-      table: "ProductSpecification", 
+      table: "ProductSpecification",
       columns: ["id"],
       where: { product_id: product_id },
       records: "single",
@@ -377,16 +409,18 @@ export const ProductSpecification = async (req, res) => {
     const result = await productService.saveOrUpdateProductSpecification(
       id,
       productData,
+      vendor_id,
     );
 
-    return res
-      .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success("Changes have been recorded successfully!", result));
-  } catch (error) {
-    return res
-      .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError("Internal server error"));
-  }
+    return res.status(StatusCodes.SUCCESS)
+     .json(SystemResponse.success("Changes have been recorded successfully!", result));
+     } catch (error) { 
+      return res.status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError({
+        message: error.message
+      },
+        "Internal server error"));
+    }
 };
 
 //--------------------------------------------features part of the form--------------
@@ -440,7 +474,7 @@ export const saveProductFeature = async (req, res) => {
 
 export const getAllFeaturesList = async (req, res) => {
   try {
-    const { product_id, vendor_id } = req.query;
+    const { product_id, vendor_id, search } = req.query;
 
     if (product_id) {
       // Get brand array
@@ -450,8 +484,8 @@ export const getAllFeaturesList = async (req, res) => {
       const check = await productService.isVendorProduct(product_id, brand);
 
       if (check) {
-        // Fetch all features for the product
-        const allFeatures = await productService.getAllFeatures();
+        // Fetch all features for the product with optional search
+        const allFeatures = await productService.getAllFeatures(search);
 
         return res
           .status(StatusCodes.SUCCESS)
@@ -459,7 +493,7 @@ export const getAllFeaturesList = async (req, res) => {
       } else {
         return res
           .status(StatusCodes.FORBIDDEN)
-          .json(SystemResponse.forbidden("Unauthorized: Product does not belong to vendor"));
+          .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
       }
     } else {
       return res
