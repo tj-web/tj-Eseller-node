@@ -2,8 +2,8 @@ import { vendorOrders } from "../../utilis/orders.utility.js";
 
 export const getOrders = async (req, res) => {
   try {
-    const { vendor_id, page = 1, limit = 10 } = req.query;
-
+    const { page = 1, limit = 10 } = req.query;
+    const vendor_id = req.user.vendor_id;
     const result = await vendorOrders({
       vendor_id,
       params: { page, limit },

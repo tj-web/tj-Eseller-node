@@ -33,7 +33,7 @@ export const getBrands = async (req, res) => {
       pagenumber,
     } = req.query;
 
-    const vendor_id = req.query.vendor_id; // fixed !!
+    const vendor_id = req.user.vendor_id; // fixed !!
 
     const result = await getVendorBrandsService({
       vendor_id: vendor_id || 1, // Fallback to 1 if not provided, as requested
@@ -63,7 +63,8 @@ export const getBrands = async (req, res) => {
 
 export const getBrandsCount = async (req, res) => {
   try {
-    const { vendor_id, srch_brand_name = "" } = req.query;
+    const { srch_brand_name = "" } = req.query;
+    const vendor_id = req.user.vendor_id;
 
     if (!vendor_id) {
       return res
@@ -118,6 +119,8 @@ export const addBrand = async (req, res) => {
       ...req.body,
     };
 
+    const vendor_id = req.user.vendor_id;
+
     if (req.file) {
       const fileName = req.file.originalname;
       const fileobj = {
@@ -131,7 +134,7 @@ export const addBrand = async (req, res) => {
     // Call single authoritative Service replacing manually structured transaction steps
     const result = await addBrandService(
       brandData,
-      req.body.vendor_id,
+      vendor_id,
       req.body.profile_id || 0,
     );
 
@@ -156,7 +159,7 @@ export const updateBrand = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const vendor_id = req.body.vendor_id;
+    const vendor_id = req.user.vendor_id;
     const { brand_id } = req.params;
 
     if (!brand_id) {
@@ -251,7 +254,8 @@ export const updateBrand = async (req, res) => {
 export const view_brand = async (req, res) => {
   try {
     const { brand_id } = req.params;
-    const { action, vendor_id = 1 } = req.query;
+    const { action } = req.query;
+    const vendor_id = req.user.vendor_id;
 
     let brandDetails;
 
@@ -289,7 +293,8 @@ export const view_brand = async (req, res) => {
 /***********  Function for Requesting a brand ***********/
 export const requestBrand = async (req, res) => {
   try {
-    const { brand, vendor_id } = req.body;
+    const { brand } = req.body;
+    const vendor_id = req.user.vendor_id;
 
     if (!brand || !Array.isArray(brand) || brand.length === 0) {
       return res
@@ -326,7 +331,8 @@ export const requestBrand = async (req, res) => {
 /***********  Function for Searching Global Brands ***********/
 export const searchBrandsForRequest = async (req, res) => {
   try {
-    const { vendor_id, srch_brand_name = "" } = req.query;
+    const { srch_brand_name = "" } = req.query;
+    const vendor_id = req.user.vendor_id;
 
     if (!vendor_id) {
       return res
