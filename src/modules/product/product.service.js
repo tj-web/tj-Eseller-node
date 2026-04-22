@@ -211,7 +211,7 @@ export const getProductList = async (
     offset: offset,
     raw: true,
     nest: true,
-    logging: false
+    logging:false
     // Emulate GROUP BY tp.product_id by taking unique products if needed
     // In practice, if there are multiple images, raw: true + nest: true might return multiple rows.
     // However, the original SQL had GROUP BY tp.product_id, usually to get a single image if any.

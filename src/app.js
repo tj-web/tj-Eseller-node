@@ -44,9 +44,9 @@ const API_PREFIX = process.env.API_VERSION_PATH ;
 
 app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
 app.use(`${API_PREFIX}/manage`, manageLeads);
-app.use(`${API_PREFIX}/orders`, orderRoutes);
-app.use(`${API_PREFIX}/brands`, brandRoutes);
-app.use(`${API_PREFIX}/product`, manageProduct);
+app.use(`${API_PREFIX}/orders`, authenticate, orderRoutes);
+app.use(`${API_PREFIX}/brands`, authenticate, brandRoutes);
+app.use(`${API_PREFIX}/product`, authenticate, manageProduct);
 app.use(`${API_PREFIX}/help-support`, helpSupportRoutes);
 app.use(`${API_PREFIX}/company-information`, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
