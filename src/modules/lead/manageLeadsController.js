@@ -42,8 +42,6 @@ export const getLeadHistoryPost = async (req, res) => {
       throw new Error("Lead Id is required.");
     }
 
-    console.log(">>>>", req.params);
-
     const history = await getLeadHistory(lead_id);
     if (history.length > 0) {
       return res.status(200).json({

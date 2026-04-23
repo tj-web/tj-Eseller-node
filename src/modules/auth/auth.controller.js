@@ -178,7 +178,6 @@ export const changePassword = async (req, res, next) => {
   const { old_password, new_password } = req.body;
 
   try {
-    console.log(req.user);
     const vendorId = req.user.vendor_id;
 
     await handleChangePassword(vendorId, old_password, new_password);
