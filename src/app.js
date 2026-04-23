@@ -13,6 +13,7 @@ import helpSupportRoutes from "./modules/helpSupport/helpSupport.routes.js";
 import companyInformationRoutes from "./modules/companyInfo/companyInformation.routes.js";
 import accountHealthRoutes from "./modules/accountHealth/accountHealth.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import leadsRoutes from "./modules/lead/manageLeads.routes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
 
@@ -42,14 +43,15 @@ app.get('/health', function (req, res) {
 
 const API_PREFIX = process.env.API_VERSION_PATH ;
 
-app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
-app.use(`${API_PREFIX}/manage`, manageLeads);
+app.use(`${API_PREFIX}/dashboard`, authenticate, dashboardRoutes);
+app.use(`${API_PREFIX}/manage`, authenticate, manageLeads);
 app.use(`${API_PREFIX}/orders`, authenticate, orderRoutes);
 app.use(`${API_PREFIX}/brands`, authenticate, brandRoutes);
 app.use(`${API_PREFIX}/product`, authenticate, manageProduct);
-app.use(`${API_PREFIX}/help-support`, helpSupportRoutes);
-app.use(`${API_PREFIX}/company-information`, companyInformationRoutes);
+app.use(`${API_PREFIX}/help-support`, authenticate, helpSupportRoutes);
+app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
+app.use(`${API_PREFIX}/leads`, leadsRoutes);
 
 // do not apply authenticate in authRoutes here , it should be done 
 // in specific routes inside route folder 

@@ -58,9 +58,9 @@ export const login = async (req, res, next) => {
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("access_token", accessToken, {
       httpOnly: true,
-      secure: isProd,
+      secure: isProd, 
       sameSite: "lax",
-      maxAge: 15 * 60 * 1000,
+      maxAge: 1 * 60 * 1000,
     });
 
     res.cookie("refresh_token", refreshToken, {
@@ -178,7 +178,8 @@ export const changePassword = async (req, res, next) => {
   const { old_password, new_password } = req.body;
 
   try {
-    const vendorId = req.user?.vendor_id;
+    console.log(req.user);
+    const vendorId = req.user.vendor_id;
 
     await handleChangePassword(vendorId, old_password, new_password);
 

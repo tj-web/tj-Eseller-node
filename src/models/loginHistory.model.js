@@ -1,6 +1,6 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../db/connection.js";
-
+ 
 const LoginHistory = sequelize.define(
   "LoginHistory",
   {
@@ -50,11 +50,15 @@ const LoginHistory = sequelize.define(
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
     },
+    last_access: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+    },
   },
   {
     tableName: "tbl_login_history",
     timestamps: false,
   }
 );
-
+ 
 export default LoginHistory;

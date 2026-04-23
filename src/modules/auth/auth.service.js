@@ -92,7 +92,7 @@ export const logoutService = async (refreshToken) => {
 
   try {
     const record = await LoginHistory.findOne({
-      where: { auth_token: refreshToken }
+      where: { auth_token: refreshToken, login_status: 1 }
     });
 
     if (!record) {
@@ -343,7 +343,7 @@ export const generateAuthTokens = (user) => {
   const accessToken = jwt.sign(
     payload,
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: "15m" }
+    { expiresIn: "1m" }
   );
 
   const refreshToken = jwt.sign(

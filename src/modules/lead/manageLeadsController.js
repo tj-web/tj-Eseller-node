@@ -6,7 +6,7 @@ import { getDemosCount } from "./myDemos.js";
 export const manageLeads = async (req, res) => {
   try {
     const vendor_id = req.query.vendor_id;
-
+    
     if (!vendor_id) {
       return res.status(400).json({ error: "vendor_id is required" });
     }
@@ -35,22 +35,16 @@ export const manageLeads = async (req, res) => {
 // -----------------------------get Lead History API--------------------------------------
 
 export const getLeadHistoryPost = async (req, res) => {
-  const params = req.body;
-  try {
-    if (!params.profile_id) {
-      throw new Error("Profile Id field is required.");
-    }
+   try {
+    const { lead_id } = req.params; 
 
-    if (!params.vendor_id) {
-      throw new Error("Vendor Id field is required.");
-    }
-
-    if (!params.lead_id) {
+    if (!lead_id) {
       throw new Error("Lead Id is required.");
     }
-    console.log(">>>>",params)
 
-    const history = await getLeadHistory(params.lead_id);
+    console.log(">>>>", req.params);
+
+    const history = await getLeadHistory(lead_id);
     if (history.length > 0) {
       return res.status(200).json({
         status: true,
@@ -135,8 +129,7 @@ export const addRemarkReminder = async (req, res) => {
 
 export const getDemosCountController = async (req, res) => {
   try {
-    const { flg, acd_uuid, limit ,pageNumber,...search_filter } = req.query;
-    const vendor_id = req.user.vendor_id; // fixed !!
+    const { vendor_id ,flg, acd_uuid, limit ,pageNumber,...search_filter } = req.query;
     if (!vendor_id) {
       return res.status(400).json({
         status: false,
