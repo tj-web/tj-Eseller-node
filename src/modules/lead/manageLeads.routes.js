@@ -7,8 +7,8 @@ import {
   addRemarkReminder,
 getDemosCountController
 } from "./manageLeadsController.js";
-router.get("/leads", manageLeads);
-router.post("/leadsHistory", getLeadHistoryPost);
+router.get("/manageLeads", manageLeads);
+router.get("/leadsHistory/:lead_id", getLeadHistoryPost);
 router.post('/addRemark',addRemarkReminder);
 router.get('/my_demos',getDemosCountController)
 

@@ -2,7 +2,6 @@ import jwt from "jsonwebtoken";
 import LoginHistory from "../models/loginHistory.model.js";
 import { findUserByEmail } from "../modules/common/service/userService.js";
 import { generateAuthTokens } from "../modules/auth/auth.service.js";
-
 if (!process.env.ACCESS_TOKEN_SECRET) {
   throw new Error("Missing ACCESS_TOKEN_SECRET");
 }
@@ -19,18 +18,19 @@ export const authenticate = async (req, res, next) => {
   const refreshToken = req.cookies.refresh_token;
 
   if (!accessToken && !refreshToken) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).json({ message: "Session expired. Please login again." });
   }
 
   // Helper to attach cookies
   const attachCookies = (newAccessToken, newRefreshToken) => {
-    const isProd = process.env.NODE_ENV === "production";
+    const isProd = process.env.NODE_ENV === "production"
     res.cookie("access_token", newAccessToken, {
       httpOnly: true,
       secure: isProd,
       sameSite: "lax",
       maxAge: 15 * 60 * 1000,
     });
+
     res.cookie("refresh_token", newRefreshToken, {
       httpOnly: true,
       secure: isProd,
@@ -45,7 +45,7 @@ export const authenticate = async (req, res, next) => {
       req.user = decoded;
       return next();
     } catch (error) {
-      // Access token expired, swallow error to handle silent refresh
+
     }
   }
 
@@ -60,7 +60,7 @@ export const authenticate = async (req, res, next) => {
   } catch (error) {
     return res
       .status(401)
-      .json({ message: "Refresh token expired or invalid" });
+      .json({ message: "Token expired and no refresh token provided" });
   }
 
   // RACE CONDITION HANDLER:
@@ -86,14 +86,12 @@ export const authenticate = async (req, res, next) => {
     });
 
     if (!record) {
-      return res
-        .status(401)
-        .json({ message: "Session expired, please login again." });
+      return res.status(401).json({ message: "Session expired. Please login again." });
     }
 
     const user = await findUserByEmail(record.email_id);
     if (!user || user.Vendor?.status === 0) {
-      return res.status(403).json({ message: "Account invalid or disabled." });
+      return res.status(401).json({ message: "Session expired. Please login again." });
     }
 
     // Generate new tokens (Rotation)
