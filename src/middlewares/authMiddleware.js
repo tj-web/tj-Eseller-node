@@ -2,7 +2,6 @@ import jwt from "jsonwebtoken";
 import LoginHistory from "../models/loginHistory.model.js";
 import { findUserByEmail } from "../modules/common/service/userService.js";
 import { generateAuthTokens } from "../modules/auth/auth.service.js";
-import { logoutService } from "../modules/auth/auth.service.js";
 if (!process.env.ACCESS_TOKEN_SECRET) {
   throw new Error("Missing ACCESS_TOKEN_SECRET");
 }
@@ -19,7 +18,7 @@ export const authenticate = async (req, res, next) => {
   const refreshToken = req.cookies.refresh_token;
 
   if (!accessToken && !refreshToken) {
-    return handleLogout(req, res);
+    return res.status(401).json({ message: "Session expired. Please login again." });
   }
 
   // Helper to attach cookies
@@ -29,7 +28,7 @@ export const authenticate = async (req, res, next) => {
       httpOnly: true,
       secure: isProd,
       sameSite: "lax",
-      maxAge: 1 * 60 * 1000,
+      maxAge: 15 * 60 * 1000,
     });
 
     res.cookie("refresh_token", newRefreshToken, {
@@ -46,7 +45,7 @@ export const authenticate = async (req, res, next) => {
       req.user = decoded;
       return next();
     } catch (error) {
-      // Access token expired, swallow error to handle silent refresh
+
     }
   }
 
@@ -59,7 +58,9 @@ export const authenticate = async (req, res, next) => {
   try {
     jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
   } catch (error) {
-    return handleLogout(req, res);
+    return res
+      .status(401)
+      .json({ message: "Token expired and no refresh token provided" });
   }
 
   // RACE CONDITION HANDLER:
@@ -85,12 +86,12 @@ export const authenticate = async (req, res, next) => {
     });
 
     if (!record) {
-      return handleLogout(req, res);
+      return res.status(401).json({ message: "Session expired. Please login again." });
     }
 
     const user = await findUserByEmail(record.email_id);
     if (!user || user.Vendor?.status === 0) {
-      return handleLogout(req, res);
+      return res.status(401).json({ message: "Session expired. Please login again." });
     }
 
     // Generate new tokens (Rotation)
@@ -125,21 +126,4 @@ export const authenticate = async (req, res, next) => {
     console.error("Auth Middleware Refresh Error:", err);
     return res.status(401).json({ message: "Invalid session." });
   }
-};
-
-const handleLogout = async (req, res) => {
-  try {
-    const refreshToken = req.cookies.refresh_token;
-
-    await logoutService(refreshToken);
-  } catch (err) {
-    console.error("Logout error:", err);
-  }
-
-  res.clearCookie("access_token");
-  res.clearCookie("refresh_token");
-
-  return res.status(401).json({
-    message: "Session expired. Please login again.",
-  });
 };
