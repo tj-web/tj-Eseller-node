@@ -11,10 +11,7 @@ import {
   createVendorDetails,
   createVendorLeads,
 } from "../common/service/userService.js";
-import {
-  sendVerificationEmail,
-  sendAdminNotification,
-} from "../common/service/emailService.js";
+import { sendVerificationEmail, sendAdminNotification } from "../common/service/emailService.js";
 import validator from "validator";
 import Vendor from "../../models/vendor.model.js";
 import Otp from "../../models/otp.model.js";
@@ -62,7 +59,7 @@ export const handleResetPassword = async (token, newPassword) => {
       {
         where: { email: record.email },
         transaction,
-      },
+      }
     );
 
     /* update vendor */
@@ -71,7 +68,7 @@ export const handleResetPassword = async (token, newPassword) => {
       {
         where: { id: user.vendor_id },
         transaction,
-      },
+      }
     );
 
     await transaction.commit();
@@ -99,10 +96,7 @@ export const logoutService = async (refreshToken) => {
       return { message: "Session already expired", expired: true };
     }
 
-    await LoginHistory.update(
-      { login_status: 0, auth_token: null },
-      { where: { id: record.id } }
-    );
+    await LoginHistory.update({ login_status: 0, auth_token: null }, { where: { id: record.id } });
   } catch (err) {
     console.error("Login history update error:", err);
   }
@@ -169,7 +163,7 @@ export const registerVendor = async (data) => {
 
   const normalizedEmail = email.trim().toLowerCase();
   const countryMap = {
-    "+91": "en-IN", 
+    "+91": "en-IN",
     "+1": "en-US",
     "+44": "en-GB",
   };
@@ -235,7 +229,7 @@ export const registerVendor = async (data) => {
 
         created_at: new Date(),
       },
-      transaction,
+      transaction
     );
 
     const vendorAuth = await createVendorAuth(
@@ -265,9 +259,8 @@ export const registerVendor = async (data) => {
 
         sort_order: 0,
       },
-      transaction,
+      transaction
     );
-
 
     await createVendorDetails(
       {
@@ -303,14 +296,13 @@ export const registerVendor = async (data) => {
       dial_code,
       number,
       vendor.id,
-      transaction,
+      transaction
     );
 
     await transaction.commit();
 
     return {
-      message:
-        "Signup successful. Verification email sent , check your email !",
+      message: "Signup successful. Verification email sent , check your email !",
       vendor_id: vendor.id,
       profile_id: vendorAuth.id,
     };
@@ -319,7 +311,6 @@ export const registerVendor = async (data) => {
     throw error;
   }
 };
-
 
 /* =========================================
    GENERATE TOKENS
@@ -334,17 +325,13 @@ export const generateAuthTokens = (user) => {
 
   const payload = {
     vendor_id: user.vendor_id,
-    profile_id: user.id || user.Vendor?.id,
+    profile_id: user.id,
     v_name: user.Vendor?.first_name,
     v_lname: user.Vendor?.last_name,
     v_email: user.email,
   };
 
-  const accessToken = jwt.sign(
-    payload,
-    process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: "15m" }
-  );
+  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
 
   const refreshToken = jwt.sign(
     { vendor_id: user.vendor_id, email: user.email },
@@ -354,8 +341,13 @@ export const generateAuthTokens = (user) => {
   return { accessToken, refreshToken };
 };
 
-
-export const createLoginHistory = async (user, ip, deviceId, refreshToken, loginVia = "native_auth") => {
+export const createLoginHistory = async (
+  user,
+  ip,
+  deviceId,
+  refreshToken,
+  loginVia = "native_auth"
+) => {
   try {
     const record = await LoginHistory.create({
       email_id: user.email,
@@ -395,11 +387,7 @@ export const clearAllSessionsByVendorId = async (vendorId) => {
   }
 };
 
-export const handleChangePassword = async (
-  vendorId,
-  oldPassword,
-  newPassword
-) => {
+export const handleChangePassword = async (vendorId, oldPassword, newPassword) => {
   if (!vendorId) {
     throw new AppError("Unauthorized", 401);
   }
@@ -435,16 +423,12 @@ export const handleChangePassword = async (
       { where: { vendor_id: vendorId }, transaction }
     );
 
-    await Vendor.update(
-      { password: newHashed },
-      { where: { id: vendorId }, transaction }
-    );
+    await Vendor.update({ password: newHashed }, { where: { id: vendorId }, transaction });
 
     await transaction.commit();
     await clearAllSessionsByVendorId(vendorId);
 
     return true;
-
   } catch (error) {
     await transaction.rollback();
     throw error;
