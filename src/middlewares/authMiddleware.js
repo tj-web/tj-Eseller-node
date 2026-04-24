@@ -50,17 +50,13 @@ export const authenticate = async (req, res, next) => {
   }
 
   if (!refreshToken) {
-    return res
-      .status(401)
-      .json({ message: "Token expired and no refresh token provided" });
+    return res.status(401).json({ message: "Token expired and no refresh token provided" });
   }
 
   try {
     jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
   } catch (error) {
-    return res
-      .status(401)
-      .json({ message: "Refresh token expired or invalid" });
+    return res.status(401).json({ message: "Refresh token expired or invalid" });
   }
 
   // RACE CONDITION HANDLER:
@@ -71,10 +67,7 @@ export const authenticate = async (req, res, next) => {
     const cached = refreshCache.get(refreshToken);
     // Ensure cache is not older than 15 seconds
     if (Date.now() - cached.timestamp < 15000) {
-      req.user = jwt.verify(
-        cached.accessToken,
-        process.env.ACCESS_TOKEN_SECRET,
-      );
+      req.user = jwt.verify(cached.accessToken, process.env.ACCESS_TOKEN_SECRET);
       attachCookies(cached.accessToken, cached.refreshToken);
       return next();
     }
@@ -86,9 +79,7 @@ export const authenticate = async (req, res, next) => {
     });
 
     if (!record) {
-      return res
-        .status(401)
-        .json({ message: "Session expired, please login again." });
+      return res.status(401).json({ message: "Session expired, please login again." });
     }
 
     const user = await findUserByEmail(record.email_id);
@@ -97,13 +88,12 @@ export const authenticate = async (req, res, next) => {
     }
 
     // Generate new tokens (Rotation)
-    const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
-      generateAuthTokens(user);
+    const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateAuthTokens(user);
 
     // Update DB Atomically
     await LoginHistory.update(
       { auth_token: newRefreshToken, login_status: 1 },
-      { where: { id: record.id } },
+      { where: { id: record.id } }
     );
 
     // Save to our short-lived cache to rescue incoming concurrent requests

@@ -22,9 +22,9 @@ const app = express();
 
 app.use(
   cors({
-    origin: [process.env.FRONTEND_URL, "http://localhost:5173"],
+    origin: [process.env.FRONTEND_URL, "http://localhost:5173", "http://localhost:5001"],
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.json());
@@ -36,11 +36,11 @@ app.get("/", (req, res) => {
   res.status(200).send("Eseller API is running.");
 });
 
-app.get('/health', function (req, res) {
-  res.send('Ok');
+app.get("/health", function (req, res) {
+  res.send("Ok");
 });
 
-const API_PREFIX = process.env.API_VERSION_PATH ;
+const API_PREFIX = process.env.API_VERSION_PATH;
 
 app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
 app.use(`${API_PREFIX}/manage`, manageLeads);
@@ -48,11 +48,11 @@ app.use(`${API_PREFIX}/orders`, authenticate, orderRoutes);
 app.use(`${API_PREFIX}/brands`, authenticate, brandRoutes);
 app.use(`${API_PREFIX}/product`, authenticate, manageProduct);
 app.use(`${API_PREFIX}/help-support`, helpSupportRoutes);
-app.use(`${API_PREFIX}/company-information`, companyInformationRoutes);
+app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
 
-// do not apply authenticate in authRoutes here , it should be done 
-// in specific routes inside route folder 
+// do not apply authenticate in authRoutes here , it should be done
+// in specific routes inside route folder
 
 app.use(`${API_PREFIX}/eseller-agreement`, agreementRoutes);
 app.use(`${API_PREFIX}/account-health`, accountHealthRoutes);

@@ -1,24 +1,36 @@
 import {
-  getVendorData,
-  getDesignation,
-  getBillingCountryStateCity,
-  getVendorCountryStateCity,
-} from "./companyInformation.model.js";
+  getVendorDataService,
+  getDesignationService,
+  getBillingCountryStateCityService,
+  getVendorCountryStateCityService,
+  updateVendorAuthService,
+  updateVendorDetailsService,
+  getSearchedLocationsService,
+} from "./companyInformation.service.js";
+import { uploadfile2 } from "../../utilis/s3Uploader.js";
+import StatusCodes from "../../utilis/statusCodes.js";
+import SystemResponse from "../../utilis/systemResponse.js";
 
-export const company_information = async (req, res) => {
+export const getCompanyInfo = async (req, res) => {
   try {
-    const { profile_id } = req.body;
+    const profile_id = req.user.profile_id;
 
-    let v_info = await getVendorData(parseInt(profile_id));
-    if (!v_info) {
+    if (!profile_id) {
       return res
-        .status(404)
-        .json({ success: false, message: "Vendor not found" });
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Profile ID is required"));
     }
 
-    let arr_designation = await getDesignation();
+    let v_info = await getVendorDataService({ profile_id });
+    if (!v_info) {
+      return res
+        .status(StatusCodes.NOT_FOUND)
+        .json(SystemResponse.notFoundError("Vendor not found"));
+    }
 
-    const billing_address = await getBillingCountryStateCity({
+    let arr_designation = await getDesignationService();
+
+    const billing_address = await getBillingCountryStateCityService({
       billing_country: v_info.billing_country,
       billing_state: v_info.billing_state,
       billing_city: v_info.billing_city,
@@ -28,7 +40,7 @@ export const company_information = async (req, res) => {
     v_info.billing_state_name = billing_address.billing_state_name;
     v_info.billing_city_name = billing_address.billing_city_name;
 
-    const oem_address = await getVendorCountryStateCity({
+    const oem_address = await getVendorCountryStateCityService({
       country: v_info.country,
       state: v_info.state,
       city: v_info.city,
@@ -46,12 +58,91 @@ export const company_information = async (req, res) => {
       title: "Company Information-Esellerhub Techjockey",
     };
 
-    return res.status(200).json({ success: true, arr });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Company Information Fetched Successfully.", arr));
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Error in company_information",
-      error: error.message || error,
-    });
+    console.error("Error in getCompanyInfo:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Error in fetching company information", error.message));
+  }
+};
+
+/* 1. SAVE/UPDATE ACCOUNT INFO */
+export const saveAccountInfo = async (req, res) => {
+  try {
+    const { form_type, ...formData } = req.body;
+    const profile_id = req.user.profile_id;
+    const vendor_id = req.user.vendor_id;
+
+    if (!profile_id || !vendor_id) {
+      return res
+        .status(StatusCodes.UNAUTHORIZED)
+        .json(SystemResponse.unauthorizedError("Unauthorized: Invalid user identity"));
+    }
+
+    // Intercept image buffers and securely dispatch to S3
+    if (req.files) {
+      if (req.files.gst_document && req.files.gst_document.length > 0) {
+        const file = req.files.gst_document[0];
+        const fileName = `${vendor_id}_gst_${file.originalname.replace(/\s+/g, "-")}`;
+        const fileobj = {
+          ...file,
+          key: `eseller/assets/img/vendor_doc/${fileName}`,
+        };
+        await uploadfile2(fileobj);
+        formData.gst_document = fileName;
+      }
+
+      if (req.files.pan_document && req.files.pan_document.length > 0) {
+        const file = req.files.pan_document[0];
+        const fileName = `${vendor_id}_pan_${file.originalname.replace(/\s+/g, "-")}`;
+        const fileobj = {
+          ...file,
+          key: `eseller/assets/img/vendor_doc/${fileName}`,
+        };
+        await uploadfile2(fileobj);
+        formData.pan_document = fileName;
+      }
+    }
+
+    if (form_type === "company_detail_from") {
+      if (formData.first_name !== undefined || formData.last_name !== undefined) {
+        await updateVendorAuthService(profile_id, {
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+        });
+      }
+
+      await updateVendorDetailsService(vendor_id, formData);
+    } else if (form_type === "billng_info_from" || form_type === "bank_detail_from") {
+      await updateVendorDetailsService(vendor_id, formData);
+    }
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Information updated successfully"));
+  } catch (error) {
+    console.error("Error in saveAccountInfo:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error", error.message));
+  }
+};
+
+/* 2. SEARCH COUNTRY/STATE/CITY */
+export const searchLocation = async (req, res) => {
+  try {
+    const { search, search_by, context_id } = req.query;
+    const results = await getSearchedLocationsService(search, search_by, context_id);
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Locations Searched Successfully.", results));
+  } catch (error) {
+    console.error("Error in searchLocation:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error", error.message));
   }
 };
