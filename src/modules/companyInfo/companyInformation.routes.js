@@ -1,8 +1,15 @@
 import express from "express";
+import multer from "multer";
+import { getCompanyInfo, searchLocation, saveAccountInfo } from "./companyInformationController.js";
+
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
-import { company_information } from "./companyInformationController.js";
-
-router.get("/", company_information);
+router.get("/", getCompanyInfo);
+router.get("/search-location", searchLocation);
+router.post("/save-account-info", upload.fields([
+  { name: 'gst_document', maxCount: 1 },
+  { name: 'pan_document', maxCount: 1 }
+]), saveAccountInfo);
 
 export default router;

@@ -1,7 +1,4 @@
-import {
-  findDifferences,
-  getCurrentDateTime,
-} from "../../General_Function/general_helper.js";
+import { findDifferences, getCurrentDateTime } from "../../General_Function/general_helper.js";
 import {
   getVendorBrandsService,
   getVendorBrandsCountService,
@@ -24,14 +21,7 @@ import SystemResponse from "../../utilis/systemResponse.js";
 
 export const getBrands = async (req, res) => {
   try {
-    const {
-      orderby,
-      order,
-      srch_brand_name = "",
-      srch_status = "",
-      limit,
-      pagenumber,
-    } = req.query;
+    const { orderby, order, srch_brand_name = "", srch_status = "", limit, pagenumber } = req.query;
 
     const vendor_id = req.user.vendor_id; // fixed !!
 
@@ -51,11 +41,7 @@ export const getBrands = async (req, res) => {
     console.error("Error in fetching vendor brands:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(
-        SystemResponse.internalServerError(
-          "Internal Server Error in vendor brands",
-        ),
-      );
+      .json(SystemResponse.internalServerError("Internal Server Error in vendor brands"));
   }
 };
 
@@ -72,24 +58,15 @@ export const getBrandsCount = async (req, res) => {
         .json(SystemResponse.badRequestError("vendor_id is required"));
     }
 
-    const counts = await getVendorBrandsCountService(
-      vendor_id,
-      srch_brand_name,
-    );
+    const counts = await getVendorBrandsCountService(vendor_id, srch_brand_name);
     return res
       .status(StatusCodes.SUCCESS)
-      .json(
-        SystemResponse.success("Brands Count Fetched Successfully.", counts),
-      );
+      .json(SystemResponse.success("Brands Count Fetched Successfully.", counts));
   } catch (error) {
     console.error("Error fetching brand counts:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(
-        SystemResponse.internalServerError(
-          "Internal Server Error in brand counts",
-        ),
-      );
+      .json(SystemResponse.internalServerError("Internal Server Error in brand counts"));
   }
 };
 
@@ -100,9 +77,7 @@ export const checkBrand = async (req, res) => {
 
     const result = await checkBrandNameService(brand_name, brand_id);
 
-    return res
-      .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success(!result)); // true if NOT blocked
+    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(!result)); // true if NOT blocked
   } catch (error) {
     console.error("Error checking brand name:", error);
     return res
@@ -127,20 +102,14 @@ export const addBrand = async (req, res) => {
         ...req.file,
         key: `web/assets/images/techjockey/brands/${fileName}`,
       };
-      await uploadfile2({ ...fileobj, key: fileobj.originalname }); // S3 executes safely unchanged in the background
+      await uploadfile2(fileobj); // S3 executes safely unchanged in the background
       brandData.image = fileName; // Securely locks ONLY the clean native extension string into the ORM business logic map
     }
 
     // Call single authoritative Service replacing manually structured transaction steps
-    const result = await addBrandService(
-      brandData,
-      vendor_id,
-      req.body.profile_id || 0,
-    );
+    const result = await addBrandService(brandData, vendor_id, req.body.profile_id || 0);
 
-    return res
-      .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success(result.message));
+    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
   } catch (error) {
     if (error.statusCode === 300 || error.message.includes("already exists")) {
       return res
@@ -176,20 +145,17 @@ export const updateBrand = async (req, res) => {
         .json(SystemResponse.notFoundError("Brand not found"));
     }
 
-    const {
-      brand_name,
-      information,
-      location,
-      industry,
-      founded_on,
-      founders,
-      company_size,
-    } = req.body;
+    const { brand_name, information, location, industry, founded_on, founders, company_size } =
+      req.body;
 
     let imageName = null;
     if (req.file) {
       imageName = req.file.originalname;
-      await uploadfile2({ ...req.file, key: req.file.originalname });
+      const fileobj = {
+        ...req.file,
+        key: `web/assets/images/techjockey/brands/${imageName}`,
+      };
+      await uploadfile2(fileobj);
     }
 
     const brandSave = {
@@ -221,9 +187,7 @@ export const updateBrand = async (req, res) => {
           column_name: col,
           p_key: isCore ? "brand_id" : "id",
           updated_column_value:
-            values.new !== null && values.new !== undefined
-              ? values.new.toString()
-              : "",
+            values.new !== null && values.new !== undefined ? values.new.toString() : "",
           linked_attribute: "",
           item_updated_id: brand_id,
           reject_reason: "",
@@ -237,9 +201,7 @@ export const updateBrand = async (req, res) => {
 
     await transaction.commit();
 
-    res
-      .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success("Brand updated successfully"));
+    res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Brand updated successfully"));
   } catch (error) {
     if (transaction) await transaction.rollback();
     console.error("Error in updateBrandController:", error);
@@ -276,12 +238,7 @@ export const view_brand = async (req, res) => {
 
     return res
       .status(StatusCodes.SUCCESS)
-      .json(
-        SystemResponse.success(
-          "Brand details Fetched Succesfully",
-          brandDetails,
-        ),
-      );
+      .json(SystemResponse.success("Brand details Fetched Succesfully", brandDetails));
   } catch (error) {
     console.error("Error viewing brand data via ORM interface:", error);
     return res
@@ -299,11 +256,7 @@ export const requestBrand = async (req, res) => {
     if (!brand || !Array.isArray(brand) || brand.length === 0) {
       return res
         .status(StatusCodes.BAD_REQUEST)
-        .json(
-          SystemResponse.badRequestError(
-            "Invalid payload: Please select at least one brand.",
-          ),
-        );
+        .json(SystemResponse.badRequestError("Invalid payload: Please select at least one brand."));
     }
     if (!vendor_id) {
       return res
@@ -320,11 +273,7 @@ export const requestBrand = async (req, res) => {
     console.error("Error requesting brand:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(
-        SystemResponse.internalServerError(
-          "Internal Server Error in requesting brand",
-        ),
-      );
+      .json(SystemResponse.internalServerError("Internal Server Error in requesting brand"));
   }
 };
 
@@ -340,10 +289,7 @@ export const searchBrandsForRequest = async (req, res) => {
         .json(SystemResponse.badRequestError("vendor_id is required"));
     }
 
-    const brands = await searchBrandsForRequestService(
-      vendor_id,
-      srch_brand_name,
-    );
+    const brands = await searchBrandsForRequestService(vendor_id, srch_brand_name);
 
     return res
       .status(StatusCodes.SUCCESS)

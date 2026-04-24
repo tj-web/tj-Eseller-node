@@ -14,7 +14,7 @@ export const uploadfile2 = async function (fileObj) {
   const params = {
     Bucket: process.env.AWS_BUCKET,
 
-    Key: `web/assets/images/techjockey/brands/${fileObj.originalname}`,
+    Key: fileObj.key,
 
     Body: fileObj.buffer,
     ContentType: fileObj.mimetype,

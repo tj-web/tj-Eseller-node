@@ -20,6 +20,7 @@ import {
   validateVerifyOtp,
   validateVerifyEmail,
 } from "./auth.validation.js";
+import { authenticate } from "../../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
@@ -39,6 +40,6 @@ router.post("/verify-otp", validateVerifyOtp, verifyOtp);
 
 router.post("/logout", logOut);
 
-router.post("/change-password", validateChangePassword, changePassword);
+router.post("/change-password", validateChangePassword, authenticate, changePassword);
 
 export default router;

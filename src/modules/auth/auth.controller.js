@@ -2,10 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import Vendor from "../../models/vendor.model.js";
 import { verifyEmailService } from "../common/service/emailService.js";
-import {
-  verifyOtpService,
-  sendOtpService,
-} from "../common/service/otpService.js";
+import { verifyOtpService, sendOtpService } from "../common/service/otpService.js";
 import { AppError } from "../../utilis/appError.js";
 import { findUserByEmail } from "../common/service/userService.js";
 import StatusCodes from "../../utilis/statusCodes.js";
@@ -30,8 +27,7 @@ VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 export const login = async (req, res, next) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
 
-  const ip =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
   const deviceId = req.headers["x-device-id"] || null;
 
   try {
@@ -79,9 +75,13 @@ export const login = async (req, res, next) => {
     );
   } catch (error) {
     if (error.statusCode === 400 || error.statusCode === 403) {
-      return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -91,12 +91,18 @@ export const login = async (req, res, next) => {
 export const signup = async (req, res, next) => {
   try {
     const result = await registerVendor(req.body);
-    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Signup successful", result));
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Signup successful", result));
   } catch (error) {
     if (error.statusCode === 400) {
-      return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -112,9 +118,13 @@ export const forgotPassword = async (req, res, next) => {
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Please check your Email."));
   } catch (error) {
     if (error.statusCode && error.statusCode !== 500) {
-      return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -122,21 +132,23 @@ export const resetPassword = async (req, res, next) => {
   const { new_password, confirm_password } = req.body;
   const rawToken = req.query.token;
 
-  const token = rawToken
-    ? decodeURIComponent(rawToken).replace(/^"|"$/g, "").trim()
-    : null;
+  const token = rawToken ? decodeURIComponent(rawToken).replace(/^"|"$/g, "").trim() : null;
 
   try {
     await handleResetPassword(token, new_password);
 
-    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Password reset successful"));
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Password reset successful"));
   } catch (error) {
     if (error.statusCode && error.statusCode !== 500) {
-      return res.status(StatusCodes.BAD_REQUEST)
-      .json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR)
-    .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -163,11 +175,11 @@ export const logOut = async (req, res, next) => {
       sameSite: "lax",
     });
 
-    return res.status(StatusCodes.SUCCESS)
-    .json(SystemResponse.success("Logged out successfully"));
+    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Logged out successfully"));
   } catch (error) {
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR)
-    .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -178,19 +190,22 @@ export const changePassword = async (req, res, next) => {
   const { old_password, new_password } = req.body;
 
   try {
-    const vendorId = req.user?.vendor_id;
+    const vendorId = req.user.vendor_id;
 
     await handleChangePassword(vendorId, old_password, new_password);
 
-    return res.status(StatusCodes.SUCCESS)
-    .json(SystemResponse.success("Password changed successfully"));
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Password changed successfully"));
   } catch (error) {
     if (error.statusCode && error.statusCode !== 500) {
-      return res.status(StatusCodes.BAD_REQUEST)
-      .json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR)
-    .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -200,12 +215,18 @@ export const verifyEmail = async (req, res, next) => {
 
     await verifyEmailService(token);
 
-    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Email verified successfully"));
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Email verified successfully"));
   } catch (error) {
     if (error.statusCode && error.statusCode !== 500) {
-      return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
@@ -222,17 +243,20 @@ export const sendOtp = async (req, res, next) => {
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("OTP sent successfully"));
   } catch (error) {
     if (error.statusCode && error.statusCode !== 500) {
-      return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
 
 export const verifyOtp = async (req, res, next) => {
   const { phone_number, otp } = req.body;
 
-  const ip =
-    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
 
   const deviceId = req.headers["x-device-id"] || null;
 
@@ -254,11 +278,17 @@ export const verifyOtp = async (req, res, next) => {
       maxAge: 10 * 24 * 60 * 60 * 1000,
     });
 
-    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Login successful via OTP", result.user));
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Login successful via OTP", result.user));
   } catch (error) {
     if (error.statusCode && error.statusCode !== 500) {
-      return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(error.message));
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(error.message));
     }
-    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message || "Internal Server Error"));
   }
 };
