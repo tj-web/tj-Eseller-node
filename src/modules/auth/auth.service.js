@@ -89,7 +89,7 @@ export const logoutService = async (refreshToken) => {
 
   try {
     const record = await LoginHistory.findOne({
-      where: { auth_token: refreshToken },
+      where: { auth_token: refreshToken, login_status: 1 }
     });
 
     if (!record) {
