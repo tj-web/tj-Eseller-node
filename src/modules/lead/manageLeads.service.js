@@ -170,17 +170,19 @@ export const getLeadsService = async (vendor_id, post) => {
     const enrichedLeads = await Promise.all(rows.map(async (lead) => {
         const leadJson = lead.toJSON();
         
-        // PHP Masking Logic Refined
+        
         const isInternational = leadJson.dial_code !== '91';
         const contactViewed = leadJson.is_contact_viewed > 0;
-        const showContact = leadJson.is_show_contact > 0;
+       
+        const showContact = (isInternational || leadJson.is_show_contact > 0);
+        leadJson.is_show_contact = showContact ? 1 : 0;
 
-        // Email revealed ONLY if is_contact_viewed > 0
+
         if (!contactViewed) {
             leadJson.email = maskString(leadJson.email, 'email');
         }
 
-        // Phone revealed if International OR is_show_contact OR is_contact_viewed
+
         if (isInternational || showContact || contactViewed) {
             leadJson.show_contact_phone = leadJson.phone;
         } else {
@@ -495,7 +497,8 @@ export const getLeadDetailsService = async (vendor_id, leadId) => {
     // PHP Masking Logic Refined for details
     const isInternational = leadJson.dial_code !== '91';
     const contactViewed = leadJson.is_contact_viewed > 0;
-    const showContact = leadJson.is_show_contact > 0;
+    const showContact = (isInternational || leadJson.is_show_contact > 0);
+    leadJson.is_show_contact = showContact ? 1 : 0;
 
     if (!contactViewed) {
         leadJson.email = maskString(leadJson.email, 'email');
