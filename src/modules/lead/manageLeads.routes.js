@@ -19,7 +19,6 @@ import {
 
 const router = express.Router();
 
-// PHP-style explicit routes
 router.get("/get-leads", getLeadsController);
 router.get("/get-demos", getDemosController);
 router.get("/get-lead-history", getLeadHistoryController);
