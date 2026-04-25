@@ -1,0 +1,187 @@
+import { 
+    getLeadsService, 
+    getDemosService, 
+    getLeadHistoryService, 
+    addRemarkReminderService,
+    leadStatusHandlerService,
+    getLeadDetailsService,
+    setFollowupService,
+    getLeadAcdHistoryService,
+    acceptDemoService,
+    rescheduleDemoService,
+    scheduleCallbackService,
+    getVendorContactsService,
+    getLeadInsightsService,
+    unlockLeadInsightsService,
+    unlockContactService
+} from "./manageLeads.service.js";
+import SystemResponse from "../../utilis/SystemResponse.js";
+import StatusCodes from "../../utilis/statusCodes.js";
+
+export const getLeadsController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await getLeadsService(vendor_id, req.query);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Leads fetched successfully", result));
+    } catch (error) {
+        return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
+    }
+};
+
+export const getDemosController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const { type, acd_uuid } = req.query;
+        const result = await getDemosService(vendor_id, req.query, type, acd_uuid);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Demos fetched successfully", result));
+    } catch (error) {
+        return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
+    }
+};
+
+export const getLeadHistoryController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const lead_id = req.query.lead_id;
+        const result = await getLeadHistoryService(vendor_id, lead_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead history fetched successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const addRemarkReminderController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await addRemarkReminderService({ ...req.body, vendor_id, source: 'web' });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Remark/Reminder added successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const leadStatusHandlerController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const { lead_id } = req.query.lead_id ? req.query : req.body;
+        const result = await leadStatusHandlerService(vendor_id, { ...req.body, lead_id });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead status updated successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const getLeadDetailsController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const lead_id = req.query.lead_id;
+        const result = await getLeadDetailsService(vendor_id, lead_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead details fetched successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const setFollowupController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await setFollowupService(vendor_id, { ...req.body });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Follow-up set successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const getLeadAcdHistoryController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const { acd_uuid, type } = req.query;
+        const result = await getLeadAcdHistoryService(vendor_id, acd_uuid, type);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("ACD history fetched successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const acceptDemoController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await acceptDemoService(vendor_id, { ...req.body });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Demo accepted successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const rescheduleDemoController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await rescheduleDemoService(vendor_id, { ...req.body });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Demo rescheduled successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const scheduleCallbackController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await scheduleCallbackService(vendor_id, { ...req.body });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Callback scheduled successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const getVendorContactsController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await getVendorContactsService(vendor_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Vendor contacts fetched successfully", result));
+    } catch (error) {
+        return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
+    }
+};
+
+export const getLeadInsightsController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const lead_id = req.query.lead_id;
+        const result = await getLeadInsightsService(vendor_id, lead_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead insights fetched successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const unlockContactController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const { lead_id } = req.query.lead_id ? req.query : req.body;
+        const result = await unlockContactService(vendor_id, lead_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Contact unlocked successfully", result));
+    } catch (error) {
+        const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));
+    }
+};
+
+export const unlockLeadInsightsController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await unlockLeadInsightsService(vendor_id, { ...req.body });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead insights unlocked successfully", result));
+    } catch (error) {
+        return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
+    }
+};

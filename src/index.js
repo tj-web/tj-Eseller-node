@@ -24,3 +24,5 @@ const startServer = async () => {
 };
 
 startServer();
+
+// Restart trigger
