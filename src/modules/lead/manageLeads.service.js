@@ -44,6 +44,23 @@ const verifyLeadOwnership = async (vendor_id, lead_id) => {
 };
 
 /**
+ * Helper to mask strings
+ */
+const maskString = (str, type = 'phone') => {
+    if (!str) return "";
+    if (type === 'email') {
+        const [user, domain] = str.split('@');
+        if (!domain) return "****";
+        return user.length > 2 
+            ? `${user.substring(0, 2)}****@${domain}` 
+            : `****@${domain}`;
+    }
+    return str.length > 4 
+        ? "*******" + str.substring(str.length - 3) 
+        : "*******";
+};
+
+/**
  * Get all leads for a vendor with filtering and pagination.
  */
 export const getLeadsService = async (vendor_id, post) => {
@@ -111,9 +128,10 @@ export const getLeadsService = async (vendor_id, post) => {
         }
     }
 
+    // PHP Search Logic Refined
     if (filters.srch_by && filters.srch_value) {
         if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
-            whereClause.is_contact_viewed = 1;
+            whereClause.is_contact_viewed = { [Op.gt]: 0 };
         }
         whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
     }
@@ -128,7 +146,7 @@ export const getLeadsService = async (vendor_id, post) => {
             {
                 model: TblRequestCallbacks,
                 as: 'callback',
-                attributes: ['call_status', 'recording_url', 'duration', 'requirement', 'start_date'],
+                attributes: ['call_status', 'recording_url', 'duration', 'requirement', 'start_date', 'company_industry', 'company_size', 'designation'],
                 required: false
             },
             {
@@ -152,6 +170,24 @@ export const getLeadsService = async (vendor_id, post) => {
     const enrichedLeads = await Promise.all(rows.map(async (lead) => {
         const leadJson = lead.toJSON();
         
+        // PHP Masking Logic Refined
+        const isInternational = leadJson.dial_code !== '91';
+        const contactViewed = leadJson.is_contact_viewed > 0;
+        const showContact = leadJson.is_show_contact > 0;
+
+        // Email revealed ONLY if is_contact_viewed > 0
+        if (!contactViewed) {
+            leadJson.email = maskString(leadJson.email, 'email');
+        }
+
+        // Phone revealed if International OR is_show_contact OR is_contact_viewed
+        if (isInternational || showContact || contactViewed) {
+            leadJson.show_contact_phone = leadJson.phone;
+        } else {
+            leadJson.phone = maskString(leadJson.phone, 'phone');
+            leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+        }
+
         const latestRemark = await LeadHistory.findOne({
             where: { lead_id: lead.id, type: 'remark' },
             order: [['id', 'DESC']]
@@ -171,7 +207,8 @@ export const getLeadsService = async (vendor_id, post) => {
         leadJson.lead_call_attempt_count = parseInt(attempts.connected || 0) + parseInt(attempts.customer_missed || 0);
 
         const leadModelType = leadJson.product ? leadJson.product.lead_model_type : 2;
-        leadJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || leadJson.dial_code != '91') ? 1 : 0;
+        // show_contact_cta visible if International OR Model 1,3,4,7
+        leadJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
         leadJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
         leadJson.lead_actions = await getLeadActionsService(leadJson);
@@ -265,6 +302,22 @@ export const getDemosService = async (vendor_id, post, flg = '', acd_uuid = '') 
         const demoJson = demo.toJSON();
         const lead = demoJson.lead;
         
+        // PHP Masking Logic Refined for demos
+        const isInternational = lead.dial_code !== '91';
+        const contactViewed = lead.is_contact_viewed > 0;
+        const showContact = lead.is_show_contact > 0;
+
+        if (!contactViewed) {
+            lead.email = maskString(lead.email, 'email');
+        }
+
+        if (isInternational || showContact || contactViewed) {
+            demoJson.show_contact_phone = lead.phone;
+        } else {
+            lead.phone = maskString(lead.phone, 'phone');
+            demoJson.show_contact_phone = maskString(lead.phone, 'phone');
+        }
+
         const latestRemark = await LeadHistory.findOne({
             where: { lead_id: lead.id, type: 'remark' },
             order: [['id', 'DESC']]
@@ -273,7 +326,7 @@ export const getDemosService = async (vendor_id, post, flg = '', acd_uuid = '') 
         demoJson.remark_id = latestRemark ? latestRemark.id : null;
 
         const leadModelType = lead.product ? lead.product.lead_model_type : 2;
-        demoJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || lead.dial_code != '91') ? 1 : 0;
+        demoJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
         demoJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
         return demoJson;
@@ -439,11 +492,26 @@ export const getLeadDetailsService = async (vendor_id, leadId) => {
     if (!lead) return null;
     const leadJson = lead.toJSON();
     
+    // PHP Masking Logic Refined for details
+    const isInternational = leadJson.dial_code !== '91';
+    const contactViewed = leadJson.is_contact_viewed > 0;
+    const showContact = leadJson.is_show_contact > 0;
+
+    if (!contactViewed) {
+        leadJson.email = maskString(leadJson.email, 'email');
+    }
+
+    if (isInternational || showContact || contactViewed) {
+        leadJson.show_contact_phone = leadJson.phone;
+    } else {
+        leadJson.phone = maskString(leadJson.phone, 'phone');
+        leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+    }
+
     const leadModelType = leadJson.product ? leadJson.product.lead_model_type : 2;
-    leadJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || leadJson.dial_code != '91') ? 1 : 0;
+    leadJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
     leadJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
-    leadJson.is_international = leadJson.dial_code != '91' ? '1' : '0';
-    leadJson.show_contact_phone = (leadJson.dial_code != '91' || leadJson.is_show_contact) ? leadJson.phone : '';
+    leadJson.is_international = isInternational ? '1' : '0';
     
     leadJson.history = await getLeadHistoryService(vendor_id, leadId);
     leadJson.lead_actions = await getLeadActionsService(leadJson);
