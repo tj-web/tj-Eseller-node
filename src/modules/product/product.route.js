@@ -58,13 +58,13 @@ router.post(
 router.post(
   "/addgallery",
   upload.array("image", 5),
-  productController.addGallery
+  productController.addProductGallery
 );
-router.post("/addvideos", productController.addVideo);
+router.post("/addvideos", productController.addVideos);
 router.post(
   "/enrichment",
   upload.array("images", 10),
-  productController.enrichment
+  productController.addEnrichment
 );
 
 export default router;

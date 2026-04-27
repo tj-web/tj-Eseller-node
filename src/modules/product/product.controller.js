@@ -5,6 +5,9 @@ import path from "path";
 import sizeOf from "image-size";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
+import ProductVideo from "../../models/productVideo.model.js";
+import ProductEnrichmentImage from "../../models/productEnrichmentImage.model.js";
+import DescriptionGallery from "../../models/descriptionGallery.model.js";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -362,7 +365,7 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.body;
 
-    const vendor_id = req.user.vendor_id;
+    const vendor_id = req.body.vendor_id;
 
     if (!product_id || !vendor_id) {
       return res
@@ -704,6 +707,507 @@ export const addVideo = async (req, res) => {
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error in adding videos"));
+  }
+};
+
+export const addVideos = async (req, res) => {
+  try {
+    const { product_id, data = [] } = req.body;
+
+    if (!product_id) {
+      return res.status(400).json({ success: false, message: "product_id required" });
+    }
+    const { vendor_id, profile_id } = req.user;
+
+    // 1. Check product
+    const brandArr = await productService.getVendorBrands(vendor_id) || [];
+    const isVendorProduct = await  productService.isVendorProduct(product_id, brandArr);
+    if (!isVendorProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found!",
+      });
+    }
+
+    // 2. Fetch existing videos → map by id (IMPORTANT FIX)
+    const existingVideos = await ProductVideo.findAll({
+      attributes: ["id", "video_url", "video_title"],
+      where: {
+        product_id,
+        is_deleted: 0,
+      },
+      raw: true,
+    });
+
+    const existingMap = {};
+    existingVideos.forEach((v) => {
+      existingMap[v.id] = v;
+    });
+
+    // 3. Validate URLs from express validator
+    
+    let log_data_arr = [];
+
+    // 4. Loop through payload
+    for (const item of data) {
+      const { id, video_title, video_url } = item;
+
+      let update_arr = {};
+
+      if (id) {
+        // EXISTING VIDEO → compare
+        const existing = existingMap[id] || {};
+
+        const diff = {};
+
+        if (video_title !== existing.video_title) {
+          diff.video_title = video_title;
+        }
+
+        if (video_url !== existing.video_url) {
+          diff.video_url = video_url;
+        }
+
+        if (Object.keys(diff).length > 0) {
+          update_arr = {
+            tbl_product_videos: {
+              ...(diff.video_title ? { video_title: diff.video_title } : {}),
+              ...(diff.video_url ? { video_url: diff.video_url } : {}),
+              p_key: "id",
+              update_id: id,
+            },
+          };
+
+          await productService.updateVendorLogs(
+            update_arr,
+            product_id,
+            profile_id,
+            0,
+            id,
+            "updated",
+            "product"
+          );
+        }
+      } else {
+        // NEW VIDEO
+        update_arr = {
+          tbl_product_videos: {
+            ...(video_title ? { video_title } : {}),
+            ...(video_url ? { video_url } : {}),
+            p_key: "id",
+            update_id: "",
+          },
+        };
+
+        await productService.updateVendorLogs(
+          update_arr,
+          product_id,
+          profile_id,
+          0,
+          0,
+          "updated",
+          "product"
+        );
+      }
+
+      log_data_arr.push(update_arr);
+    }
+
+    // 5. Trigger event
+    // await productUpdationRelatedEvent(log_data_arr, "tbl_product_videos");
+
+    return res.status(200).json({
+      success: true,
+      message: "We have recorded your changes! We will review and update soon.",
+    });
+  } catch (error) {
+    console.error("videos controller error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+
+export const addEnrichment = async (req, res) => {
+  try {
+    const { product_id } = req.body;
+
+    const types = Array.isArray(req.body.type) ? req.body.type : [req.body.type];
+    const ids = Array.isArray(req.body.id) ? req.body.id : req.body.id ? [req.body.id] : [];
+    const hiddenImages = Array.isArray(req.body.enrichment_hidden)
+      ? req.body.enrichment_hidden
+      : req.body.enrichment_hidden
+      ? [req.body.enrichment_hidden]
+      : [];
+
+    const files = req.files || [];
+    const { vendor_id, profile_id } = req.user;
+
+    // --- constants ---
+    let desktopMaxWidth = 1260;
+    let mobileMaxWidth = 600;
+    let desktopHeightLeft = 2400;
+    let mobileHeightLeft = 4000;
+
+    // 1. Validate product
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendorProduct = await productService.isVendorProduct(product_id, brandArr);
+
+    if (!isVendorProduct) {
+      return res.status(404).json({ success: false, message: "Product not found!" });
+    }
+
+    // 2. Existing images
+    const existingImages = await ProductEnrichmentImage.findAll({
+      attributes: ["id", "type", "image_height", "image"],
+      where: { product_id, is_deleted: 0 },
+      raw: true,
+    });
+
+    const existingMap = {};
+    const imageHeightMap = {};
+    let existingDesktop = 0;
+    let existingMobile = 0;
+
+    existingImages.forEach((img) => {
+      existingMap[img.id] = img;
+      imageHeightMap[img.id] = img.image_height;
+
+      if (img.type === 1) {
+        desktopHeightLeft -= img.image_height;
+        existingDesktop++;
+      } else if (img.type === 2) {
+        mobileHeightLeft -= img.image_height;
+        existingMobile++;
+      }
+    });
+
+    // 3. 👉 FINAL COUNT VALIDATION (correct one)
+    let finalDesktop = existingDesktop;
+    let finalMobile = existingMobile;
+
+    for (let i = 0; i < types.length; i++) {
+      const type = Number(types[i]);
+      const id = ids[i];
+
+      if (id && existingMap[id]) {
+        // replacing → don't change count
+        continue;
+      }
+
+      if (type === 1) finalDesktop++;
+      if (type === 2) finalMobile++;
+    }
+
+    if (finalDesktop < 4 || finalMobile < 4) {
+      return res.status(400).json({
+        success: false,
+        message: "Please add minimum 4 enrichment images for both desktop and mobile",
+      });
+    }
+
+    let log_data_array = [];
+
+    // 4. Process loop (FIXED scope)
+    for (let i = 0; i < types.length; i++) {
+      const file = files[i];
+      const type = Number(types[i]);
+      const id = ids[i];
+
+      let imagePath = null;
+      let image_width = 0;
+      let image_height = 0;
+
+      if (file) {
+        const dimensions = sizeOf(file.buffer);
+        image_width = dimensions.width;
+        image_height = dimensions.height;
+
+        // adjust height if replacing
+        if (id && imageHeightMap[id]) {
+          if (type === 1) desktopHeightLeft += imageHeightMap[id];
+          else mobileHeightLeft += imageHeightMap[id];
+        }
+
+        // dimension validation
+        if (
+          (type === 1 &&
+            (image_height > desktopHeightLeft || image_width > desktopMaxWidth)) ||
+          (type === 2 &&
+            (image_height > mobileHeightLeft || image_width > mobileMaxWidth))
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid dimensions for image at index ${i}`,
+          });
+        }
+        let originalName = file.originalname.replace(/\s+/g, "-");
+        const fileName = `${product_id}_${Date.now()}_${originalName}`;
+
+        const fileobj = {
+          ...file,
+          key: `web/assets/images/techjockey/gallery/${fileName}`,
+        };
+
+        await uploadfile2(fileobj);
+        imagePath = fileName;
+      } else {
+        imagePath = hiddenImages[i] || null;
+      }
+
+      let update_arr = {};
+
+      // UPDATE
+      if (id) {
+        const existing = existingMap[id] || {};
+        const diff = {};
+
+        if (imagePath && imagePath !== existing.image) {
+          diff.image = imagePath;
+        }
+
+        if (Object.keys(diff).length > 0) {
+          update_arr = {
+            tbl_product_enrichment_images: {
+              ...(diff.image ? { enrichment_image: diff.image } : {}),
+              type,
+              p_key: "id",
+              update_id: id,
+            },
+          };
+
+          await updateVendorLogs(
+            update_arr,
+            product_id,
+            profile_id,
+            0,
+            id,
+            "updated",
+            "product"
+          );
+        }
+      }
+
+      // INSERT
+      else {
+        update_arr = {
+          tbl_product_enrichment_images: {
+            ...(imagePath ? { enrichment_image: imagePath } : {}),
+            type,
+            p_key: "id",
+            update_id: null,
+          },
+        };
+
+        await productService.updateVendorLogs(
+          update_arr,
+          product_id,
+          profile_id,
+          0,
+          0,
+          "updated",
+          "product"
+        );
+
+        log_data_array.push(update_arr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "We have recorded your changes! We will review and update soon.",
+    });
+
+  } catch (error) {
+    console.error("enrichment controller error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+export const addProductGallery = async (req, res) => {
+  try {
+    const { product_id } = req.body;
+    const { vendor_id, profile_id } = req.user;
+
+    // ─────────────────────────────
+    // Normalize flat arrays
+    // ─────────────────────────────
+    const titles = [].concat(req.body.title || []);
+    const descriptions = [].concat(req.body.desc || []);
+    const ids = [].concat(req.body.id || []);
+    const hiddenImages = [].concat(req.body.gallery_hidden || []);
+    const files = req.files || [];
+
+    // ─────────────────────────────
+    // sanitize filename
+    // ─────────────────────────────
+    const sanitizeFileName = (name) =>
+      name
+        .normalize("NFKD")
+        .replace(/[\u202F\u00A0]/g, " ")
+        .replace(/[^\x00-\x7F]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/[^a-zA-Z0-9._-]/g, "");
+
+    // ─────────────────────────────
+    // Validate product
+    // ─────────────────────────────
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendorProduct = await productService.isVendorProduct(
+      product_id,
+      brandArr
+    );
+
+    if (!isVendorProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found!",
+      });
+    }
+
+    // ─────────────────────────────
+    // Fetch existing gallery
+    // ─────────────────────────────
+    const existingImages = await DescriptionGallery.findAll({
+      attributes: ["id", "title", "description", "image"],
+      where: { product_id, is_deleted: 0 },
+      raw: true,
+    });
+
+    const existingMap = {};
+    existingImages.forEach((img) => {
+      existingMap[img.id] = img;
+    });
+
+    // ─────────────────────────────
+    // VALIDATION (min 3 items)
+    // ─────────────────────────────
+    const totalItems = Math.max(
+      titles.length,
+      descriptions.length,
+      files.length
+    );
+
+    if (totalItems < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Please add at least 3 gallery items!",
+      });
+    }
+
+    let log_data_array = [];
+
+    // ─────────────────────────────
+    // PROCESS LOOP (safe index mapping)
+    // ─────────────────────────────
+    for (let i = 0; i < totalItems; i++) {
+      const title = titles[i] || null;
+      const desc = descriptions[i] || null;
+      const file = files[i] || null;
+      const id = ids[i] || null;
+
+      let imagePath = null;
+
+      // ─── file upload ───
+      if (file) {
+        let originalName = file.originalname.replace(/\s+/g, "-");
+        const fileName = `${product_id}_${Date.now()}_${originalName}`;
+
+        const fileobj = {
+          ...file,
+          key: `web/assets/images/techjockey/gallery/${fileName}`,
+        };
+
+        await uploadfile2(fileobj);
+        imagePath = fileName;
+      } else {
+        imagePath = hiddenImages[i] || null;
+      }
+
+      let update_arr = {};
+
+      // ─────────────────────────────
+      // UPDATE
+      // ─────────────────────────────
+      if (id && existingMap[id]) {
+        const existing = existingMap[id];
+        const diff = {};
+
+        if (title && title !== existing.title) diff.title = title;
+        if (desc && desc !== existing.description) diff.description = desc;
+        if (imagePath && imagePath !== existing.image) diff.image = imagePath;
+
+        if (Object.keys(diff).length > 0) {
+          update_arr = {
+            tbl_description_gallery: {
+              ...(diff.title ? { gallery_title: diff.title } : {}),
+              ...(diff.description
+                ? { gallery_description: diff.description }
+                : {}),
+              ...(diff.image ? { gallery_image: diff.image } : {}),
+              p_key: "id",
+              update_id: id,
+            },
+          };
+
+          await productService.updateVendorLogs(
+            update_arr,
+            product_id,
+            profile_id,
+            0,
+            id,
+            "updated",
+            "product"
+          );
+        }
+      }
+
+      // ─────────────────────────────
+      // INSERT
+      // ─────────────────────────────
+      else {
+        update_arr = {
+          tbl_description_gallery: {
+            ...(title ? { gallery_title: title } : {}),
+            ...(desc ? { gallery_description: desc } : {}),
+            ...(imagePath ? { gallery_image: imagePath } : {}),
+            p_key: "id",
+            update_id: null,
+          },
+        };
+
+        await productService.updateVendorLogs(
+          update_arr,
+          product_id,
+          profile_id,
+          0,
+          0,
+          "updated",
+          "product"
+        );
+      }
+
+      log_data_array.push(update_arr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "We have recorded your changes! We will review and update soon.",
+    });
+  } catch (error) {
+    console.error("gallery controller error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
   }
 };
 

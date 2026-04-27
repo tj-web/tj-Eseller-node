@@ -1065,3 +1065,129 @@ export const addVideoModel = async (videos) => {
     throw error;
   }
 };
+
+
+export const updateVendorLogs = async (update_arr,
+  item_id,
+  profile_id,
+  status,
+  update_id,
+  action,
+  module
+) => { 
+
+  const insertArray = [];
+  const updateArray = [];
+
+  // 1. Fetch existing logs
+  const vendorLogDetails = await VendorLog.findAll({
+    attributes: ["id", "column_name", "linked_attribute"],
+    where: {
+      item_id,
+      status: 0,
+      module,
+    },
+    raw: true,
+  });
+
+  // Map like PHP
+  const unaccepted_changes = {};
+  vendorLogDetails.forEach((row) => {
+    unaccepted_changes[row.id] = row.column_name;
+  });
+
+  const unaccepted_values = Object.values(unaccepted_changes);
+
+  const unaccepted_changes_ids = {};
+  Object.entries(unaccepted_changes).forEach(([id, col]) => {
+    unaccepted_changes_ids[col] = id;
+  });
+
+  const allowed_duplicate_columns = [
+    "video_title",
+    "video_url",
+    "gallery_title",
+    "gallery_description",
+    "gallery_image",
+    "screenshot",
+    "screenshot_img_alt",
+    "enrichment_image",
+    "type",
+  ];
+
+  for(const table_name in update_arr) {
+    const columns = update_arr[table_name];
+
+    const p_key = columns.p_key || "";
+    const updateId = columns.update_id || "";
+
+    const linked_attr =
+      action === "updated" && module !== "brand"
+        ? Date.now() * 1000 + Math.floor(Math.random() * 10000)
+        : "";
+
+    for (const column_name in columns) {
+      if (column_name === "p_key" || column_name === "update_id") continue;
+      const updated_value = columns[column_name];
+
+      if (
+        !unaccepted_values.includes(column_name) ||
+        (!updateId && allowed_duplicate_columns.includes(column_name))
+      ) {
+        insertArray.push({
+          item_id,
+          module,
+          action_performed: action,
+          action_by: profile_id,
+          table_name,
+          column_name,
+          p_key,
+          updated_column_value: updated_value,
+          linked_attribute: linked_attr,
+          item_updated_id: updateId ? Number(updateId) : 0,
+          reject_reason: "",
+          status,
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+      } else {
+        updateArray.push({
+          id: unaccepted_changes_ids[column_name],
+          column_name,
+          updated_column_value: updated_value,
+        });
+      }
+    }    
+  }
+
+  // 3. DB Operations (Transaction recommended)
+  const transaction = await sequelize.transaction();
+  try {
+     // Bulk Insert
+    if (insertArray.length > 0) {
+      await VendorLog.bulkCreate(insertArray, { transaction });
+    }
+
+    // Bulk Update
+    for (const row of updateArray) {
+      await VendorLog.update(
+        {
+          column_name: row.column_name,
+          updated_column_value: row.updated_column_value,
+          updated_at: new Date(),
+        },
+        {
+          where: { id: row.id },
+          transaction,
+        }
+      );
+    }
+
+    await transaction.commit();
+    return true;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+
+}
