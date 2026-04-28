@@ -12,7 +12,7 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
-import { dumpTrackingData } from "./leadTracking.service.js";
+
 
 /**
  * Helper to get vendor's lead insight permissions and allowed products.
@@ -29,8 +29,8 @@ const getVendorInsightPermission = async (vendor_id) => {
     // Return allowed: true if the feature is enabled for the vendor.
     // We can also fetch the list of products they HAVE a plan for, but if we want to show it for all, we return all.
     // Matching the user's request to see the button and unlock flow.
-    return { 
-        allowed: true, 
+    return {
+        allowed: true,
         isFeatureEnabled: true
     };
 };
@@ -52,7 +52,7 @@ TblLeads.belongsTo(LeadStatus, {
     as: 'leadStatus'
 });
 
-// Inverse associations for getDemosService
+// Inverse associations for getDemos
 TblRequestCallbacks.belongsTo(TblLeads, {
     foreignKey: 'lead_id',
     as: 'lead'
@@ -90,7 +90,7 @@ const maskString = (str, type = 'phone') => {
 /**
  * Get all leads for a vendor with filtering and pagination.
  */
-export const getLeadsService = async (vendor_id, post) => {
+export const getLeads=async (vendor_id, post) => {
     const filters = {
         order_by: post.order_by || 'id',
         order: post.order || 'DESC',
@@ -246,8 +246,8 @@ export const getLeadsService = async (vendor_id, post) => {
         leadJson.lead_subaction_name = leadJson.leadStatus ? leadJson.leadStatus.subaction_name : null;
         leadJson.lead_status_name = leadJson.leadStatus ? leadJson.leadStatus.status_name : null;
 
-        leadJson.lead_actions = await getLeadActionsService(leadJson);
-        
+        leadJson.lead_actions = await getLeadActions(leadJson);
+
         // Call button permission logic
         let isCallAllowed = true;
         let callDisableMsg = "";
@@ -258,7 +258,7 @@ export const getLeadsService = async (vendor_id, post) => {
             isCallAllowed = false;
             callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
         }
-        
+
         leadJson.is_call_allowed = isCallAllowed ? 1 : 0;
         leadJson.call_disable_msg = callDisableMsg;
 
@@ -278,7 +278,7 @@ export const getLeadsService = async (vendor_id, post) => {
 /**
  * Get all demos for a vendor.
  */
-export const getDemosService = async (vendor_id, post, flg = '', acd_uuid = '') => {
+export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
     const filters = {
         order_by: post.order_by || 'id',
         order: post.order || 'DESC',
@@ -399,7 +399,7 @@ export const getDemosService = async (vendor_id, post, flg = '', acd_uuid = '') 
 /**
  * Get lead history for a specific vendor's lead.
  */
-export const getLeadHistoryService = async (vendor_id, leadId) => {
+export const getLeadHistory=async (vendor_id, leadId) => {
     await verifyLeadOwnership(vendor_id, leadId);
 
     return await LeadHistory.findAll({
@@ -417,7 +417,7 @@ export const getLeadHistoryService = async (vendor_id, leadId) => {
 /**
  * Add remark or reminder with ownership verification.
  */
-export const addRemarkReminderService = async (data) => {
+export const addRemarkReminder=async (data) => {
     const { vendor_id, lead_id, remark, is_reminder_set, reminder_date, reminder_hour, reminder_minute, reminder_type } = data;
 
     await verifyLeadOwnership(vendor_id, lead_id);
@@ -453,14 +453,13 @@ export const addRemarkReminderService = async (data) => {
 /**
  * Handler for lead status updates with ownership verification.
  */
-export const leadStatusHandlerService = async (vendor_id, body) => {
+export const leadStatusHandler=async (vendor_id, body) => {
     const { lead_id, action, action_name } = body;
 
     if (!lead_id) throw new Error('Lead Id is required');
     await verifyLeadOwnership(vendor_id, lead_id);
 
-    const response = await updateLeadStatusManualService(
-        {},
+    const response = await updateLeadStatusManual(
         { lead_id, action, action_name },
         'web'
     );
@@ -475,7 +474,7 @@ export const leadStatusHandlerService = async (vendor_id, body) => {
 /**
  * Port of updateLeadStatusManual from PHP.
  */
-export const updateLeadStatusManualService = async (externalServices, data, source = 'web') => {
+export const updateLeadStatusManual=async (data, source = 'web') => {
     if (!data.lead_id) return false;
 
     const previousLead = await TblLeads.findOne({
@@ -515,7 +514,7 @@ export const updateLeadStatusManualService = async (externalServices, data, sour
 /**
  * Get lead details.
  */
-export const getLeadDetailsService = async (vendor_id, leadId) => {
+export const getLeadDetails=async (vendor_id, leadId) => {
     const lead = await TblLeads.findOne({
         where: {
             id: leadId,
@@ -571,8 +570,8 @@ export const getLeadDetailsService = async (vendor_id, leadId) => {
     leadJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
     leadJson.is_international = isInternational ? '1' : '0';
 
-    leadJson.history = await getLeadHistoryService(vendor_id, leadId);
-    leadJson.lead_actions = await getLeadActionsService(leadJson);
+    leadJson.history = await getLeadHistory(vendor_id, leadId);
+    leadJson.lead_actions = await getLeadActions(leadJson);
 
     // Lead Insight permission logic
     const insightPermission = await getVendorInsightPermission(vendor_id);
@@ -584,7 +583,7 @@ export const getLeadDetailsService = async (vendor_id, leadId) => {
 /**
  * Updates follow-up schedule for a lead with ownership verification.
  */
-export const setFollowupService = async (vendor_id, data) => {
+export const setFollowup=async (vendor_id, data) => {
     const { lead_id, followup_date, followup_hour, followup_minute, action_name, set_follow_up } = data;
 
     const lead = await verifyLeadOwnership(vendor_id, lead_id);
@@ -615,7 +614,7 @@ export const setFollowupService = async (vendor_id, data) => {
 /**
  * Retrieves ACD history with ownership verification through acd_uuid.
  */
-export const getLeadAcdHistoryService = async (vendor_id, acd_uuid, type) => {
+export const getLeadAcdHistory=async (vendor_id, acd_uuid, type) => {
     // Verify that this acd_uuid belongs to a lead owned by this vendor
     const lead = await TblLeads.findOne({
         where: { acd_uuid: acd_uuid, vendor_id: vendor_id },
@@ -642,7 +641,7 @@ export const getLeadAcdHistoryService = async (vendor_id, acd_uuid, type) => {
 /**
  * Marks demo as accepted by vendor with ownership verification.
  */
-export const acceptDemoService = async (vendor_id, data) => {
+export const acceptDemo=async (vendor_id, data) => {
     const { acd_uuid, lead_id } = data;
 
     // Verify ownership
@@ -672,7 +671,7 @@ export const acceptDemoService = async (vendor_id, data) => {
 /**
  * Reschedule demo with ownership verification.
  */
-export const rescheduleDemoService = async (vendor_id, data) => {
+export const rescheduleDemo=async (vendor_id, data) => {
     const { acd_uuid, lead_id, option1, option2, option3 } = data;
 
     await verifyLeadOwnership(vendor_id, lead_id);
@@ -705,7 +704,7 @@ const triggerACD = async (data) => {
     try {
         const mainsiteUrl = process.env.MAINSITE_URL || 'https://www.techjockey.com/';
         const authKey = 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJlc2VsbGVyaHViLmNvbSIsImF1ZCI6IkVzZWxsZXIgSHViIiwiaWF0IjoxNjExMTIyNTg2LCJuYmYiOjE2MTExMjI1ODYsImV4cCI6MTY0MjY1ODU4NiwiZGF0YSI6eyJlbWFpbCI6Im1heWFua2R1cmdhcGFsMTdAZ21haWwuY29tIn19.7G4AXMtzvk5QiOUTbyQkWH1nxWSsjcKkTUbcPYWZQjw';
-        
+
         const response = await fetch(`${mainsiteUrl}schedule-acd`, {
             method: 'POST',
             headers: {
@@ -726,7 +725,7 @@ const triggerACD = async (data) => {
 /**
  * Schedules a callback or demo.
  */
-export const scheduleCallbackService = async (vendor_id, data) => {
+export const scheduleCallback=async (vendor_id, data) => {
     const { lead_id, date, hour, minute, action, agent_number } = data;
 
     const lead = await TblLeads.findOne({
@@ -741,12 +740,12 @@ export const scheduleCallbackService = async (vendor_id, data) => {
         // Default to "Now" in IST (UTC+5:30) like PHP
         const now = new Date();
         // Add 5.5 hours for IST + 1 minute buffer
-        now.setMinutes(now.getMinutes() + 331); 
-        scheduledTime = now.getFullYear() + '-' + 
-                        String(now.getMonth() + 1).padStart(2, '0') + '-' + 
-                        String(now.getDate()).padStart(2, '0') + ' ' + 
-                        String(now.getHours()).padStart(2, '0') + ':' + 
-                        String(now.getMinutes()).padStart(2, '0') + ':00';
+        now.setMinutes(now.getMinutes() + 331);
+        scheduledTime = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + ' ' +
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0') + ':00';
     }
 
     const acdRequest = {
@@ -793,8 +792,8 @@ export const scheduleCallbackService = async (vendor_id, data) => {
         });
     }
 
-    return { 
-        status: acdResponse.status, 
+    return {
+        status: acdResponse.status,
         message: acdResponse.status ? (acdResponse.message || 'Callback scheduled successfully') : (acdResponse.message || 'Failed to trigger call'),
         data: acdResponse.data
     };
@@ -803,7 +802,7 @@ export const scheduleCallbackService = async (vendor_id, data) => {
 /**
  * Retrieves vendor phone numbers.
  */
-export const getVendorContactsService = async (vendor_id) => {
+export const getVendorContacts=async (vendor_id) => {
     return await VendorAuth.findAll({
         attributes: [
             [sequelize.literal("CONCAT(first_name, ' ', last_name)"), 'contact_name'],
@@ -819,7 +818,7 @@ export const getVendorContactsService = async (vendor_id) => {
  * Port of fetch_lead_insights_data from PHP.
  * Orchestrates enrichment from Apollo.
  */
-export const fetchLeadInsightsDataService = async (lead_id, vendor_id) => {
+export const fetchLeadInsightsData=async (lead_id, vendor_id) => {
     const leadData = await TblLeads.findOne({
         attributes: ['id', 'email', 'company_id', 'category_id', 'leadinsight'],
         where: { id: lead_id }
@@ -1153,7 +1152,7 @@ const fetchWithCurl = async (url, headers) => {
     return response;
 };
 
-export const getLeadInsightPlanDetailsService = async (vendor_id) => {
+export const getLeadInsightPlanDetails=async (vendor_id) => {
     const result = await OmsPiDetail.findOne({
         where: {
             vendor_id: vendor_id,
@@ -1164,7 +1163,7 @@ export const getLeadInsightPlanDetailsService = async (vendor_id) => {
     return result ? result.toJSON() : null;
 };
 
-export const hasRecentSubmissionService = async (vendor_id) => {
+export const hasRecentSubmission=async (vendor_id) => {
     const count = await VendorLeadInsightInterest.count({
         where: {
             vendor_id: vendor_id,
@@ -1223,7 +1222,7 @@ const timeAgo = (date) => {
 /**
  * Get lead insights with ownership verification.
  */
-export const getLeadInsightsService = async (vendor_id, lead_id) => {
+export const getLeadInsights=async (vendor_id, lead_id) => {
     const full_access_plan_id = 38;
     const limited_access_plan_id = 39;
 
@@ -1235,7 +1234,7 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
         return null;
     }
 
-    const planDetails = await getLeadInsightPlanDetailsService(vendor_id);
+    const planDetails = await getLeadInsightPlanDetails(vendor_id);
     let plan_name = 'No Plan';
     let plan_id = '';
 
@@ -1249,7 +1248,7 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
             plan_name = planDetails.plan_name || 'Paid Access';
 
             if (plan_id == full_access_plan_id) {
-                await fetchLeadInsightsDataService(lead_id, vendor_id);
+                await fetchLeadInsightsData(lead_id, vendor_id);
             }
         } else {
             // Expired or inactive plan -> Limited Access
@@ -1264,8 +1263,8 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
 
     await verifyLeadOwnership(vendor_id, lead_id);
 
-    const lead = await TblLeads.findByPk(lead_id, { 
-        attributes: ['id', 'user_id', 'email', 'company_id', 'category_id', 'product_name'] 
+    const lead = await TblLeads.findByPk(lead_id, {
+        attributes: ['id', 'user_id', 'email', 'company_id', 'category_id', 'product_name']
     });
     if (!lead) return null;
 
@@ -1278,7 +1277,7 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
         leadinsight_plan_id: plan_id,
         full_access_plan_id,
         limited_access_plan_id,
-        has_recent_submission: await hasRecentSubmissionService(vendor_id)
+        has_recent_submission: await hasRecentSubmission(vendor_id)
     };
 
     // 1. Fetch Company Information from MySQL
@@ -1288,7 +1287,7 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
              FROM tbl_companies WHERE id = ?`,
             { replacements: [lead.company_id], type: QueryTypes.SELECT, plain: true }
         );
-        
+
         if (company && plan_id === limited_access_plan_id) {
             // Redact sensitive company info for Limited Access
             company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
@@ -1297,7 +1296,7 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
             company.logo_url = null; // Do not send logo
             // Industry and Size are generally safe to show to encourage unlocking
         }
-        
+
         result.customer_company_information = company || {};
 
         // 2. Fetch Top 5 Key People from MySQL
@@ -1323,7 +1322,7 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
                 photo: null // Do not send photo
             }));
         }
-        
+
         result.top_five_key_people = keyPeople || [];
     }
 
@@ -1414,10 +1413,10 @@ export const getLeadInsightsService = async (vendor_id, lead_id) => {
 /**
  * Unlock lead insights interest with exact PHP parity.
  */
-export const unlockLeadInsightsService = async (vendor_id, data) => {
+export const unlockLeadInsights=async (vendor_id, data) => {
     console.log("Unlocking insights for vendor:", vendor_id, "Data:", data);
     const { company, email, date = null, time = [], remark = null, gp = null } = data;
-    
+
     const submitted_at = new Date();
     const createdAtStr = submitted_at.toISOString().slice(0, 19).replace('T', ' ');
 
@@ -1492,7 +1491,7 @@ export const unlockLeadInsightsService = async (vendor_id, data) => {
 /**
  * Unlocks contact with ownership verification.
  */
-export const unlockContactService = async (vendor_id, lead_id) => {
+export const unlockContact=async (vendor_id, lead_id) => {
     await verifyLeadOwnership(vendor_id, lead_id);
 
     await TblLeads.update(
@@ -1520,7 +1519,7 @@ function addWeekdays(date, days) {
 /**
  * Get lead actions with business logic.
  */
-export const getLeadActionsService = async (lead) => {
+export const getLeadActions=async (lead) => {
     const weekdays = 100;
 
     let logicDate = new Date(lead.created_at || Date.now());
