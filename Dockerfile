@@ -12,7 +12,7 @@ COPY package*.json ./
 
 # Install dependencies. `npm ci` is generally recommended for production
 # as it's faster and safer than `npm install`. It requires a package-lock.json.
-RUN npm install
+RUN npm ci
 
 RUN npm install -g nodemon
 
