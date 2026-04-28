@@ -26,3 +26,4 @@ export const uploadfile2 = async function (fileObj) {
   const fileUrl = `${process.env.AWS_PATH}${fileObj.originalname}`;
   return awsResponse?.Location ?? "";
 };
+

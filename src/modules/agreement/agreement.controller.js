@@ -14,7 +14,7 @@ import {
 } from "./agreement.service.js";
 
 export const getAgreements = async (req, res) => {
-  const { vendor_id, profile_id } = req.body;
+  const {vendor_id , profile_id} = req.query;
 
   const arr_designation = await getDesignation();
   const basic_data = await getVendorById(profile_id);
