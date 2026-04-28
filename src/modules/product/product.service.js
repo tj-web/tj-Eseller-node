@@ -433,27 +433,24 @@ export const savePricingDocument = async (productId, documentFiles, externalTran
 };
 
 
-// this is not a good approach to make a temp directory and save files.
+// upload to s3 edit image files
 
 export const uploadProductImageOnly = async (productId, imageFiles) => {
   if (!imageFiles || imageFiles.length === 0) return [];
   const savedImages = [];
 
-  const tempDir = path.join(process.cwd(), "uploads", "pending_edits");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
+  // Upload each image directly to S3 into a pending folder for later approval
   for (const img of imageFiles) {
     const originalName = img.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
     const fileName = `${productId}_${originalName}`;
-    const filePath = path.join(tempDir, fileName);
-    
-    // Save locally pending admin approval (will be pushed to S3 on approval)
-    fs.writeFileSync(filePath, img.buffer);
+    const key = `web/assets/images/techjockey/products/${fileName}`;
 
-    savedImages.push({ fileName, localPath: filePath });
+    const sanitizedImg = { ...img, originalname: originalName, key };
+    const imageUrl = await uploadfile2(sanitizedImg);
+
+    savedImages.push({ fileName, s3Key: key, url: imageUrl });
   }
+
   return savedImages;
 };
 
@@ -461,21 +458,18 @@ export const uploadPricingDocumentOnly = async (productId, documentFiles) => {
   if (!documentFiles || documentFiles.length === 0) return [];
   const savedDocs = [];
 
-  const tempDir = path.join(process.cwd(), "uploads", "pending_edits");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
+  // Upload pricing documents to S3 under pricing/pending for vendor edits
   for (const doc of documentFiles) {
     const originalName = doc.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
     const fileName = `${productId}_${originalName}`;
-    const filePath = path.join(tempDir, fileName);
-    
-    // Save locally pending admin approval
-    fs.writeFileSync(filePath, doc.buffer);
+    const key = `web/assets/images/techjockey/products/pricing/${fileName}`;
 
-    savedDocs.push({ fileName, localPath: filePath });
+    const sanitizedDoc = { ...doc, originalname: originalName, key };
+    const docUrl = await uploadfile2(sanitizedDoc);
+
+    savedDocs.push({ fileName, s3Key: key, url: docUrl });
   }
+
   return savedDocs;
 };
 
