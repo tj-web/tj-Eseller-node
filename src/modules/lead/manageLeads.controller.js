@@ -1,7 +1,7 @@
-import { 
-    getLeadsService, 
-    getDemosService, 
-    getLeadHistoryService, 
+import {
+    getLeadsService,
+    getDemosService,
+    getLeadHistoryService,
     addRemarkReminderService,
     leadStatusHandlerService,
     getLeadDetailsService,
@@ -135,7 +135,11 @@ export const scheduleCallbackController = async (req, res) => {
     try {
         const vendor_id = req.user.vendor_id;
         const result = await scheduleCallbackService(vendor_id, { ...req.body });
-        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Callback scheduled successfully", result));
+        if (result.status) {
+            return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message, result.data));
+        } else {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.getErrorResponse(result.message, result.data));
+        }
     } catch (error) {
         const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
         return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));

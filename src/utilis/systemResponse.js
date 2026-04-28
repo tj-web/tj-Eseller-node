@@ -29,6 +29,10 @@ class SystemResponse {
     };
   }
 
+  static getErrorResponse(message, error, code) {
+    return this.getInstance().getErrorResponse(message, error, code);
+  }
+
   static continueInfo(message) {
     return this.getInstance().getResponse(message, StatusCodes.CONTINUE);
   }
