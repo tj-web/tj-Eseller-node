@@ -8,7 +8,7 @@ import SystemResponse from "../../utilis/systemResponse.js";
 
 export const brand_arr = async (req, res) => {
   try {
-    const vendor_id = req.user.vendor_id;
+    const vendor_id = req.query.vendor_id;
 
     if (!vendor_id) {
       return res
@@ -32,7 +32,7 @@ export const brand_arr = async (req, res) => {
 
 export const fetchVendorProducts = async (req, res) => {
   try {
-    const vendor_id = req.user.vendor_id;
+    const vendor_id = req.query.vendor_id;
     if (!vendor_id) {
       return res
         .status(StatusCodes.BAD_REQUEST)
@@ -126,65 +126,14 @@ export const searchCategories = async (req, res) => {
 // ----------------------------------Add Basic details of the form ------------------------
 
 export const basicDetails = async (req, res) => {
+  let transaction = null;
   try {
     const post = req.body;
     const vendor_id = req.query.vendor_id;
-    // const vendorId = req.user.vendor_id; // fixed ??
     const product_id = req.params.product_id || null;
+    const isNewProduct = product_id === null;
 
-    // handle product image
-    let secondImageUrl = "";
-    if (req.files?.image) {
-      const img = req.files.image[0];
-      // console.log("Product image received:", img);
-
-      let originalName = img.originalname.replace(/\s+/g, "-");
-      const key = `web/assets/images/techjockey/products/${Date.now()}-${originalName}`;
-      const sanitizedImg = {
-        ...img,
-        originalname: originalName,
-        key,
-      };
-
-      secondImageUrl = await uploadfile2(sanitizedImg);
-    }
-
-    // handle documents
-    let documentUrls = [];
-    let pricingDocument = "";
-    if (req.files?.documents) {
-      for (const doc of req.files.documents) {
-        let originalName = doc.originalname.replace(/\s+/g, "-");
-        const key = `web/assets/documents/techjockey/products/${Date.now()}-${originalName}`;
-        const sanitizedDoc = {
-          ...doc,
-          originalname: originalName,
-          key,
-        };
-        const docUrl = await uploadfile2(sanitizedDoc);
-        documentUrls.push(docUrl);
-        if (!pricingDocument) {
-          pricingDocument = originalName; // store for later update
-        }
-      }
-    }
-
-    // handle other files
-    // let fileUrls = [];
-    // if (req.files?.file) {
-    //   for (const f of req.files.file) {
-    //     let originalName = f.originalname.replace(/\s+/g, "-");
-    //     const key = `web/assets/files/techjockey/products/${Date.now()}-${originalName}`;
-    //     const sanitizedFile = {
-    //       ...f,
-    //       originalname: originalName,
-    //       key,
-    //     };
-    //     const fileUrl = await uploadfile2(sanitizedFile);
-    //     fileUrls.push(fileUrl);
-    //   }
-    // }
-
+    // === STEP 1: Build the product payload ===
     const save = {
       product_name: post?.product_name ?? "",
       brand_id: post?.brand_id ?? "",
@@ -231,69 +180,266 @@ export const basicDetails = async (req, res) => {
       manual_reviews: post?.manual_reviews ?? "1",
     };
 
+    // Slug ID generation
     const maxSlug = await productService.getSelectedCol({
       table: "Setting",
       columns: ["setting_value"],
       where: { var_name: "MAX_SLUG_ID" },
     });
-
     save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
 
-    // Insert product
-    const productId = await productService.saveProduct(
-      save,
-      secondImageUrl,
-      product_id,
-    );
-    console.log("Product saved with ID:", productId);
+    let productId = product_id;
+    let uploadedImages = [];
+    let uploadedDocuments = [];
+    transaction = await productService.startProductBasicDetailsTransaction();
 
-    // Save product description if provided
-    if (post?.brief || post?.overview || post?.description || post?.internal_description) {
-      const descriptionData = {
-        product_id: productId,
-        brief: post?.brief ?? "",
-        overview: post?.overview ?? "",
-        description: post?.description ?? "",
-        internal_description: post?.internal_description ?? "",
-      };
-      await productService.saveProductDescription(descriptionData);
-    }
-    
-    // Update pricing_document if documents were uploaded
-    if (pricingDocument) {
-      const pricingDocValue = `${productId}_${pricingDocument}`;
-      await productService.updateProductPricingDocument(productId, pricingDocValue);
-    }
+    if (isNewProduct) {
+      // === STEP 2: Save product FIRST to get productId ===
+      productId = await productService.saveProduct(save, transaction);
+      console.log("Product saved with ID:", productId);
 
-    // Save product category association
-    if (post?.product_category) {
-      // Verify product was created successfully
-      if (!productId) {
-        throw new Error(
-          "Product ID verification failed - cannot insert categories",
+      // === STEP 3: Upload image (S3) + save in DB ===
+      if (req.files?.image) {
+        uploadedImages = await productService.saveProductImage(
+          productId,
+          req.files.image,
+          transaction,
         );
       }
-      const categories = Array.isArray(post.product_category)
-        ? post.product_category
-        : [post.product_category];
-      await productService.replaceProductCategories({
-        productId,
-        categories,
-        category_parent_id: post.category_parent_id,
-      });
+
+      // === STEP 4: Upload pricing documents (S3) + save in DB ===
+      if (req.files?.documents) {
+        uploadedDocuments = await productService.savePricingDocument(
+          productId,
+          req.files.documents,
+          transaction,
+        );
+      }
+
+      // === STEP 5: Save product description ===
+      if (
+        post?.brief ||
+        post?.overview ||
+        post?.description ||
+        post?.internal_description
+      ) {
+        await productService.saveProductDescription({
+          product_id: productId,
+          brief: post?.brief ?? "",
+          overview: post?.overview ?? "",
+          description: post?.description ?? "",
+          internal_description: post?.internal_description ?? "",
+        }, transaction);
+      }
+
+      // === STEP 6: Save product categories ===
+      if (post?.product_category) {
+        const categories = Array.isArray(post.product_category)
+          ? post.product_category
+          : [post.product_category];
+
+        await productService.replaceProductCategories({
+          productId,
+          categories,
+          category_parent_id: post.category_parent_id,
+          transaction,
+        });
+      }
     }
+    // For UPDATES: only log to vendor_logs (pending approval)
+
+    // === STEP 7: Log to vendor_logs ===
+    const descriptionForLog =
+      post?.brief || post?.overview ? { overview: post?.overview ?? "" } : null;
+
+    const categoryIds = Array.isArray(post?.product_category)
+      ? post.product_category
+      : post?.product_category
+      ? [post.product_category]
+      : [];
+
+    await productService.logProductSaveToVendorLogs({
+      product_id: productId,
+      vendor_id,
+      productData: save,
+      imageFileName: uploadedImages[0]?.fileName || null,
+      documentFileName: uploadedDocuments[0]?.fileName || null,
+      categoryIds,
+      descriptionData: descriptionForLog,
+      isNewProduct,
+      existingRecordIds: {},
+      transaction,
+    });
+
+    await transaction.commit();
+    transaction = null;
 
     return res.status(StatusCodes.SUCCESS).json(
       SystemResponse.success("Product saved successfully", {
         product_id: productId,
-        imageUrl: secondImageUrl || null,
-        documentUrls: documentUrls.length > 0 ? documentUrls : null,
+        images: uploadedImages,
+        documents: uploadedDocuments,
       })
     );
   } catch (error) {
+    if (transaction) {
+      await transaction.rollback();
+    }
+    console.error("basicDetails error:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError(error.message, "Internal Server Error in saving product"));      
+      .json(
+        SystemResponse.internalServerError(
+          error.message,
+          "Internal Server Error in saving product"
+        )
+      );
+  }
+};
+
+export const editBasicDetails = async (req, res) => {
+  let transaction = null;
+  try {
+    const post = req.body;
+    const vendor_id = req.query.vendor_id;
+    const product_id = req.params.product_id;
+
+    if (!product_id) {
+       return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError("product_id is required"));
+    }
+
+    const existing = await productService.geteditProductDetail(product_id);
+    if (!existing) {
+       return res.status(StatusCodes.NOT_FOUND).json(SystemResponse.badRequestError("Product not found"));
+    }
+
+    let uploadedImages = [];
+    let uploadedDocuments = [];
+
+    transaction = await productService.startProductBasicDetailsTransaction();
+
+
+    if (req.files?.image) {
+      uploadedImages = await productService.uploadProductImageOnly(
+        product_id,
+        req.files.image
+      );
+    }
+
+    if (req.files?.documents) {
+      uploadedDocuments = await productService.uploadPricingDocumentOnly(
+        product_id,
+        req.files.documents
+      );
+    }
+
+    const changes = [];
+
+    const tpFields = [
+      { key: "product_name", orig: existing.product_name },
+      { key: "brand_id", orig: existing.brand_id },
+      { key: "website_url", orig: existing.website_url },
+      { key: "trial_available", orig: existing.trial_available },
+      { key: "free_downld_available", orig: existing.free_downld_available }
+    ];
+
+    tpFields.forEach(f => {
+      if (post[f.key] !== undefined && post[f.key] != f.orig) {
+        changes.push({
+          table_name: "tbl_product",
+          column_name: f.key,
+          updated_column_value: post[f.key],
+          p_key: "product_id",
+          item_updated_id: product_id
+        });
+      }
+    });
+
+    if (uploadedDocuments.length > 0) {
+       changes.push({
+          table_name: "tbl_product",
+          column_name: "pricing_document",
+          updated_column_value: uploadedDocuments[0].fileName,
+          p_key: "product_id",
+          item_updated_id: product_id
+       });
+    }
+
+    if (uploadedImages.length > 0) {
+      const existingImage = await productService.getSelectedCol({
+        table: "ProductImage",
+        columns: ["image_id"],
+        where: { product_id }
+      });
+      changes.push({
+        table_name: "tbl_product_image",
+        column_name: "product_image",
+        updated_column_value: uploadedImages[0].fileName,
+        p_key: "image_id",
+        item_updated_id: existingImage ? existingImage.id : 0 
+      });
+    }
+
+    if (post.overview !== undefined && post.overview != existing.overview) {
+      const existingDesc = await productService.getSelectedCol({
+        table: "ProductDescription",
+        columns: ["id"],
+        where: { product_id }
+      });
+      changes.push({
+        table_name: "tbl_product_description",
+        column_name: "overview",
+        updated_column_value: post.overview,
+        p_key: "id", 
+        item_updated_id: existingDesc ? existingDesc.id : 0
+      });
+    }
+
+    if (post.product_category !== undefined) {
+      const categoryIds = Array.isArray(post.product_category) ? post.product_category.map(String) : [String(post.product_category)];
+      const existingCats = existing.arr_cat_selected ? existing.arr_cat_selected.map(c => String(c.category_id)) : [];
+      
+      const newCats = categoryIds.sort().join(',');
+      const oldCats = existingCats.sort().join(',');
+      
+      if (newCats !== oldCats) {
+         for (const cat of categoryIds) {
+            changes.push({
+               table_name: "tbl_product_category",
+               column_name: "category_id",
+               updated_column_value: cat,
+               p_key: "id",
+               item_updated_id: 0
+            });
+         }
+      }
+    }
+
+    if (changes.length > 0) {
+       await productService.updateVendorLogs({
+         item_id: product_id,
+         profile_id: vendor_id,
+         module: "product",
+         action_performed: "updated",
+         status: 0,
+         changes,
+         externalTransaction: transaction
+       });
+    }
+
+    await transaction.commit();
+    transaction = null;
+
+    return res.status(StatusCodes.SUCCESS).json(
+      SystemResponse.success("Details updated successfully. Pending admin approval.", {
+        product_id: product_id
+      })
+    );
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    console.error("editBasicDetails error:", error);
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message, "Internal Error"));
   }
 };
 
@@ -362,7 +508,7 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.body;
 
-    const vendor_id = req.user.vendor_id;
+    const vendor_id = req.body.vendor_id;
 
     if (!product_id || !vendor_id) {
       return res
@@ -377,10 +523,8 @@ export const ProductSpecification = async (req, res) => {
     }
 
     const brandArr = await productService.getVendorBrands(vendor_id);
-    console.log(brandArr);
     const isVendor = await productService.isVendorProduct(product_id, brandArr);
-    console.log("Is vendor product:", isVendor);
-   
+    
 
     if (!isVendor) {
       return res
@@ -423,6 +567,7 @@ export const ProductSpecification = async (req, res) => {
         "Internal server error"));
     }
 };
+
 
 //--------------------------------------------features part of the form--------------
 
@@ -475,8 +620,7 @@ export const saveProductFeature = async (req, res) => {
 
 export const getAllFeaturesList = async (req, res) => {
   try {
-    const { product_id, search } = req.query;
-    const vendor_id = req.user.vendor_id;
+    const {vendor_id, product_id, search } = req.query;
 
     if (product_id) {
       // Get brand array
@@ -505,7 +649,7 @@ export const getAllFeaturesList = async (req, res) => {
   } catch (error) {
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError("Internal server error in getting features list"));
+      .json(SystemResponse.internalServerError(error, "Internal server error in getting features list"));
   }
 };
 
@@ -743,8 +887,7 @@ export const viewProduct = async (req, res) => {
 
 export const checkVendorProduct = async (req, res) => {
   try {
-    const { product_id } = req.body;
-    const vendor_id = req.user.vendor_id;
+    const { product_id, vendor_id } = req.body;
 
     const brandArr = await productService.getVendorBrands(vendor_id);
     const isVendor = await productService.isVendorProduct(product_id, brandArr);

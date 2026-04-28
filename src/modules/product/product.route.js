@@ -38,6 +38,12 @@ router.post(
   productController.basicDetails
 );
 
+router.post(
+  "/editbasicdetails/:product_id",
+  productBasicUpload,
+  productController.editBasicDetails
+);
+
 // --- 4. PRODUCT SECTION-WISE MANAGEMENT ---
 
 // Specifications

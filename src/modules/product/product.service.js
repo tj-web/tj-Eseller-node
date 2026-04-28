@@ -1,4 +1,5 @@
 import sequelize from "../../db/connection.js";
+import { uploadfile2 } from "../../utilis/s3Uploader.js"; 
 import { Op, QueryTypes } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import Brand from "../../models/brand.model.js";
@@ -10,6 +11,8 @@ import ProductSpecification from "../../models/productSpecification.model.js";
 import VendorLog from "../../models/vendorLog.model.js";
 import Setting from "../../models/websiteSetting.model.js"
 import Language from "../../models/languages.model.js";
+import fs from "fs";
+import path from "path";
 import ProductFeature from "../../models/productFeature.model.js";
 import Feature from "../../models/features.model.js";
 import ProductDescription from "../../models/productDescription.model.js";
@@ -326,48 +329,153 @@ export const getSelectedCol = async ({
 };
 
 
-export const saveProduct = async (save, imageUrl = null, productId = null) => {
-  const transaction = await Product.sequelize.transaction();
-  let newProductId;
 
+
+export const saveProduct = async (save, externalTransaction = null) => {
+  const transaction = externalTransaction || await Product.sequelize.transaction();
+  const ownsTransaction = !externalTransaction;
   try {
-    if (productId) {
-      // --- Update existing product ---
-      await Product.update(save, {
-        where: { product_id: productId },
-        transaction,
-      });
-      newProductId = productId;
-    } else {
-      // --- Insert new product ---
-      const product = await Product.create(save, { transaction });
-      newProductId = product.product_id;
-    }
-
-    // --- Handle Image Insertion ---
-    if (imageUrl) {
-      const fileName = imageUrl.split("/").pop(); 
-      const imageName = fileName.replace(/\.[^/.]+$/, ""); 
-
-      await ProductImage.create({
-        product_id: newProductId,
-        image: newProductId + "_" + fileName,
-        image_name: imageName,
-        // 'default', 'status', and 'dominant_color' will use the 
-        // defaultValue defined in your schema automatically.
-      }, { transaction });
-    }
-
-    await transaction.commit();
-    return newProductId;
+    const product = await Product.create(save, { transaction });
+    if (ownsTransaction) await transaction.commit();
+    return product.product_id;
   } catch (error) {
-    await transaction.rollback();
+    if (ownsTransaction) await transaction.rollback();
     throw error;
   }
 };
 
-export const saveProductDescription = async (descriptionData) => {
-  const transaction = await ProductDescription.sequelize.transaction();
+
+export const saveProductImage = async (productId, imageFiles, externalTransaction = null) => {
+  if (!imageFiles || imageFiles.length === 0) return [];
+
+  const transaction = externalTransaction || await ProductImage.sequelize.transaction();
+  const ownsTransaction = !externalTransaction;
+  const savedImages = [];
+
+  try {
+    for (const img of imageFiles) {
+      // Sanitize original filename
+      const originalName = img.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${productId}_${originalName}`;
+      const key = `web/assets/images/techjockey/products/${fileName}`;
+
+      // Upload to S3
+      const sanitizedImg = { ...img, originalname: originalName, key };
+      const imageUrl = await uploadfile2(sanitizedImg);
+
+      // Derive human-readable name (strip productId_ prefix and extension)
+      const fileExt = fileName.substring(fileName.lastIndexOf("."));
+      const humanReadableName = originalName.replace(fileExt, "");
+
+      // Save record in DB
+      const record = await ProductImage.create(
+        {
+          product_id: productId,
+          image: fileName,
+          image_name: humanReadableName,
+        },
+        { transaction }
+      );
+
+      savedImages.push({
+        id: record.id,
+        fileName,
+        imageUrl,
+      });
+    }
+
+    if (ownsTransaction) await transaction.commit();
+    return savedImages;
+  } catch (error) {
+    if (ownsTransaction) await transaction.rollback();
+    throw error;
+  }
+};
+
+
+export const savePricingDocument = async (productId, documentFiles, externalTransaction = null) => {
+  if (!documentFiles || documentFiles.length === 0) return [];
+
+  const transaction = externalTransaction || await Product.sequelize.transaction();
+  const ownsTransaction = !externalTransaction;
+  const savedDocs = [];
+
+  try {
+    for (const doc of documentFiles) {
+      const originalName = doc.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${productId}_${originalName}`;
+      const key = `web/assets/images/techjockey/products/pricing/${fileName}`;
+
+      // Upload to S3
+      const sanitizedDoc = { ...doc, originalname: originalName, key };
+      const docUrl = await uploadfile2(sanitizedDoc);
+
+      savedDocs.push({
+        id: null,
+        fileName,
+        docUrl,
+      });
+    }
+
+    if (savedDocs.length > 0) {
+      await Product.update(
+        { pricing_document: savedDocs[0].fileName },
+        { where: { product_id: productId }, transaction }
+      );
+    }
+
+    if (ownsTransaction) await transaction.commit();
+    return savedDocs;
+  } catch (error) {
+    if (ownsTransaction) await transaction.rollback();
+    throw error;
+  }
+};
+
+
+// upload to s3 edit image files
+
+export const uploadProductImageOnly = async (productId, imageFiles) => {
+  if (!imageFiles || imageFiles.length === 0) return [];
+  const savedImages = [];
+
+  // Upload each image directly to S3 into a pending folder for later approval
+  for (const img of imageFiles) {
+    const originalName = img.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+    const fileName = `${productId}_${originalName}`;
+    const key = `web/assets/images/techjockey/products/${fileName}`;
+
+    const sanitizedImg = { ...img, originalname: originalName, key };
+    const imageUrl = await uploadfile2(sanitizedImg);
+
+    savedImages.push({ fileName, s3Key: key, url: imageUrl });
+  }
+
+  return savedImages;
+};
+
+export const uploadPricingDocumentOnly = async (productId, documentFiles) => {
+  if (!documentFiles || documentFiles.length === 0) return [];
+  const savedDocs = [];
+
+  // Upload pricing documents to S3 under pricing/pending for vendor edits
+  for (const doc of documentFiles) {
+    const originalName = doc.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+    const fileName = `${productId}_${originalName}`;
+    const key = `web/assets/images/techjockey/products/pricing/${fileName}`;
+
+    const sanitizedDoc = { ...doc, originalname: originalName, key };
+    const docUrl = await uploadfile2(sanitizedDoc);
+
+    savedDocs.push({ fileName, s3Key: key, url: docUrl });
+  }
+
+  return savedDocs;
+};
+
+export const saveProductDescription = async (descriptionData, externalTransaction = null) => {
+  const transaction = externalTransaction || await ProductDescription.sequelize.transaction();
+  const ownsTransaction = !externalTransaction;
 
   try {
     const { product_id, brief, overview, description, internal_description } = descriptionData;
@@ -408,9 +516,9 @@ export const saveProductDescription = async (descriptionData) => {
       );
     }
 
-    await transaction.commit(); 
+    if (ownsTransaction) await transaction.commit(); 
   } catch (error) {
-    await transaction.rollback(); 
+    if (ownsTransaction) await transaction.rollback(); 
     console.error("Error saving product description:", error);
     throw error;
   }
@@ -426,6 +534,190 @@ export const updateProductPricingDocument = async (productId, pricingDocument) =
     await transaction.commit();
   } catch (error) {
     await transaction.rollback();
+    throw error;
+  }
+};
+
+export const logProductSaveToVendorLogs = async ({
+  product_id,
+  vendor_id,
+  productData,
+  imageFileName,
+  documentFileName,
+  categoryIds,
+  descriptionData,
+  isNewProduct = true,
+  existingRecordIds = {},
+  transaction: externalTransaction = null,
+}) => {
+  const transaction = externalTransaction || await VendorLog.sequelize.transaction();
+  const ownsTransaction = !externalTransaction;
+  try {
+    const logRows = [];
+    const now = new Date();
+    
+    // For new products: status=1, action=insert, p_key=""
+    // For updates: status=0, action=updated, p_key="id"
+    const status = isNewProduct ? 1 : 0;
+    const action_performed = isNewProduct ? "insert" : "updated";
+    
+    const fieldsToLog = [
+      // tbl_product fields
+      { table: "tbl_product", column: "product_name", value: productData?.product_name },
+      { table: "tbl_product", column: "brand_id", value: productData?.brand_id },
+      { table: "tbl_product", column: "website_url", value: productData?.website_url },
+      { table: "tbl_product", column: "trial_available", value: productData?.trial_available },
+      { table: "tbl_product", column: "free_downld_available", value: productData?.free_downld_available },
+      { table: "tbl_product", column: "pricing_document", value: documentFileName || productData?.pricing_document },
+      { table: "tbl_product", column: "slug_id", value: productData?.slug_id },
+    ];
+
+    // Add description log if provided
+    if (descriptionData?.overview) {
+      fieldsToLog.push({
+        table: "tbl_product_description",
+        column: "overview",
+        value: descriptionData.overview,
+      });
+    }
+
+    // Add image log if provided
+    if (imageFileName) {
+      fieldsToLog.push({
+        table: "tbl_product_image",
+        column: "product_image",
+        value: imageFileName,
+      });
+    }
+
+    // Add category logs if provided
+    if (categoryIds && Array.isArray(categoryIds)) {
+      categoryIds.forEach((catId) => {
+        fieldsToLog.push({
+          table: "tbl_product_category",
+          column: "category_id",
+          value: catId,
+        });
+      });
+    }
+
+    // Create vendor log entries for each field
+    for (const field of fieldsToLog) {
+      if (field.value === undefined || field.value === null || field.value === "") continue;
+
+      const p_key = isNewProduct ? "" : "id";
+      const item_updated_id = isNewProduct ? 0 : (existingRecordIds[field.table] || 0);
+
+      logRows.push({
+        item_id: product_id,
+        module: "product",
+        action_performed,
+        action_by: vendor_id,
+        table_name: field.table,
+        column_name: field.column,
+        p_key,
+        updated_column_value: field.value.toString(),
+        linked_attribute: "",
+        item_updated_id,
+        reject_reason: "",
+        status,
+        created_at: now,
+        updated_at: now,
+      });
+    }
+
+    // Bulk insert all vendor logs
+    if (logRows.length > 0) {
+      await VendorLog.bulkCreate(logRows, { transaction });
+    }
+
+    if (ownsTransaction) await transaction.commit();
+  } catch (error) {
+    if (ownsTransaction) await transaction.rollback();
+    console.error("Error logging product save to vendor_logs:", error);
+    throw error;
+  }
+};
+
+export const updateVendorLogs = async ({
+  item_id,
+  profile_id,
+  module = "product",
+  action_performed = "updated",
+  status = 0,
+  changes,
+  externalTransaction = null,
+}) => {
+  const transaction = externalTransaction || (await VendorLog.sequelize.transaction());
+  const ownsTransaction = !externalTransaction;
+  const linked_attribute = Date.now().toString();
+
+  try {
+    const arrayTables = ["tbl_product_category", "tbl_product_image"];
+    for (const tbl of arrayTables) {
+      if (changes.some((c) => c.table_name === tbl)) {
+        await VendorLog.destroy({
+          where: { item_id, module, status: 0, table_name: tbl },
+          transaction,
+        });
+      }
+    }
+
+    for (const change of changes) {
+      if (change.updated_column_value === undefined || change.updated_column_value === null) continue;
+
+      if (!arrayTables.includes(change.table_name)) {
+        const existingLog = await VendorLog.findOne({
+          where: {
+            item_id,
+            module,
+            status: 0,
+            table_name: change.table_name,
+            column_name: change.column_name,
+          },
+          transaction,
+        });
+
+        if (existingLog) {
+          await existingLog.update(
+            {
+              updated_column_value: change.updated_column_value.toString(),
+              action_by: profile_id,
+              linked_attribute,
+              updated_at: new Date(),
+            },
+            { transaction }
+          );
+          continue;
+        }
+      }
+
+      await VendorLog.create(
+        {
+          item_id,
+          module,
+          action_performed,
+          action_by: profile_id,
+          table_name: change.table_name,
+          column_name: change.column_name,
+          p_key: change.p_key || "id",
+          updated_column_value: change.updated_column_value.toString(),
+          linked_attribute,
+          item_updated_id: change.item_updated_id || 0,
+          reject_reason: "",
+          status,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+        { transaction }
+      );
+    }
+
+    if (ownsTransaction) await transaction.commit();
+    return true;
+  } catch (error) {
+    if (ownsTransaction) await transaction.rollback();
+    console.error("Error in updateVendorLogs:", error);
     throw error;
   }
 };
@@ -448,8 +740,10 @@ export const replaceProductCategories = async ({
   productId,
   categories,
   category_parent_id,
+  transaction: externalTransaction = null,
 }) => {
-  const transaction = await ProductCategory.sequelize.transaction();
+  const transaction = externalTransaction || await ProductCategory.sequelize.transaction();
+  const ownsTransaction = !externalTransaction;
   try {
     await ProductCategory.destroy({ where: { product_id: productId }, transaction });
 
@@ -495,12 +789,15 @@ export const replaceProductCategories = async ({
       }, { transaction });
     }
 
-    await transaction.commit();
+    if (ownsTransaction) await transaction.commit();
   } catch (error) {
-    await transaction.rollback();
+    if (ownsTransaction) await transaction.rollback();
     throw error;
   }
 };
+
+export const startProductBasicDetailsTransaction = async () =>
+  Product.sequelize.transaction();
 
 //--------------This function will fetch the data of the existing product for editing purpose----------------
 
@@ -584,14 +881,19 @@ export const geteditProductDetail = async (productId) => {
     const product = await Product.findOne({
       where: { product_id: productId },
       include: [
-        { model: ProductDescription, attributes: ['id', 'overview'] },
-        { model: ProductImage, attributes: ['image_id', 'image'] }
+        { model: ProductDescription, attributes: ['id', 'overview'] }
       ],
-      nest: true,
       raw: true
     });
 
     if (!product) return null;
+
+    // Fetch product image separately to avoid raw/nest issues with hasMany
+    const productImage = await ProductImage.findOne({
+      where: { product_id: productId },
+      attributes: ['image'],
+      raw: true
+    });
 
     // Fetch categories with nested JOIN
     const categories = await ProductCategory.findAll({
@@ -623,8 +925,8 @@ export const geteditProductDetail = async (productId) => {
       trial_available: product.trial_available,
       free_downld_available: product.free_downld_available,
       pricing_document: product.pricing_document,
-      image: product.ProductImages?.[0]?.image || product.ProductImage?.image || null,
-      overview: product.ProductDescription?.overview || null,
+      image: productImage?.image || null,
+      overview: product['ProductDescription.overview'] || null,
       arr_cat_selected: formattedCategories,
     };
   } catch (error) {
@@ -724,10 +1026,12 @@ const createProductSpecificationVendorLogs = async ({
   transaction = null,
 }) => {
   const logRows = [];
-  const p_key = action_performed === "insert" ? "" : "id";
+  const p_key = "id"; // Always use 'id' as p_key for specification table updates
 
   for (const [column_name, value] of Object.entries(fields)) {
-    if (value === undefined || value === null || value === "") continue;
+    // Note: We log the value even if it's an empty string (meaning the field was cleared)
+    // but skip if it's undefined or null
+    if (value === undefined || value === null) continue;
 
     logRows.push({
       item_id: product_id,
@@ -741,7 +1045,7 @@ const createProductSpecificationVendorLogs = async ({
       linked_attribute: "",
       item_updated_id,
       reject_reason: "",
-      status: 0,
+      status: 0, // Pending approval
       created_at: new Date(),
       updated_at: new Date(),
     });
@@ -761,22 +1065,62 @@ export const saveOrUpdateProductSpecification = async (
 ) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
-    const fields = {
-      deployment: productData.deployment || "",
-      device: productData.device || "",
-      operating_system: productData.operating_system || "",
-      organization_type: productData.organization_type || "",
-      languages: productData.languages || "",
-    };
+    const product_id = productData.product_id;
 
-    const action_performed = id ? "updated" : "insert";
-    const item_updated_id = id || 0;
+    // 1. Fetch current specification from database to find differences
+    const existingSpec = await ProductSpecification.findOne({
+      where: { product_id },
+      raw: true
+    });
 
+    // 2. Define fields to compare (matching the PHP logic)
+    const trackingFields = [
+      'deployment',
+      'device',
+      'operating_system',
+      'organization_type',
+      'languages'
+    ];
+
+    const fieldsToLog = {};
+    const item_updated_id = existingSpec ? existingSpec.id : 0;
+
+    // Helper to normalize CSV strings (removes spaces, ensures consistent format)
+    const normalize = (val) => 
+      String(val || "")
+        .split(",")
+        .map(v => v.trim())
+        .filter(Boolean)
+        .join(",");
+
+    // 3. Find only changed fields: compare incoming data with actual record
+    trackingFields.forEach(field => {
+      const newValue = normalize(productData[field]);
+      const oldValue = normalize(existingSpec ? existingSpec[field] : "");
+
+      // Check if value is different after normalization
+      if (newValue !== oldValue) {
+        fieldsToLog[field] = newValue;
+      }
+    });
+
+    // 4. If no changes detected, don't create any logs
+    if (Object.keys(fieldsToLog).length === 0) {
+      await transaction.commit();
+      return {
+        message: "No changes detected, nothing to update.",
+        logs_created: 0,
+        item_id: product_id
+      };
+    }
+
+    // 5. Log only the changed fields
+    const action_performed = "updated";
     const logs = await createProductSpecificationVendorLogs({
-      product_id: productData.product_id,
+      product_id,
       vendor_id,
       action_performed,
-      fields,
+      fields: fieldsToLog,
       item_updated_id,
       transaction,
     });
@@ -784,13 +1128,13 @@ export const saveOrUpdateProductSpecification = async (
     await transaction.commit();
     return {
       action: action_performed,
-      item_id: productData.product_id,
+      item_id: product_id,
       item_updated_id,
       logs_created: logs.length,
-      fields,
+      changed_fields: Object.keys(fieldsToLog),
     };
   } catch (error) {
-    await transaction.rollback();
+    if (transaction) await transaction.rollback();
     console.error("Error in saveOrUpdateProductSpecification:", error);
     throw error;
   }
