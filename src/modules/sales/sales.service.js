@@ -53,7 +53,11 @@ export const planSubscribeRequestService = async (authData, postData) => {
 
     const reminder_datetime = `${reminder_date} ${hour}:${minute}:00`;
     const actual_plan_name = plan_name || "Upgrade Now";
-    const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Budget: ${budget} <br /> Selected Date and Time by User: ${reminder_datetime}`;
+    
+    // Replace Rupee symbol with space to avoid DB collation issues
+    const sanitizedBudget = budget.replace(/₹/g, " ");
+
+    const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Budget: ${sanitizedBudget} <br /> Selected Date and Time by User: ${reminder_datetime}`;
 
     // 2. Determine Account Manager (adSales_AM)
     // First, check if a lead already exists for this vendor to reuse the AM organically
@@ -149,7 +153,7 @@ export const planSubscribeRequestService = async (authData, postData) => {
       <p><strong>Email:</strong> ${vendorData.email}</p>
       <p><strong>Contact:</strong> ${vendorData.phone}</p>
       <p><strong>Plan Name:</strong> ${actual_plan_name}</p>
-      <p><strong>Budget:</strong> ${budget}</p>
+      <p><strong>Budget:</strong> ${sanitizedBudget}</p>
       <p><strong>Preferred Callback Time:</strong> ${reminder_date} ${hour}:${minute}</p>
     `;
 
