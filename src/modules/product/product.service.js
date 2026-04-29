@@ -194,7 +194,7 @@ export const getProductList = async (
   }
 
   const results = await Product.findAndCountAll({
-    attributes: ['product_id', 'product_name', 'status'],
+    attributes: ['product_id', 'product_name', 'status', 'slug'],
     where: whereConditions,
     include: [
       {
@@ -225,6 +225,7 @@ export const getProductList = async (
   const flattenedResults = results.rows.map(row => ({
     product_id: row.product_id,
     product_name: row.product_name,
+    slug: row.slug,
     status: row.status,
     brand_name: row.Brand?.brand_name || null,
     image: row.ProductImages ? (Array.isArray(row.ProductImages) ? row.ProductImages[0]?.image : row.ProductImages.image) : (row.ProductImages?.image || null)
@@ -890,9 +891,9 @@ export const geteditProductDetail = async (productId) => {
 
     // Fetch product image separately to avoid raw/nest issues with hasMany
     const productImage = await ProductImage.findOne({
-      where: { product_id: productId },
-      attributes: ['image'],
-      raw: true
+      where: { product_id: productId, default: 1, status: 1 },
+      attributes: ["image"],
+      raw: true,
     });
 
     // Fetch categories with nested JOIN
