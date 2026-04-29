@@ -13,6 +13,8 @@ import helpSupportRoutes from "./modules/helpSupport/helpSupport.routes.js";
 import companyInformationRoutes from "./modules/companyInfo/companyInformation.routes.js";
 import accountHealthRoutes from "./modules/accountHealth/accountHealth.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import leadsRoutes from "./modules/lead/manageLeads.routes.js";
+import salesRoutes from "./modules/sales/sales.route.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
 
@@ -40,8 +42,6 @@ app.get("/health", function (req, res) {
   res.send("Ok");
 });
 
-
-
 const API_PREFIX = process.env.API_VERSION_PATH;
 
 app.use(`${API_PREFIX}/dashboard`, authenticate, dashboardRoutes);
@@ -52,6 +52,12 @@ app.use(`${API_PREFIX}/product`, manageProduct);
 app.use(`${API_PREFIX}/help-support`, authenticate, helpSupportRoutes);
 app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
+app.use(`${API_PREFIX}/leads`, leadsRoutes);
+app.use(`${API_PREFIX}/sales`, authenticate, salesRoutes);
+
+// do not apply authenticate in authRoutes here , it should be done
+// in specific routes inside route folder
+
 app.use(`${API_PREFIX}/eseller-agreement`, agreementRoutes);
 app.use(`${API_PREFIX}/account-health`, accountHealthRoutes);
 
