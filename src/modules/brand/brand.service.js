@@ -9,6 +9,9 @@ import TblLeads from "../../models/leads.model.js";
 import sequelize from "../../db/connection.js";
 import { AppError } from "../../utilis/appError.js";
 import { Op } from "sequelize";
+import VendorAuth from "../../models/vendorAuth.model.js";
+import { mergeArray, toTitleCase } from "../../helpers/format.js";
+import { sendProductBrandUpdationEvents } from "../common/service/moengage/moengageApiService.js";
 
 VendorBrandRelation.belongsTo(Brand, {
   foreignKey: "tbl_brand_id",
@@ -221,11 +224,25 @@ export const addBrandService = async (data, vendorId, profileId) => {
     // 6. Complete Transaction Context
     await transaction.commit();
 
+    const moengageData = {
+      location,
+      founded_on,
+      founders,
+      company_size,
+      information,
+      industry,
+      ["Brand Name"]: brand_name,
+      ["Brand Image"]:
+        "https://tj-web-local.s3.ap-south-1.amazonaws.com/web/assets/images/techjockey/brands/11269_Screenshot20260424at11.53.39AM.png",
+    };
+
+    await brandUpdationRelatedEvent(moengageData, vendorId, profileId);
     return {
       message: "Brand Saved Successfully.",
       brand_id: brandId,
     };
   } catch (error) {
+    console.error(error);
     if (transaction) await transaction.rollback();
     throw error;
   }
@@ -568,6 +585,34 @@ export const searchBrandsForRequestService = async (vendorId, searchStr = "") =>
     });
 
     return brands;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const brandUpdationRelatedEvent = async (updateArr, vendor_id, profile_id) => {
+  try {
+    const EXCLUDED_KEYS = new Set(["p_key", "update_id", "tbl_brand_id"]);
+
+    const merged = mergeArray(updateArr);
+
+    const data = Object.fromEntries(
+      Object.entries(merged)
+        .filter(([key]) => !EXCLUDED_KEYS.has(key))
+        .map(([key, value]) => [toTitleCase(key), value])
+    );
+
+    const adminDetails = await VendorAuth.findOne({
+      attributes: ["id"],
+      where: { vendor_id, is_admin: 1, id: { [Op.ne]: profile_id } },
+      raw: true,
+    });
+
+    return await sendProductBrandUpdationEvents({
+      data,
+      event_name: "Brand Information Submitted",
+      profile_ids: [adminDetails?.id, profile_id].filter(Boolean),
+    });
   } catch (error) {
     throw error;
   }
