@@ -8,7 +8,7 @@ import SystemResponse from "../../utilis/systemResponse.js";
 
 export const brand_arr = async (req, res) => {
   try {
-    const vendor_id = req.query.vendor_id;
+    const vendor_id = req.user.vendor_id;
 
     if (!vendor_id) {
       return res
@@ -32,7 +32,7 @@ export const brand_arr = async (req, res) => {
 
 export const fetchVendorProducts = async (req, res) => {
   try {
-    const vendor_id = req.query.vendor_id;
+    const vendor_id = req.user.vendor_id;
     if (!vendor_id) {
       return res
         .status(StatusCodes.BAD_REQUEST)
@@ -129,7 +129,7 @@ export const basicDetails = async (req, res) => {
   let transaction = null;
   try {
     const post = req.body;
-    const vendor_id = req.query.vendor_id;
+    const vendor_id = req.user.vendor_id;
     const product_id = req.params.product_id || null;
     const isNewProduct = product_id === null;
 
@@ -301,7 +301,7 @@ export const editBasicDetails = async (req, res) => {
   let transaction = null;
   try {
     const post = req.body;
-    const vendor_id = req.query.vendor_id;
+    const vendor_id = req.user.vendor_id;
     const product_id = req.params.product_id;
 
     if (!product_id) {
@@ -508,7 +508,7 @@ export const ProductSpecification = async (req, res) => {
       languages,
     } = req.body;
 
-    const vendor_id = req.body.vendor_id;
+    const vendor_id = req.user.vendor_id;
 
     if (!product_id || !vendor_id) {
       return res
@@ -620,8 +620,8 @@ export const saveProductFeature = async (req, res) => {
 
 export const getAllFeaturesList = async (req, res) => {
   try {
-    const {vendor_id, product_id, search } = req.query;
-
+    const { product_id, search } = req.query;
+    const vendor_id = req.user.vendor_id;
     if (product_id) {
       // Get brand array
       const brand = await productService.getVendorBrands(vendor_id);
@@ -887,7 +887,8 @@ export const viewProduct = async (req, res) => {
 
 export const checkVendorProduct = async (req, res) => {
   try {
-    const { product_id, vendor_id } = req.body;
+    const { product_id } = req.body;
+    const vendor_id = req.user.vendor_id;
 
     const brandArr = await productService.getVendorBrands(vendor_id);
     const isVendor = await productService.isVendorProduct(product_id, brandArr);
