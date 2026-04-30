@@ -48,7 +48,7 @@ app.use(`${API_PREFIX}/dashboard`, authenticate, dashboardRoutes);
 app.use(`${API_PREFIX}/lead`, authenticate, manageLeads);
 app.use(`${API_PREFIX}/orders`, authenticate, orderRoutes);
 app.use(`${API_PREFIX}/brands`, authenticate, brandRoutes);
-app.use(`${API_PREFIX}/product`, manageProduct);
+app.use(`${API_PREFIX}/product`, authenticate, manageProduct);
 app.use(`${API_PREFIX}/help-support`, authenticate, helpSupportRoutes);
 app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
