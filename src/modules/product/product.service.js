@@ -421,7 +421,7 @@ export const savePricingDocument = async (productId, documentFiles, externalTran
     if (savedDocs.length > 0) {
       await Product.update(
         { pricing_document: savedDocs[0].fileName },
-        { where: { product_id: productId }, transaction }
+        { where: { product_id: productId, is_deleted: 0 }, transaction }
       );
     }
 
@@ -482,7 +482,7 @@ export const saveProductDescription = async (descriptionData, externalTransactio
     const { product_id, brief, overview, description, internal_description } = descriptionData;
 
     const existingDesc = await ProductDescription.findOne({
-      where: { product_id },
+      where: { product_id, is_deleted: 0 },
       transaction, 
     });
 
@@ -496,7 +496,7 @@ export const saveProductDescription = async (descriptionData, externalTransactio
           updated_at: new Date().toISOString(), // or new Date() if DATE type
         },
         {
-          where: { product_id },
+          where: { product_id, is_deleted: 0 },
           transaction, 
         }
       );
@@ -530,7 +530,7 @@ export const updateProductPricingDocument = async (productId, pricingDocument) =
   try {
     await Product.update(
       { pricing_document: pricingDocument },
-      { where: { product_id: productId }, transaction }
+      { where: { product_id: productId, is_deleted: 0 }, transaction }
     );
     await transaction.commit();
   } catch (error) {
@@ -654,7 +654,16 @@ export const updateVendorLogs = async ({
   const linked_attribute = Date.now().toString();
 
   try {
-    const arrayTables = ["tbl_product_category", "tbl_product_image"];
+    const arrayTables = [
+      "tbl_product_category",
+      "tbl_product_image",
+      "tbl_product_screenshots",
+      "tbl_product_features",
+      "tbl_product_specification",
+      "tbl_description_gallery",
+      "tbl_product_videos",
+      "tbl_product_enrichment_images"
+    ];
     for (const tbl of arrayTables) {
       if (changes.some((c) => c.table_name === tbl)) {
         await VendorLog.destroy({
@@ -667,7 +676,9 @@ export const updateVendorLogs = async ({
     for (const change of changes) {
       if (change.updated_column_value === undefined || change.updated_column_value === null) continue;
 
-      if (!arrayTables.includes(change.table_name)) {
+      const isArrayTable = arrayTables.includes(change.table_name);
+      
+      if (!isArrayTable) {
         const existingLog = await VendorLog.findOne({
           where: {
             item_id,
@@ -675,6 +686,7 @@ export const updateVendorLogs = async ({
             status: 0,
             table_name: change.table_name,
             column_name: change.column_name,
+            item_updated_id: change.item_updated_id || 0,
           },
           transaction,
         });
@@ -703,7 +715,7 @@ export const updateVendorLogs = async ({
           column_name: change.column_name,
           p_key: change.p_key || "id",
           updated_column_value: change.updated_column_value.toString(),
-          linked_attribute,
+          linked_attribute: change.linked_attribute || linked_attribute,
           item_updated_id: change.item_updated_id || 0,
           reject_reason: "",
           status,
@@ -806,7 +818,7 @@ export const getProductDetail = async (product_id) => {
   try {
     // 1. Fetch main product data with basic associations
     const product = await Product.findOne({
-      where: { product_id },
+      where: { product_id, is_deleted: 0 },
       include: [
         { model: ProductDescription, attributes: ['overview', 'description'] },
         { model: ProductSpecification },
@@ -880,7 +892,7 @@ export const geteditProductDetail = async (productId) => {
   try {
 
     const product = await Product.findOne({
-      where: { product_id: productId },
+      where: { product_id: productId, is_deleted: 0 },
       include: [
         { model: ProductDescription, attributes: ['id', 'overview'] }
       ],
@@ -1149,14 +1161,24 @@ export const getProductFeatures = async (product_id) => {
     const productFeatures = await ProductFeature.findAll({
       where: {
         product_id: product_id,
-        is_deleted: 0 // Adding a safety check to only get active features
+        status: 1,      // Approved features only
+        is_deleted: 0   // Non-deleted features
       },
-      order: [['sort_order', 'ASC']] // Optional: ensures they appear in the right order
+      include: [
+        {
+          model: Feature,
+          as: "featureMaster",
+          attributes: ["feature_name"],
+        },
+      ],
+      order: [['sort_order', 'ASC']]
     });
 
+    // Format the response to include feature_name at the top level if needed, 
+    // or just return the records with nested include.
     return productFeatures;
   } catch (error) {
-    console.error("Error in getAllFeatures service:", error);
+    console.error("Error in getProductFeatures service:", error);
     throw error;
   }
 };
@@ -1186,82 +1208,336 @@ export const getAllFeatures = async (search = null) => {
   }
 };
 
-export const saveOrUpdateProductFeature = async (id, post) => {
-  const transaction = await ProductFeature.sequelize.transaction();
+export const saveOrUpdateProductFeature = async (id, post, vendor_id) => {
+  const transaction = await VendorLog.sequelize.transaction();
   try {
-    if (id) {
-      await ProductFeature.update(
-        {
-          section_id: post.section_id,
-          description: post.description || "",
-          feature_display_name: post.feature_display_name || "",
-          product_id: post.product_id,
-          type: post.type || 0,
-          image: post.image || "",
-        },
-        { where: { id }, transaction }
-      );
-      await transaction.commit();
-      return { action: "update", id };
-    }
-
-    const newFeature = await ProductFeature.create({
-      section_id: post.section_id,
+    const productId = post.product_id;
+    const section_id = post.section_id;
+    const fieldsToTrack = {
+      section_id: section_id,
       description: post.description || "",
       feature_display_name: post.feature_display_name || "",
-      product_id: post.product_id,
-      type: post.type || 0,
-      image: post.image || "",
-      created_at: post.created_at || new Date(),
-    }, { transaction });
+    };
 
-    await transaction.commit();
-    return { action: "insert", id: newFeature.id };
+    if (id) {
+      // 1. EDIT EXISTING: Find only changed fields
+      const existing = await ProductFeature.findOne({
+        where: { id: id, product_id: productId },
+        raw: true,
+      });
+
+      if (!existing) {
+        throw new Error("Product feature not found");
+      }
+
+      const changes = [];
+      for (const [key, newValue] of Object.entries(fieldsToTrack)) {
+        if (String(newValue) !== String(existing[key] || "")) {
+          changes.push({
+            table_name: "tbl_product_features",
+            column_name: key,
+            updated_column_value: newValue,
+            p_key: "id",
+            item_updated_id: id,
+          });
+        }
+      }
+
+      if (changes.length === 0) {
+        await transaction.commit();
+        return { action: "none", message: "No changes detected" };
+      }
+
+      // Save to VendorLog (updateVendorLogs handles dedupe if status=0 exists)
+      await updateVendorLogs({
+        item_id: productId,
+        profile_id: vendor_id,
+        module: "product",
+        action_performed: "updated",
+        changes,
+        externalTransaction: transaction,
+      });
+
+      await transaction.commit();
+      return { action: "update", id };
+    } else {
+      // 2. NEW FEATURE: Check for duplicate approved feature
+      const duplicate = await ProductFeature.findOne({
+        where: {
+          product_id: productId,
+          section_id: section_id,
+          status: 1,
+          is_deleted: 0,
+        },
+      });
+
+      if (duplicate) {
+        throw new Error("This feature is already added to this product.");
+      }
+
+      const changes = Object.entries(fieldsToTrack).map(([key, value]) => ({
+        table_name: "tbl_product_features",
+        column_name: key,
+        updated_column_value: value,
+        p_key: "id",
+        item_updated_id: 0,
+      }));
+
+      await updateVendorLogs({
+        item_id: productId,
+        profile_id: vendor_id,
+        module: "product",
+        action_performed: "updated",
+        changes,
+        externalTransaction: transaction,
+      });
+
+      await transaction.commit();
+      return { action: "insert", id: 0 };
+    }
   } catch (error) {
-    await transaction.rollback();
+    if (transaction) await transaction.rollback();
     console.error("Error in saveOrUpdateProductFeature (service):", error);
     throw error;
   }
 };
 
 
-export const insertProductScreenshots = async (screenshotsData) => {
-  const transaction = await ProductScreenshot.sequelize.transaction();
+export const getProductScreenshots = async (product_id) => {
   try {
-    if (!screenshotsData || screenshotsData.length === 0) {
-      await transaction.commit();
-      return { inserted: 0, updated: 0 };
-    }
-
-    
-    const formattedData = screenshotsData.map(item => ({
-      id: item.id || null, 
-      product_id: item.product_id,
-      image: item.image,
-      img_alt: item.alt_text || item.img_alt || null, 
-      sort_order: item.sort_order || 0,
-      status: item.status ?? 1,
-      is_deleted: item.is_deleted ?? 0,
-      section_id: item.section_id || null
-    }));
-
-    // 2. Perform the bulk operation
-    // This will check the PRIMARY KEY (id). 
-    // If ID exists, it UPDATES. If ID is null/doesn't exist, it INSERTS.
-    const result = await ProductScreenshot.bulkCreate(formattedData, {
-      updateOnDuplicate: ["product_id", "image", "img_alt", "sort_order", "status", "is_deleted", "section_id"],
-      transaction,
+    const screenshots = await ProductScreenshot.findAll({
+      where: {
+        product_id: product_id,
+        status: 1,
+        is_deleted: 0
+      },
+      order: [['sort_order', 'ASC']]
     });
-
-    await transaction.commit();
-    return { totalProcessed: result.length };
+    return screenshots;
   } catch (error) {
-    await transaction.rollback();
-    console.error("Error in insertProductScreenshots:", error);
+    console.error("Error in getProductScreenshots service:", error);
     throw error;
   }
 };
 
+export const logProductScreenshotsRequest = async ({
+  productId,
+  vendor_id,
+  screenshotsData
+}) => {
+  const transaction = await VendorLog.sequelize.transaction();
+  try {
+    const changes = [];
+    
+    // 1. Fetch existing screenshots for comparison
+    const existingScreenshots = await ProductScreenshot.findAll({
+      where: { product_id: productId, status: 1, is_deleted: 0 },
+      raw: true
+    });
+
+    const processedIds = new Set();
+    let loopIndex = 0;
+    for (const data of screenshotsData) {
+      let { id, alt_text, image } = data;
+      const groupLinkedAttr = Date.now().toString() + (loopIndex++);
+      
+      // Ensure id is treated as null if it's "0" or invalid
+      if (id === "0" || id === 0 || id === "") id = null;
+
+      if (id && !processedIds.has(String(id))) {
+        processedIds.add(String(id));
+        // UPDATE case: Compare with existing row
+        const existing = existingScreenshots.find(s => s.id == id);
+        if (existing) {
+          // Compare img_alt
+          if (String(alt_text) !== String(existing.img_alt || "")) {
+            changes.push({
+              table_name: "tbl_product_screenshots",
+              column_name: "img_alt",
+              updated_column_value: alt_text,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+          // Compare image
+          if (image && String(image) !== String(existing.image || "")) {
+            changes.push({
+              table_name: "tbl_product_screenshots",
+              column_name: "image",
+              updated_column_value: image,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+        }
+      } else if (image || alt_text) {
+        // INSERT case: Create insert-style logs (item_updated_id: 0)
+        changes.push({
+          table_name: "tbl_product_screenshots",
+          column_name: "img_alt",
+          updated_column_value: alt_text || "",
+          p_key: "id",
+          item_updated_id: 0,
+          linked_attribute: groupLinkedAttr
+        });
+        if (image) {
+          changes.push({
+            table_name: "tbl_product_screenshots",
+            column_name: "image",
+            updated_column_value: image,
+            p_key: "id",
+            item_updated_id: 0,
+            linked_attribute: groupLinkedAttr
+          });
+        }
+      }
+    }
+
+    if (changes.length === 0) {
+      await transaction.commit();
+      return { action: "none", message: "No changes detected" };
+    }
+
+    // 2. Save to VendorLog
+    await updateVendorLogs({
+      item_id: productId,
+      profile_id: vendor_id,
+      module: "product",
+      action_performed: "updated",
+      changes,
+      externalTransaction: transaction
+    });
+
+    await transaction.commit();
+    return { action: "logged", count: changes.length };
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    console.error("Error in logProductScreenshotsRequest:", error);
+    throw error;
+  }
+};
+
+
+
+export const logProductGalleryRequest = async ({
+  productId,
+  vendor_id,
+  galleryData
+}) => {
+  const transaction = await VendorLog.sequelize.transaction();
+  try {
+    const changes = [];
+    
+    // Fetch existing gallery items for comparison
+    const existingGallery = await DescriptionGallery.findAll({
+      where: { product_id: productId, is_deleted: 0 },
+      raw: true
+    });
+
+    const processedIds = new Set();
+    let loopIndex = 0;
+    for (const data of galleryData) {
+      let { id, title, description, image } = data;
+      const groupLinkedAttr = Date.now().toString() + (loopIndex++);
+      
+      // Ensure id is treated as null if it's "0" or invalid
+      if (id === "0" || id === 0 || id === "") id = null;
+
+      if (id && !processedIds.has(String(id))) {
+        processedIds.add(String(id));
+        // UPDATE case: Compare with existing row
+        const existing = existingGallery.find(g => String(g.id) === String(id));
+        if (existing) {
+          // Compare gallery_title
+          if (String(title || "") !== String(existing.title || "")) {
+            changes.push({
+              table_name: "tbl_description_gallery",
+              column_name: "title",
+              updated_column_value: title,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+          // Compare gallery_description
+          if (String(description || "") !== String(existing.description || "")) {
+            changes.push({
+              table_name: "tbl_description_gallery",
+              column_name: "description",
+              updated_column_value: description,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+          // Compare gallery_image
+          if (image && String(image) !== String(existing.image || "")) {
+            changes.push({
+              table_name: "tbl_description_gallery",
+              column_name: "image",
+              updated_column_value: image,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+        }
+      } else if (title || description || image) {
+        // INSERT case: Create insert-style logs (item_updated_id: 0)
+        changes.push({
+          table_name: "tbl_description_gallery",
+          column_name: "gallery_title",
+          updated_column_value: title || "",
+          p_key: "id",
+          item_updated_id: 0,
+          linked_attribute: groupLinkedAttr
+        });
+        changes.push({
+          table_name: "tbl_description_gallery",
+          column_name: "gallery_description",
+          updated_column_value: description || "",
+          p_key: "id",
+          item_updated_id: 0,
+          linked_attribute: groupLinkedAttr
+        });
+        if (image) {
+          changes.push({
+            table_name: "tbl_description_gallery",
+            column_name: "gallery_image",
+            updated_column_value: image,
+            p_key: "id",
+            item_updated_id: 0,
+            linked_attribute: groupLinkedAttr
+          });
+        }
+      }
+    }
+
+    if (changes.length === 0) {
+      await transaction.commit();
+      return { action: "none", message: "No changes detected" };
+    }
+
+    // Save to VendorLog
+    await updateVendorLogs({
+      item_id: productId,
+      profile_id: vendor_id,
+      module: "product",
+      action_performed: "updated",
+      changes,
+      externalTransaction: transaction
+    });
+
+    await transaction.commit();
+    return { action: "logged", count: changes.length };
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    console.error("Error in logProductGalleryRequest:", error);
+    throw error;
+  }
+};
 export const addGalleryModel = async (filesData, product_id) => {
   const transaction = await DescriptionGallery.sequelize.transaction();
   try {
@@ -1276,7 +1552,7 @@ export const addGalleryModel = async (filesData, product_id) => {
         description: item.description,
         product_id: product_id,
         status: item.status ?? 1, // Default to 1 if not provided
-        is_deleted: item.is_deleted ?? 0
+        is_deleted: item.is_deleted ?? 0,
       };
 
       if (item.id) {
@@ -1300,6 +1576,20 @@ export const addGalleryModel = async (filesData, product_id) => {
   } catch (error) {
     await transaction.rollback();
     console.error("Error in addGalleryModel:", error);
+    throw error;
+  }
+};
+
+export const getGalleryImages = async (product_id) => {
+  try {
+    const gallery = await DescriptionGallery.findAll({
+      where: { product_id: product_id, is_deleted: 0 },
+      raw: true,
+      order: [["id", "ASC"]],
+    });
+    return gallery;
+  } catch (error) {
+    console.error("Error in getGalleryImages service:", error);
     throw error;
   }
 };
@@ -1347,6 +1637,146 @@ export const upsertEnrichmentImages = async (enrichmentData) => {
   } catch (error) {
     await transaction.rollback();
     console.error("Error in upsertEnrichmentImages:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch enrichment images and compute budget math for parity with legacy PHP.
+ */
+export const getProductEnrichmentImages = async (productId) => {
+  try {
+    const images = await ProductEnrichmentImage.findAll({
+      where: { product_id: productId },
+      raw: true
+    });
+
+    const desktop_enrichment_images = images.filter(i => i.type == 1);
+    const mobile_enrichment_images = images.filter(i => i.type == 2);
+
+    const image_height_mapping = {};
+    images.forEach(img => {
+      image_height_mapping[img.id] = img.image_height;
+    });
+
+    // Budget math
+    let desktop_remaining_height = 2400;
+    desktop_enrichment_images.forEach(img => {
+      desktop_remaining_height -= (img.image_height || 0);
+    });
+
+    let mobile_remaining_height = 4000;
+    mobile_enrichment_images.forEach(img => {
+      mobile_remaining_height -= (img.image_height || 0);
+    });
+
+    return {
+      desktop_enrichment_images,
+      mobile_enrichment_images,
+      image_height_mapping,
+      desktop_remaining_height,
+      mobile_remaining_height,
+      desktop_max_width: 1260,
+      mobile_max_width: 600
+    };
+  } catch (error) {
+    console.error("Error in getProductEnrichmentImages:", error);
+    throw error;
+  }
+};
+
+/**
+ * Handle enrichment approval workflow via vendor_logs.
+ */
+export const logProductEnrichmentRequest = async ({
+  productId,
+  vendor_id,
+  enrichmentData
+}) => {
+  const transaction = await VendorLog.sequelize.transaction();
+  try {
+    const changes = [];
+    
+    // 1. Fetch existing enrichment for comparison
+    const existingImages = await ProductEnrichmentImage.findAll({
+      where: { product_id: productId},
+      raw: true
+    });
+
+    let loopIndex = 0;
+    for (const data of enrichmentData) {
+      let { id, type, image_width, image_height, image } = data;
+      const groupLinkedAttr = Date.now().toString() + (loopIndex++);
+      
+      // Ensure id is treated as null if it's "0" or invalid
+      if (id === "0" || id === 0 || id === "") id = null;
+
+      if (id) {
+        // UPDATE case: Compare with existing row
+        const existing = existingImages.find(img => String(img.id) === String(id));
+        if (existing) {
+          // Compare image
+          if (image && String(image) !== String(existing.image || "")) {
+            changes.push({
+              table_name: "tbl_product_enrichment_images",
+              column_name: "image",
+              updated_column_value: image,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+            // Legacy also logs type even if unchanged
+            changes.push({
+              table_name: "tbl_product_enrichment_images",
+              column_name: "type",
+              updated_column_value: type,
+              p_key: "id",
+              item_updated_id: id,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+        }
+      } else if (image) {
+        // INSERT case: Create insert-style logs (item_updated_id: 0)
+        changes.push({
+          table_name: "tbl_product_enrichment_images",
+          column_name: "enrichment_image",
+          updated_column_value: image,
+          p_key: "id",
+          item_updated_id: 0,
+          linked_attribute: groupLinkedAttr
+        });
+        changes.push({
+          table_name: "tbl_product_enrichment_images",
+          column_name: "type",
+          updated_column_value: type,
+          p_key: "id",
+          item_updated_id: 0,
+          linked_attribute: groupLinkedAttr
+        });
+      }
+    }
+
+    if (changes.length === 0) {
+      await transaction.commit();
+      return { action: "none", message: "No changes detected" };
+    }
+
+    // 2. Save to VendorLog
+    await updateVendorLogs({
+      item_id: productId,
+      profile_id: vendor_id,
+      module: "product",
+      action_performed: "updated",
+      changes,
+      externalTransaction: transaction
+    });
+
+    await transaction.commit();
+    return { action: "logged", count: changes.length };
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    console.error("Error in logProductEnrichmentRequest:", error);
     throw error;
   }
 };
@@ -1407,6 +1837,124 @@ export const addVideoModel = async (videos) => {
   } catch (error) {
     await transaction.rollback();
     console.error("Error in addVideoModel:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch existing product videos (ordered by ID)
+ */
+export const getProductVideos = async (productId) => {
+  try {
+    return await ProductVideo.findAll({
+      where: { product_id: productId, is_deleted: 0 },
+      attributes: ["id", "video_url", "video_title"],
+      order: [["id", "ASC"]],
+      raw: true
+    });
+  } catch (error) {
+    console.error("Error in getProductVideos service:", error);
+    throw error;
+  }
+};
+
+/**
+ * Handle video approval workflow via vendor_logs (Legacy PHP parity)
+ */
+export const logProductVideoRequest = async ({
+  productId,
+  vendor_id,
+  videoData
+}) => {
+  const transaction = await VendorLog.sequelize.transaction();
+  try {
+    const changes = [];
+    
+    // 1. Fetch existing videos for comparison (ordered to match index)
+    const existingRows = await ProductVideo.findAll({
+      where: { product_id: productId, is_deleted: 0 },
+      order: [["id", "ASC"]],
+      raw: true
+    });
+
+    let loopIndex = 0;
+    for (const data of videoData) {
+      let { id, video_url, video_title } = data;
+      // Use a robust unique attribute per video slot
+      const groupLinkedAttr = `${Date.now()}_${Math.floor(Math.random() * 1000)}_${loopIndex}`;
+      
+      // Keep it numeric (0) for new items to avoid DB schema errors
+      const logItemId = (id && id !== "0") ? id : 0;
+
+      if (id && id !== "0") {
+        // UPDATE Case
+        const existing = existingRows.find(v => String(v.id) === String(id));
+        
+        if (existing) {
+          const isTitleChanged = String(video_title || "") !== String(existing.video_title || "");
+          const isUrlChanged = String(video_url || "") !== String(existing.video_url || "");
+
+          if (isTitleChanged || isUrlChanged) {
+            changes.push({
+              table_name: "tbl_product_videos",
+              column_name: "video_title",
+              updated_column_value: video_title || "",
+              p_key: "id",
+              item_updated_id: logItemId,
+              linked_attribute: groupLinkedAttr
+            });
+            changes.push({
+              table_name: "tbl_product_videos",
+              column_name: "video_url",
+              updated_column_value: video_url || "",
+              p_key: "id",
+              item_updated_id: logItemId,
+              linked_attribute: groupLinkedAttr
+            });
+          }
+        }
+      } else if (video_url) {
+        // INSERT Case
+        changes.push({
+          table_name: "tbl_product_videos",
+          column_name: "video_title",
+          updated_column_value: video_title || "",
+          p_key: "id",
+          item_updated_id: logItemId,
+          linked_attribute: groupLinkedAttr
+        });
+        changes.push({
+          table_name: "tbl_product_videos",
+          column_name: "video_url",
+          updated_column_value: video_url || "",
+          p_key: "id",
+          item_updated_id: logItemId,
+          linked_attribute: groupLinkedAttr
+        });
+      }
+      loopIndex++;
+    }
+
+    if (changes.length === 0) {
+      await transaction.commit();
+      return { action: "none" };
+    }
+
+    // 2. Save to VendorLog
+    await updateVendorLogs({
+      item_id: productId,
+      profile_id: vendor_id,
+      module: "product",
+      action_performed: "updated",
+      changes,
+      externalTransaction: transaction
+    });
+
+    await transaction.commit();
+    return { action: "logged", changes };
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    console.error("Error in logProductVideoRequest:", error);
     throw error;
   }
 };
