@@ -15,6 +15,7 @@ import accountHealthRoutes from "./modules/accountHealth/accountHealth.routes.js
 import authRoutes from "./modules/auth/auth.routes.js";
 import leadsRoutes from "./modules/lead/manageLeads.routes.js";
 import salesRoutes from "./modules/sales/sales.route.js";
+import apiIntegrationRoutes from "./modules/apiintegration/apiintegration.route.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
 
@@ -54,6 +55,7 @@ app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRou
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/leads`, leadsRoutes);
 app.use(`${API_PREFIX}/sales`, authenticate, salesRoutes);
+app.use(`${API_PREFIX}/apiintegration`, authenticate, apiIntegrationRoutes);
 
 // do not apply authenticate in authRoutes here , it should be done
 // in specific routes inside route folder
