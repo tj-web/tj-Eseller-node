@@ -15,7 +15,7 @@ import {
     unlockLeadInsights,
     unlockContact
 } from "./manageLeads.service.js";
-import SystemResponse from "../../utilis/SystemResponse.js";
+import SystemResponse from "../../utilis/systemResponse.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 
 export const getLeadsController = async (req, res) => {
