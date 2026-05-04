@@ -10,7 +10,7 @@ export const totalLeadsCountInfo = async (req, res) => {
       vendor_id,
       // show_current_plan_data,
     } = req.query;
-
+   
     const result = await oemTotalLeadsCountInfo({
       // filter_start_date,
       // filter_end_date,

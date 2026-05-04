@@ -53,14 +53,14 @@ app.use(`${API_PREFIX}/product`, authenticate, manageProduct);
 app.use(`${API_PREFIX}/help-support`, authenticate, helpSupportRoutes);
 app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
-app.use(`${API_PREFIX}/leads`, leadsRoutes);
+app.use(`${API_PREFIX}/leads`, authenticate, leadsRoutes);
 app.use(`${API_PREFIX}/sales`, authenticate, salesRoutes);
 app.use(`${API_PREFIX}/apiintegration`, authenticate, apiIntegrationRoutes);
 
 // do not apply authenticate in authRoutes here , it should be done
 // in specific routes inside route folder
 
-app.use(`${API_PREFIX}/eseller-agreement`, agreementRoutes);
+app.use(`${API_PREFIX}/eseller-agreement`, authenticate, agreementRoutes);
 app.use(`${API_PREFIX}/account-health`, accountHealthRoutes);
 
 app.use(errorHandler);
