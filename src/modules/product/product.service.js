@@ -482,7 +482,7 @@ export const saveProductDescription = async (descriptionData, externalTransactio
     const { product_id, brief, overview, description, internal_description } = descriptionData;
 
     const existingDesc = await ProductDescription.findOne({
-      where: { product_id, is_deleted: 0 },
+      where: { product_id },
       transaction, 
     });
 
@@ -496,7 +496,7 @@ export const saveProductDescription = async (descriptionData, externalTransactio
           updated_at: new Date().toISOString(), // or new Date() if DATE type
         },
         {
-          where: { product_id, is_deleted: 0 },
+          where: { product_id },
           transaction, 
         }
       );
