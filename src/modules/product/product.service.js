@@ -25,6 +25,8 @@ import ProductScreenshot from "../../models/productScreenshot.model.js";
 import DescriptionGallery from "../../models/descriptionGallery.model.js"; 
 import ProductEnrichmentImage from "../../models/productEnrichmentImage.model.js";
 import ProductVideo from "../../models/productVideo.model.js";
+import VendorAuth from "../../models/vendorAuth.model.js";
+import { sendProductBrandUpdationEvents } from "../common/service/moengage/moengageApiService.js";
 
 
 VendorBrandRelation.belongsTo(Brand, { foreignKey: 'tbl_brand_id', targetKey: 'brand_id' });
@@ -1409,4 +1411,212 @@ export const addVideoModel = async (videos) => {
     console.error("Error in addVideoModel:", error);
     throw error;
   }
+};
+
+// main function
+export const productUpdationRelatedEvent = async ({
+  updateArr = [],
+  tableName = "",
+  vendorId,
+  profileId,
+}) => {
+  let data = {};
+
+  // =========================
+  // TABLE BASED LOGIC
+  // =========================
+  if (tableName) {
+    if (tableName === "tbl_product_screenshots") {
+      const imgAlt = [];
+      const screenshotImage = [];
+
+      updateArr.forEach((value) => {
+        imgAlt.push(value?.tbl_product_screenshots?.screenshot_img_alt || "");
+        screenshotImage.push(
+          AWS_FETCH_SCREENSHOT_IMAGES +
+            (value?.tbl_product_screenshots?.screenshot || "")
+        );
+      });
+
+      data["Image Alt"] = imgAlt.filter(Boolean).join(",");
+      data["Screenshot Image"] = screenshotImage.filter(Boolean).join(",");
+    }
+
+    if (tableName === "tbl_product_enrichment_images") {
+      const enrichmentImage = [];
+
+      updateArr.forEach((value) => {
+        enrichmentImage.push(
+          AWS_FETCH_PRODUCT_GALLERY_IMAGES +
+            (value?.tbl_product_enrichment_images?.enrichment_image || "")
+        );
+      });
+
+      data["Enrichment Image"] = enrichmentImage.filter(Boolean).join(",");
+    }
+
+    if (tableName === "tbl_description_gallery") {
+      const galleryTitle = [];
+      const description = [];
+      const galleryImage = [];
+
+      updateArr.forEach((value) => {
+        galleryTitle.push(value?.tbl_description_gallery?.gallery_title || "");
+        description.push(
+          value?.tbl_description_gallery?.gallery_description || ""
+        );
+        galleryImage.push(
+          AWS_FETCH_PRODUCT_GALLERY_IMAGES +
+            (value?.tbl_description_gallery?.gallery_image || "")
+        );
+      });
+
+      data["Gallery Title"] = galleryTitle.filter(Boolean).join(",");
+      data["Gallery Description"] = description.filter(Boolean).join(",");
+      data["Gallery Image"] = galleryImage.filter(Boolean).join(",");
+    }
+
+    if (tableName === "tbl_product_videos") {
+      const videoTitle = [];
+      const videoUrl = [];
+
+      updateArr.forEach((value) => {
+        videoTitle.push(value?.tbl_product_videos?.video_title || "");
+        videoUrl.push(value?.tbl_product_videos?.video_url || "");
+      });
+
+      data["Video Title"] = videoTitle.filter(Boolean).join(",");
+      data["Video Url"] = videoUrl.filter(Boolean).join(",");
+    }
+  }
+
+  // =========================
+  // GENERAL PRODUCT UPDATE
+  // =========================
+  else {
+    const merged = mergeArray(updateArr);
+
+    if ("brand_id" in merged) {
+      const brand = await BrandModel.getBrandById(merged.brand_id);
+      data["Brand Name"] = brand?.brand_name || "";
+    }
+
+    if ("trial_available" in merged) {
+      data["Trial Available"] = merged.trial_available == 1 ? "Yes" : "No";
+    }
+
+    if ("free_downld_available" in merged) {
+      data["Free Download Available"] =
+        merged.free_downld_available == 1 ? "Yes" : "No";
+    }
+
+    if ("category_id" in merged) {
+      const cat = await ProductModel.getCategoryDetails(merged.category_id);
+      data["Category"] = cat?.category_name || "";
+    }
+
+    if ("image" in merged) {
+      data["Product Image"] = merged.image
+        ? AWS_FETCH_PRODUCT_IMAGES + merged.image
+        : "";
+    }
+
+    if ("pricing_document" in merged) {
+      data["Pricing Document"] = merged.pricing_document
+        ? AWS_FETCH_PRICING_IMAGES + merged.pricing_document
+        : "";
+    }
+
+    // helper for mapping
+    const mapValues = (value, mapping) => {
+      const reverse = Object.fromEntries(
+        Object.entries(mapping).map(([k, v]) => [v, k])
+      );
+      return value
+        .split(",")
+        .map((v) => reverse[v])
+        .filter(Boolean)
+        .join(",");
+    };
+
+    if (merged.deployment) {
+      data["Deployment"] = mapValues(merged.deployment, {
+        1: "Cloud",
+        2: "Premise",
+      });
+    }
+
+    if (merged.device) {
+      data["Device"] = mapValues(merged.device, {
+        1: "Desktop",
+        2: "Mobile",
+      });
+    }
+
+    if (merged.operating_system) {
+      data["Operating System"] = mapValues(merged.operating_system, {
+        1: "Ubuntu",
+        2: "Windows",
+        3: "iOS",
+        4: "Android",
+        5: "MacOS",
+        6: "Windows(Phone)",
+      });
+    }
+
+    if (merged.organization_type) {
+      data["Organization Type"] = mapValues(merged.organization_type, {
+        1: "Small Business",
+        2: "Startups",
+        3: "Medium Business",
+        4: "Enterprises",
+        5: "SMBs",
+        6: "SMEs",
+        7: "MSMBs",
+        8: "MSMEs",
+      });
+    }
+
+    if (merged.languages) {
+      const langs = await ProductModel.getProductLanguages(merged.languages);
+      data["Languages"] = langs.map((l) => l.language).join(",");
+    }
+
+    if (merged.section_id) {
+      const feature = await ProductModel.getFeatureName(merged.section_id);
+      data["Feature Name"] = feature?.feature_name || "";
+    }
+
+    if (merged.product_name) data["Product Name"] = merged.product_name;
+    if (merged.website_url) data["Website Url"] = merged.website_url;
+    if (merged.overview)
+      data["Overview"] = merged.overview.replace(/<[^>]*>?/gm, "");
+    if (merged.feature_display_name)
+      data["Feature Display Name"] = merged.feature_display_name;
+    if (merged.description) data["Description"] = merged.description;
+  }
+
+  // =========================
+  // ADMIN DETAILS
+  // =========================
+  const adminDetails = await VendorAuth.findOne({
+    attributes: ["id"],
+    where: { vendor_id, is_admin: 1, id: { [Op.ne]: profile_id } },
+    raw: true,
+  });
+
+  const adminId = adminDetails?.id || "";
+
+  // =========================
+  // SEND EVENT
+  // =========================
+  const payload = {
+    data,
+    event_name: "Product Information Submitted",
+    profile_ids: [adminId, profileId].filter(Boolean),
+  };
+
+  await sendProductBrandUpdationEvents(payload);
+
+  return payload;
 };
