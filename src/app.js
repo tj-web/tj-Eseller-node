@@ -61,7 +61,7 @@ app.use(`${API_PREFIX}/apiintegration`, authenticate, apiIntegrationRoutes);
 // in specific routes inside route folder
 
 app.use(`${API_PREFIX}/eseller-agreement`, authenticate, agreementRoutes);
-app.use(`${API_PREFIX}/account-health`, accountHealthRoutes);
+app.use(`${API_PREFIX}/account-health`, authenticate, accountHealthRoutes);
 
 app.use(errorHandler);
 

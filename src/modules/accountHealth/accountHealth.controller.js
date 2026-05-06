@@ -1,47 +1,123 @@
 import {
-  getVendorProductIds,
-  getReviewsData,
-  getAnalyticsData,
-} from "./checking.js";
+  getHealthScoreService,
+  getReviewsDataService,
+  getProfileCompletionService,
+  getTrustedSellerService,
+  getAccountStatusService,
+  saveReviewReplyService,
+  sendReviewEmailService,
+} from "./accountHealth.service.js";
+import StatusCodes from "../../utilis/statusCodes.js";
+import SystemResponse from "../../utilis/systemResponse.js";
 
-export const getAccountHealth = async (req, res) => {
+export const getHealthScore = async (req, res) => {
   try {
-    const vendorId = req.user.vendor_id; //  fixed !!
+    const vendorId = req.user.vendor_id;
+    const result = await getHealthScoreService(vendorId);
 
-    if (!vendorId) {
-      return res
-        .status(400)
-        .json({ error: "vendorId query parameter is required" });
-    }
-
-    const filter = {
-      vendor_id: vendorId,
-      filter_start_date: req.body?.start_date || "",
-      filter_end_date: req.body?.end_date || "",
-      show_current_plan_data: req.body?.show_current_plan_data || 0,
-    };
-
-    const result = await getAnalyticsData(filter);
-    const productIds = await getVendorProductIds(vendorId);
-    const data = await getReviewsData(productIds.productIds);
-
-    return res.json({
-      status: true,
-      message: "Product info fetched successfully",
-      data: productIds,
-      reviewsData: data,
-      result: result,
-    });
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Account health score fetched successfully", result));
   } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-    console.error("Error in getAccountHealth:", error);
+    console.error("Error in getHealthScore controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
   }
 };
 
-export const getProfile = async () => {
+export const getReviews = async (req, res) => {
   try {
+    const vendorId = req.user.vendor_id;
+    const result = await getReviewsDataService(vendorId, req.query);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Reviews fetched successfully", result));
   } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-    console.error("Error in getProfile:", error);
+    console.error("Error in getReviews controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
+  }
+};
+
+export const getProfileCompletion = async (req, res) => {
+  try {
+    const vendorId = req.user.vendor_id;
+    const result = await getProfileCompletionService(vendorId);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Profile completion data fetched successfully", result));
+  } catch (error) {
+    console.error("Error in getProfileCompletion controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
+  }
+};
+
+export const getTrustedSeller = async (req, res) => {
+  try {
+    const vendorId = req.user.vendor_id;
+    const result = await getTrustedSellerService(vendorId);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Trusted seller data fetched successfully", result));
+  } catch (error) {
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
+  }
+};
+
+export const getAccountStatus = async (req, res) => {
+  try {
+    const vendorId = req.user.vendor_id;
+    const result = await getAccountStatusService(vendorId);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Account status fetched successfully", result));
+  } catch (error) {
+    console.error("Error in getAccountStatus controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
+  }
+};
+
+export const saveReviewReply = async (req, res) => {
+  try {
+    const vendorId = req.user.vendor_id;
+    const profileId = req.user.profile_id;
+    const result = await saveReviewReplyService(vendorId, profileId, req.body);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success(result.message, result));
+  } catch (error) {
+    console.error("Error in saveReviewReply controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
+  }
+};
+
+export const sendReviewEmail = async (req, res) => {
+  try {
+    const vendorId = req.user.vendor_id;
+    const result = await sendReviewEmailService(vendorId, req.body);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success(result.message, result));
+  } catch (error) {
+    console.error("Error in sendReviewEmail controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError(error.message));
   }
 };
