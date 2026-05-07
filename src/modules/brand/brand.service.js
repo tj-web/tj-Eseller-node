@@ -110,7 +110,7 @@ export const addBrandService = async (data, vendorId, profileId) => {
         brand_name,
         image: image || "",
         date_added: new Date(),
-        status: 0,
+        status: 1,
         added_by: "vendor",
         added_by_id: vendorId,
         show_status: 0,
@@ -209,7 +209,7 @@ export const addBrandService = async (data, vendorId, profileId) => {
             linked_attribute: "",
             item_updated_id: 0,
             reject_reason: "",
-            status: 0,
+            status: 1,
             created_at: new Date(),
             updated_at: new Date(),
           },
@@ -382,9 +382,9 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
     include: [
       {
         model: VendorBrandRelation,
-        required: true, // Strict requirement ensuring permissions organically
+        required: false, // Strict requirement ensuring permissions organically
         where: { vendor_id: vendor_id },
-        attributes: [],
+        attributes: ["status"],
       },
       {
         model: BrandInfo,
@@ -429,8 +429,9 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
     company_size: info.company_size,
     location: info.location,
     industry: info.industry,
-    total_product: productCount,
     total_leads: leadCount,
+    total_product: productCount,
+    vendor_status: plainBrand.VendorBrandRelations?.[0]?.status ?? null,
   };
 };
 
