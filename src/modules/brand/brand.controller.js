@@ -95,19 +95,44 @@ export const addBrand = async (req, res) => {
     };
 
     const vendor_id = req.user.vendor_id;
+    const profileId = req.body.profile_id || 0;
+    const result = await addBrandService(brandData, vendor_id, profileId);
 
     if (req.file) {
-      const fileName = req.file.originalname;
-      const fileobj = {
+      // Sanitize and build S3 filename that includes brand_id
+      const originalName = req.file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${result.brand_id}_${originalName}`;
+
+      // Prepare upload object: ensure we pass the file buffer and proper originalname + key
+       const fileobj = {
         ...req.file,
+        originalname: fileName,
         key: `web/assets/images/techjockey/brands/${fileName}`,
       };
-      await uploadfile2(fileobj); // S3 executes safely unchanged in the background
-      brandData.image = fileName; // Securely locks ONLY the clean native extension string into the ORM business logic map
+      await uploadfile2(fileobj);
     }
+      // Upload to S3
+      // Persist image name in tbl_brand and record vendor log so both DB and logs use same filename
+        // Update brand image in DB
+      await updateBrandService(result.brand_id, { image: fileName }, null);
 
-    // Call single authoritative Service replacing manually structured transaction steps
-    const result = await addBrandService(brandData, vendor_id, req.body.profile_id || 0);
+      // Insert vendor log entry for the image
+      await VendorLog.create({
+        item_id: result.brand_id,
+        module: "brand",
+        action_performed: "insert",
+        action_by: profileId,
+        table_name: "tbl_brand",
+        column_name: "image",
+        p_key: "brand_id",
+        updated_column_value: fileName,
+        linked_attribute: "",
+        item_updated_id: 0,
+        reject_reason: "",
+        status: 1,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
   } catch (error) {
@@ -150,12 +175,16 @@ export const updateBrand = async (req, res) => {
 
     let imageName = null;
     if (req.file) {
-      imageName = req.file.originalname;
+     // Sanitize and build S3 filename that includes brand_id
+      const originalName = req.file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${brand_id}_${originalName}`;
       const fileobj = {
         ...req.file,
-        key: `web/assets/images/techjockey/brands/${imageName}`,
+          originalname: fileName,
+        key: `web/assets/images/techjockey/brands/${fileName}`,
       };
       await uploadfile2(fileobj);
+       imageName = fileName; 
     }
 
     const brandSave = {
@@ -171,9 +200,7 @@ export const updateBrand = async (req, res) => {
 
     const brandDiff = findDifferences(brandDetails, brandSave);
 
-    await updateBrandService(brand_id, brandSave, transaction);
-
-    // Native ORM Diff Recording mimicking old updateVendorLog parameters locally
+    
     if (brandDiff && Object.keys(brandDiff).length > 0) {
       const profileId = req.body.profile_id || 0;
       const flatLogArr = Object.entries(brandDiff).map(([col, values]) => {
@@ -224,6 +251,7 @@ export const view_brand = async (req, res) => {
     if (action === "edit") {
       brandDetails = await getBrandByIdService(vendor_id, brand_id);
     } else {
+      // brandDetails = await getBrandByIdService(vendor_id, brand_id);
       brandDetails = await viewBrandService(brand_id, vendor_id);
 
       const location = await getBrandLocationService(brand_id);
