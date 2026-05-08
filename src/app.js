@@ -60,7 +60,7 @@ app.use(`${API_PREFIX}/apiintegration`, authenticate, apiIntegrationRoutes);
 // do not apply authenticate in authRoutes here , it should be done
 // in specific routes inside route folder
 
-app.use(`${API_PREFIX}/eseller-agreement`, authenticate, agreementRoutes);
+app.use(`${API_PREFIX}/eseller-agreement`, authenticate , agreementRoutes);
 app.use(`${API_PREFIX}/account-health`, authenticate, accountHealthRoutes);
 
 app.use(errorHandler);

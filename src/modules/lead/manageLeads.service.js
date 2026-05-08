@@ -155,7 +155,7 @@ export const getLeads=async (vendor_id, post) => {
         }
     }
 
-    // PHP Search Logic Refined
+   
     if (filters.srch_by && filters.srch_value) {
         if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
             whereClause.is_contact_viewed = { [Op.gt]: 0 };
@@ -1610,4 +1610,100 @@ export const getLeadActions=async (lead) => {
     }
 
     return Object.values(actionsMap);
+};
+
+
+// **************************************************** still not tested
+
+/**
+ * Get competitor insights - products the buyer has visited/clicked on
+ */
+export const getCompetitorInsight = async (vendor_id, lead_id, { limit = 5 } = {}) => {
+    await verifyLeadOwnership(vendor_id, lead_id);
+
+    const lead = await TblLeads.findOne({
+        where: { id: lead_id, vendor_id }
+    });
+
+    if (!lead) {
+        throw new Error("Lead not found");
+    }
+
+    const customerId = lead.user_id ? String(lead.user_id) : null;
+    const tracksCollection = mongoose.connection.db.collection('tracks');
+
+    const guuids = customerId
+        ? await tracksCollection.distinct('feeds.guuid', {
+              'feeds.customer_id': customerId
+          })
+        : [];
+
+    const matchConditions = [
+        { 'feeds.lead_id': Number(lead_id) },
+        { 'feeds.lead_id': String(lead_id) }
+    ];
+
+    if (customerId) {
+        matchConditions.push({ 'feeds.customer_id': customerId });
+    }
+    if (guuids.length) {
+        matchConditions.push({ 'feeds.guuid': { $in: guuids } });
+    }
+
+    const actionTypes = ['page_view', 'product_visit', 'product_view', 'view_product'];
+
+    const pipeline = [
+        { $match: { $or: matchConditions } },
+        { $unwind: '$feeds' },
+        { $match: { 'feeds.feed_action': { $in: actionTypes } } },
+        {
+            $project: {
+                product_id: '$feeds.product_info.product_id',
+                product_name: {
+                    $ifNull: [
+                        '$feeds.page_info.product_name',
+                        '$feeds.product_info.product_name'
+                    ]
+                },
+                category_name: {
+                    $ifNull: [
+                        '$feeds.page_info.category_name',
+                        '$feeds.product_info.category_name'
+                    ]
+                },
+                page_url: '$feeds.page_url',
+                created_at: '$created_at'
+            }
+        },
+        {
+            $match: {
+                product_name: { $exists: true, $nin: [null, ''] }
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    product_id: '$product_id',
+                    product_name: '$product_name',
+                    category_name: '$category_name',
+                    page_url: '$page_url'
+                },
+                visits: { $sum: 1 },
+                last_visited: { $max: '$created_at' }
+            }
+        },
+        { $sort: { visits: -1, last_visited: -1 } },
+        { $limit: limit }
+    ];
+
+    const rows = await tracksCollection.aggregate(pipeline).toArray();
+
+    return rows.map((row) => ({
+        product_id: row._id.product_id || null,
+        product_name: row._id.product_name,
+        category_name: row._id.category_name || null,
+        page_url: row._id.page_url || null,
+        visits: row.visits,
+        last_visited: row.last_visited
+    }));
 };

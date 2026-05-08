@@ -1,8 +1,8 @@
 import express from "express";
-import { 
-    getLeadsController, 
-    getDemosController, 
-    getLeadHistoryController, 
+import {
+    getLeadsController,
+    getDemosController,
+    getLeadHistoryController,
     addRemarkReminderController,
     leadStatusHandlerController,
     getLeadDetailsController,
@@ -14,7 +14,8 @@ import {
     getVendorContactsController,
     getLeadInsightsController,
     unlockLeadInsightsController,
-    unlockContactController
+    unlockContactController,
+    getCompetitorInsightController
 } from "./manageLeads.controller.js";
 
 const router = express.Router();
@@ -34,5 +35,5 @@ router.get("/get-vendor-contacts", getVendorContactsController);
 router.get("/get-lead-insights", getLeadInsightsController);
 router.post("/unlock-lead-insights", unlockLeadInsightsController);
 router.post("/unlock-contact", unlockContactController);
-
+router.post("/get-competitor-insight", getCompetitorInsightController);
 export default router;

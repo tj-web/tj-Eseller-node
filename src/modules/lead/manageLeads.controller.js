@@ -13,7 +13,8 @@ import {
     getVendorContacts,
     getLeadInsights,
     unlockLeadInsights,
-    unlockContact
+    unlockContact,
+    getCompetitorInsight
 } from "./manageLeads.service.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 import StatusCodes from "../../utilis/statusCodes.js";
@@ -187,5 +188,26 @@ export const unlockLeadInsightsController = async (req, res) => {
         return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead insights unlocked successfully", result));
     } catch (error) {
         return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
+    }
+};
+
+
+export const getCompetitorInsightController = async (req, res) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const lead_id = req.query.lead_id;
+        const limit = parseInt(req.query.limit, 10) || 5;
+
+        const result = await getCompetitorInsight(vendor_id, lead_id, { limit });
+        return res.status(StatusCodes.SUCCESS).json(
+            SystemResponse.success("Competitor insight fetched successfully", result)
+        );
+    } catch (error) {
+        const status = error.message.includes("Unauthorized")
+            ? StatusCodes.FORBIDDEN
+            : StatusCodes.INTERNAL_SERVER_ERROR;
+        return res.status(status).json(
+            SystemResponse.getErrorResponse(error.message, null, status)
+        );
     }
 };
