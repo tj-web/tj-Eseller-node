@@ -35,5 +35,5 @@ router.get("/get-vendor-contacts", getVendorContactsController);
 router.get("/get-lead-insights", getLeadInsightsController);
 router.post("/unlock-lead-insights", unlockLeadInsightsController);
 router.post("/unlock-contact", unlockContactController);
-router.post("/get-competitor-insight", getCompetitorInsightController);
+router.get("/get-competitor-insight", getCompetitorInsightController);
 export default router;

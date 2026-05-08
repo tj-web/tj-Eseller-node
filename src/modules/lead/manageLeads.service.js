@@ -1685,11 +1685,11 @@ export const getCompetitorInsight = async (vendor_id, lead_id, { limit = 5 } = {
                 _id: {
                     product_id: '$product_id',
                     product_name: '$product_name',
-                    category_name: '$category_name',
-                    page_url: '$page_url'
+                    category_name: '$category_name'
                 },
                 visits: { $sum: 1 },
-                last_visited: { $max: '$created_at' }
+                last_visited: { $max: '$created_at' },
+                page_url: { $first: '$page_url' }
             }
         },
         { $sort: { visits: -1, last_visited: -1 } },
@@ -1702,7 +1702,7 @@ export const getCompetitorInsight = async (vendor_id, lead_id, { limit = 5 } = {
         product_id: row._id.product_id || null,
         product_name: row._id.product_name,
         category_name: row._id.category_name || null,
-        page_url: row._id.page_url || null,
+        page_url: row.page_url || null,
         visits: row.visits,
         last_visited: row.last_visited
     }));

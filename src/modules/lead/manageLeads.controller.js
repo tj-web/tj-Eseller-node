@@ -196,6 +196,13 @@ export const getCompetitorInsightController = async (req, res) => {
     try {
         const vendor_id = req.user.vendor_id;
         const lead_id = req.query.lead_id;
+        
+        if (!lead_id) {
+            return res.status(StatusCodes.BAD_REQUEST).json(
+                SystemResponse.badRequestError("lead_id is required")
+            );
+        }
+
         const limit = parseInt(req.query.limit, 10) || 5;
 
         const result = await getCompetitorInsight(vendor_id, lead_id, { limit });
