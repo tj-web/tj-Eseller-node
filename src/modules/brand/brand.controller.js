@@ -104,16 +104,14 @@ export const addBrand = async (req, res) => {
       const fileName = `${result.brand_id}_${originalName}`;
 
       // Prepare upload object: ensure we pass the file buffer and proper originalname + key
-       const fileobj = {
+      const fileobj = {
         ...req.file,
         originalname: fileName,
         key: `web/assets/images/techjockey/brands/${fileName}`,
       };
       await uploadfile2(fileobj);
-    }
-      // Upload to S3
+
       // Persist image name in tbl_brand and record vendor log so both DB and logs use same filename
-        // Update brand image in DB
       await updateBrandService(result.brand_id, { image: fileName }, null);
 
       // Insert vendor log entry for the image
@@ -133,6 +131,7 @@ export const addBrand = async (req, res) => {
         created_at: new Date(),
         updated_at: new Date(),
       });
+    }
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
   } catch (error) {
