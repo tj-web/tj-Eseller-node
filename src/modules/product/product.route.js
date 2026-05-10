@@ -56,20 +56,25 @@ router.get("/productfeatures", productController.getProductFeaturesList);
 router.post("/savefeatures", productController.saveProductFeature);
 
 // Media (Screenshots, Gallery, Videos, Enrichment)
+router.get("/screenshots", productController.getProductScreenshots);
 router.post(
   "/addscreenshots",
-  upload.array("screenshot", 5),
+  upload.array("screenshot", 10),
   productController.addScreenshots
 );
+// Gallery
+router.get("/gallery", productController.getGalleryImages);
 router.post(
   "/addgallery",
-  upload.array("image", 5),
+  upload.any(),
   productController.addGallery
 );
+router.get("/videos", productController.getProductVideos);
 router.post("/addvideos", productController.addVideo);
+router.get("/enrichment", productController.getEnrichment);
 router.post(
   "/enrichment",
-  upload.array("images", 10),
+  upload.any(),
   productController.enrichment
 );
 

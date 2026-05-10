@@ -590,25 +590,36 @@ export const saveProductFeature = async (req, res) => {
         .json(SystemResponse.badRequestError("section_id is required"));
     }
 
-    // One product can have many feature rows. Each row is product_id + section_id (same as feature_id in tbl_feature).
-    const data = await productService.getSelectedCol({
-      table: "ProductFeature",
-      columns: ["id"],
-      where: { product_id: post.product_id, section_id: post.section_id },
-      records: "single",
-    });
-    const id = data?.id || null;
+    const vendor_id = req.user.vendor_id;
 
-    const result = await productService.saveOrUpdateProductFeature(id, post);
-    if (result.action === "update") {
-      return res
-        .status(StatusCodes.SUCCESS)
-        .json(SystemResponse.success("Feature updated", { id: result.id, product_id: post.product_id }));
-    } else {
-      return res
-        .status(StatusCodes.CREATED)
-        .json(SystemResponse.success("Changes recorded! We will review and update soon.", { id: result.id, product_id: post.product_id }));
+    if (!vendor_id) {
+       return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError("vendor_id is required"));
     }
+
+    // Use fid if provided (feature mapping ID), otherwise try to find it by productId + sectionId
+    let id = post.fid || null;
+    
+    if (!id) {
+      const data = await productService.getSelectedCol({
+        table: "ProductFeature",
+        columns: ["id"],
+        where: { product_id: post.product_id, section_id: post.section_id },
+        records: "single",
+      });
+      id = data?.id || null;
+    }
+
+    const result = await productService.saveOrUpdateProductFeature(id, post, vendor_id);
+
+    if (result.action === "none") {
+      return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
+    }
+
+    const message = result.action === "update" 
+      ? "Changes recorded! We will review and update soon." 
+      : "New feature request recorded! We will review and update soon.";
+
+    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(message, { id: result.id, product_id: post.product_id }));
   } catch (error) {
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
@@ -676,70 +687,136 @@ export const getProductFeaturesList = async (req, res) => {
   }
 };
 
-//----------------------------Add screenshots----------------------------
+//-----------------------------Product Screenshots-----------------------------------------
+
+export const getProductScreenshots = async (req, res) => {
+  try {
+    const { product_id } = req.query;
+
+    if (!product_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
+    }
+
+    const screenshots = await productService.getProductScreenshots(product_id);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Screenshots fetched successfully", screenshots));
+  } catch (error) {
+    console.error("Error in getProductScreenshots controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal server error"));
+  }
+};
+
+const cleanFileName = (name) => {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, "_").toLowerCase();
+};
 
 export const addScreenshots = async (req, res) => {
   try {
     const { product_id } = req.body;
-    const files = req.files; // depends on multer config
-    let alt_text = req.body.alt_text; // can be string or array
+    const vendor_id = req.user.vendor_id;
 
-    if (!product_id || !files || files.length === 0 || !alt_text) {
+    if (!product_id || !vendor_id) {
       return res
         .status(StatusCodes.BAD_REQUEST)
-        .json(SystemResponse.badRequestError("Product ID, screenshots and alt_text are required"));
+        .json(SystemResponse.badRequestError("product_id and vendor_id are required"));
     }
 
-    const existingRows = await productService.getSelectedCol({
-      table: "ProductScreenshot",
-      columns: ["id"],
-      where: { product_id: product_id },
-      records: "all", 
+    // 1. Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
+
+    // 2. Parse array-indexed payload
+    let { id: ids, 'id[]': idsArr, alt_text: alt_texts, 'alt_text[]': alt_texts_arr, screenshot_hidden: hidden_screenshots, 'screenshot_hidden[]': hidden_screenshots_arr, screenshot_index: screenshot_indices, 'screenshot_index[]': screenshot_indices_arr } = req.body;
+    const files = req.files || [];
+
+    // Normalize inputs to arrays
+    const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+    ids = toArray(ids || idsArr);
+    alt_texts = toArray(alt_texts || alt_texts_arr);
+    hidden_screenshots = toArray(hidden_screenshots || hidden_screenshots_arr);
+    screenshot_indices = toArray(screenshot_indices || screenshot_indices_arr);
+
+    if (alt_texts.length === 0) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("alt_text[] is required"));
+    }
+
+    const screenshotsToProcess = [];
+
+    // 3. Process each index i
+    for (let i = 0; i < alt_texts.length; i++) {
+      // Treat "0" or empty as null (new record)
+      let currentId = ids[i] || null;
+      if (currentId === "0" || currentId === "") currentId = null;
+      const currentAlt = alt_texts[i];
+      let currentImage = hidden_screenshots[i] || null;
+
+      // Map file to index i if it exists
+      // The frontend sends screenshot_index[] telling us which file belongs to which slot
+      const filePos = screenshot_indices.indexOf(String(i));
+      if (filePos !== -1 && files[filePos]) {
+        const file = files[filePos];
+        const sanitizedOriginalName = cleanFileName(file.originalname);
+        const dbImageName = `${product_id}_${sanitizedOriginalName}`;
+        const key = `web/assets/images/techjockey/products/screenshots/${dbImageName}`;
+
+        await uploadfile2({ ...file, originalname: dbImageName, key });
+        currentImage = dbImageName;
+      }
+
+      if (currentImage || currentAlt) {
+        screenshotsToProcess.push({
+          id: currentId,
+          alt_text: currentAlt,
+          image: currentImage
+        });
+      }
+    }
+
+    // 4. Log the changes
+    const result = await productService.logProductScreenshotsRequest({
+      productId: product_id,
+      vendor_id,
+      screenshotsData: screenshotsToProcess
     });
 
-    // Ensure alt_text is always an array
-    let altArray = [];
-    if (Array.isArray(alt_text)) {
-      altArray = alt_text;
-    } else if (alt_text) {
-      altArray = [alt_text];
+    if (result.action === "none") {
+      return res
+        .status(StatusCodes.SUCCESS)
+        .json(SystemResponse.success("No changes detected."));
     }
 
-    const screenshotsData = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const originalName = file.originalname.replace(/\s+/g, "-");
-      const dbImageName = `${product_id}_${originalName}`;
-      const key = `web/assets/images/techjockey/products/screenshots/${Date.now()}-${originalName}`;
-
-      // Upload to S3
-      // NOTE: `uploadfile2` ignores `key` and uses `file.originalname` for S3 Key.
-      // So we change `originalname` temporarily to keep uploaded filename consistent with DB.
-      await uploadfile2({ ...file, originalname: dbImageName, key });
-
-      screenshotsData.push({
-        product_id,
-        image: dbImageName, // filename only
-        alt_text: altArray[i] || null,
-        id: existingRows[i]?.id || null, // attach id if exists
-      });
-    }
-    const result =
-      await productService.insertProductScreenshots(screenshotsData);
-
-    const totalProcessed = result?.totalProcessed ?? 0;
-    const message =
-      totalProcessed > 0
-        ? "Screenshots added/updated successfully"
-        : "No changes applied";
+    // 5. Trigger event-like payload formatting (for response/logs)
+    const eventPayload = {
+      "Image Alt": screenshotsToProcess.map(s => s.alt_text).filter(Boolean).join(", "),
+      "Screenshot Image": screenshotsToProcess.map(s => `web/assets/images/techjockey/products/screenshots/${s.image}`).filter(Boolean).join(", ")
+    };
 
     return res
       .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success(message, screenshotsData));
+      .json(SystemResponse.success("We have recorded your changes! We will review and update soon.", {
+        next_step: `gallery/${product_id}`,
+        details: eventPayload
+      }));
+
   } catch (error) {
+    console.error("Error in addScreenshots controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError("Internal Server Error in adding screenshots"));
+      .json(SystemResponse.internalServerError("Internal Server Error in processing screenshots"));
   }
 };
 
@@ -747,104 +824,282 @@ export const addScreenshots = async (req, res) => {
 
 export const addGallery = async (req, res) => {
   try {
-    const { title, description, product_id } = req.body;
+    const { 
+      product_id, 
+      id: ids, 
+      'id[]': idsArr,
+      title: titles, 
+      'title[]': titlesArr,
+      desc: descriptions, 
+      'desc[]': descriptionsArr,
+      gallery_hidden: hidden_galleries,
+      'gallery_hidden[]': hidden_galleries_arr,
+      gallery_index: gallery_indices,
+      'gallery_index[]': gallery_indices_arr
+    } = req.body;
+    
+    const vendor_id = req.user.vendor_id;
+    const files = req.files || [];
 
-    if (!product_id || !title || !description) {
+    if (!product_id) {
       return res
         .status(StatusCodes.BAD_REQUEST)
-        .json(SystemResponse.badRequestError("Product ID, title, and description are required"));
+        .json(SystemResponse.badRequestError("product_id is required"));
     }
 
-    const files = req.files;
-    // console.log("Files received for gallery:", files);
+    // 1. Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
 
-    if (!files || files.length === 0) {
+    if (!isVendor) {
       return res
-        .status(StatusCodes.BAD_REQUEST)
-        .json(SystemResponse.badRequestError("At least one image is required"));
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
     }
 
-    // Get existing gallery ids for this product
-    const existingRows = await productService.getSelectedCol({
-      table: "DescriptionGallery",
-      columns: ["id"],
-      where: { product_id: product_id },
-      records: "all", 
-    });
+    // 2. Normalize inputs
+    const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+    const idList = toArray(ids || idsArr);
+    const titleList = toArray(titles || titlesArr);
+    const descList = toArray(descriptions || descriptionsArr || req.body.description || req.body['description[]']);
+    const hiddenList = toArray(hidden_galleries || hidden_galleries_arr);
+    const indexList = toArray(gallery_indices || gallery_indices_arr);
 
-    const titleArr = Array.isArray(title) ? title : [title];
-    const descriptionArr = Array.isArray(description)
-      ? description
-      : [description];
+    // 3. Min-3 Validation: Check if there are at least 3 non-empty slots
+    let validSlotsCount = 0;
+    const galleryToProcess = [];
+    let fileCounter = 0;
 
-    const uploadedFiles = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const originalName = file.originalname.replace(/\s+/g, "-");
-      const key = `web/assets/images/techjockey/gallery/${Date.now()}-${originalName}`;
+    // The length of the request is driven by the titles/descriptions provided
+    for (let i = 0; i < titleList.length; i++) {
+      const currentTitle = titleList[i]?.trim();
+      const currentDesc = descList[i]?.trim();
+      let currentImage = hiddenList[i] || null;
 
-      const awsUrl = await uploadfile2({ ...file, key });
+      // Check for file at this index
+      // If gallery_index[] is missing (e.g. Postman), we fall back to sequential mapping
+      const filePos = indexList.length > 0 ? indexList.indexOf(String(i)) : fileCounter;
+      
+      if (filePos !== -1 && files[filePos]) {
+        const file = files[filePos];
+        // Clean filename: remove special characters except dot and underscore
+        const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+        const dbImageName = `${product_id}_${sanitizedOriginalName}`;
+        const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
 
-      uploadedFiles.push({
-        id: existingRows[i]?.id || null, // attach id if exists
-        image: awsUrl,
-        title: titleArr[i] || titleArr[0],
-        description: descriptionArr[i] || descriptionArr[0],
+        await uploadfile2({ ...file, originalname: dbImageName, key });
+        currentImage = dbImageName;
+        
+        // Only increment counter if we used the sequential mapping
+        if (indexList.length === 0) fileCounter++;
+      }
+
+      if (currentTitle && currentDesc && currentImage) {
+        validSlotsCount++;
+      } else {
+        console.log(`Slot ${i} invalid: title=${!!currentTitle}, desc=${!!currentDesc}, image=${!!currentImage}`);
+      }
+
+      galleryToProcess.push({
+        id: idList[i] || null,
+        title: currentTitle,
+        description: currentDesc,
+        image: currentImage
       });
     }
 
-    const result = await productService.addGalleryModel(
-      uploadedFiles,
-      product_id,
-    );
-    // console.log(result);
+    if (validSlotsCount < 3) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Please add atleast 3 gallery per product!."));
+    }
+
+    // 4. Log changes for approval instead of direct write
+    const result = await productService.logProductGalleryRequest({
+      productId: product_id,
+      vendor_id,
+      galleryData: galleryToProcess
+    });
+
+    // 5. Build event payload (comma separated strings) for response
+    const eventPayload = {
+      "Gallery Title": galleryToProcess.map(g => g.title).filter(Boolean).join(", "),
+      "Gallery Description": galleryToProcess.map(g => g.description).filter(Boolean).join(", "),
+      "Gallery Image": galleryToProcess.map(g => g.image ? `web/assets/images/techjockey/gallery/${g.image}` : "").filter(Boolean).join(", ")
+    };
+
     return res
-      .status(StatusCodes.CREATED)
-      .json(SystemResponse.success("Gallery added/updated successfully", result));
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("We have recorded your changes! We will review and update soon.", {
+        next_step: `enrichment/${product_id}`,
+        details: eventPayload,
+        result
+      }));
+
   } catch (error) {
+    console.error("Error in addGallery controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError("Internal Server Error in adding gallery"));
+      .json(SystemResponse.internalServerError("Internal Server Error in processing gallery"));
+  }
+};
+
+export const getGalleryImages = async (req, res) => {
+  try {
+    const product_id = req.query.product_id || req.params.product_id;
+    const vendor_id = req.user.vendor_id;
+    if (!product_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
+    }
+    //  Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("You are not the owner of this product"));
+    }
+
+    const gallery = await productService.getGalleryImages(product_id);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Gallery fetched successfully", gallery));
+  } catch (error) {
+    console.error("Error in getGalleryImages controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal server error in fetching gallery"));
   }
 };
 
 //------------------------------Add Video-----------------------------------------
 
-export const addVideo = async (req, res) => {
+//------------------------Product Videos controllers------------------------
+export const getProductVideos = async (req, res) => {
   try {
-    console.log("Request body for videos:", req.body);
-    const { product_id, data } = req.body;
+    const { product_id } = req.query;
+    const vendor_id = req.user.vendor_id;
 
-    if (!product_id || !Array.isArray(data) || data.length === 0) {
+    if (!product_id) {
       return res
         .status(StatusCodes.BAD_REQUEST)
-        .json(SystemResponse.badRequestError("Product ID and at least one video are required"));
+        .json(SystemResponse.badRequestError("product_id is required"));
     }
 
-    // Fetch all existing IDs for this product
-    const existingRows = await productService.getSelectedCol({
-      table: "ProductVideo",
-      columns: ["id"],
-      where: { product_id },
-      records: "all",
-    });
+    // 1. Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
 
-    // Map videos with existing IDs if updating
-    const videosToProcess = data.map((v, i) => ({
-      id: existingRows[i]?.id,
-      product_id,
-      video_title: v.video_title || "",
-      video_url: v.video_url || "",
-      video_desc: v.video_desc || "",
-    }));
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
 
-    // Save videos in DB
-    const result = await productService.addVideoModel(videosToProcess);
+    const videos = await productService.getProductVideos(product_id);
 
     return res
-      .status(StatusCodes.CREATED)
-      .json(SystemResponse.success("Videos added/updated successfully", result));
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Videos fetched successfully", videos));
   } catch (error) {
+    console.error("Error in getProductVideos controller:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in fetching videos"));
+  }
+};
+
+export const addVideo = async (req, res) => {
+  try {
+    const { 
+      product_id, 
+      video_id, 
+      'video_id[]': videoIdArr,
+      video_url, 
+      'video_url[]': videoUrlArr,
+      video_title,
+      'video_title[]': videoTitleArr
+    } = req.body;
+    
+    const vendor_id = req.user.vendor_id;
+
+    if (!product_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
+    }
+
+    // 1. Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
+
+    // 2. Normalize inputs (Legacy uses index-aligned arrays)
+    const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+    const idList = toArray(video_id || videoIdArr);
+    const urlList = toArray(video_url || videoUrlArr);
+    const titleList = toArray(video_title || videoTitleArr);
+
+    if (urlList.length === 0) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("At least one video URL is required"));
+    }
+
+    // 3. Validation
+    const urlPattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([\/\w .-]*)*\/?$/;
+    for (const url of urlList) {
+      if (url && !urlPattern.test(url)) {
+        return res
+          .status(StatusCodes.BAD_REQUEST)
+          .json(SystemResponse.badRequestError(`Invalid URL: ${url}`));
+      }
+    }
+
+    const videoData = urlList.map((url, i) => ({
+      id: idList[i] || null,
+      video_url: url || "",
+      video_title: titleList[i] || ""
+    }));
+
+    // 4. Log changes for approval
+    const result = await productService.logProductVideoRequest({
+      productId: product_id,
+      vendor_id,
+      videoData
+    });
+
+    if (result.action === "none") {
+      return res
+        .status(StatusCodes.SUCCESS)
+        .json(SystemResponse.success("No changes detected."));
+    }
+
+    // 5. Success response with event payload
+    const loggedChanges = result.changes || [];
+    const eventPayload = {
+      "Video Title": loggedChanges.filter(c => c.column_name === "video_title").map(c => c.updated_column_value).join(", "),
+      "Video Url": loggedChanges.filter(c => c.column_name === "video_url").map(c => c.updated_column_value).join(", ")
+    };
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("We have recorded your changes! We will review and update soon.", {
+        next_step: "product-list",
+        details: eventPayload
+      }));
+
+  } catch (error) {
+    console.error("Error in addVideo controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error in adding videos"));
@@ -931,77 +1186,197 @@ export const editProduct = async (req, res) => {
 };
 
 //----------this for the enrichment part of the form-----------------
-export const enrichment = async (req, res) => {
+//------------------------Get Enrichment controller------------------------
+export const getEnrichment = async (req, res) => {
   try {
-    const { product_id, type } = req.body;
-    const files = req.files || [];
-    //  console.log("Files received:", files);return;
-    let typeArr = [];
+    const { product_id } = req.query;
+    const vendor_id = req.user.vendor_id;
 
-    // Make sure typeArr matches files length
-    if (Array.isArray(type)) {
-      typeArr = type.map(Number);
-    } else if (type) {
-      // Single type sent
-      typeArr = Array(files.length).fill(Number(type));
-    } else {
+    if (!product_id) {
       return res
         .status(StatusCodes.BAD_REQUEST)
-        .json(SystemResponse.badRequestError("Type is required for each image"));
+        .json(SystemResponse.badRequestError("product_id is required"));
     }
 
-    // Now validate counts per type
-    const typeCount = typeArr.reduce((acc, t) => {
+    // 1. Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
+
+    const data = await productService.getProductEnrichmentImages(product_id);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Enrichment images fetched successfully", data));
+  } catch (error) {
+    console.error("Error in getEnrichment:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in fetching enrichment images"));
+  }
+};
+
+//----------this for the enrichment part of the form-----------------
+export const enrichment = async (req, res) => {
+  try {
+    const { 
+      product_id, 
+      id: ids, 
+      'id[]': idsArr,
+      type: types, 
+      'type[]': typesArr,
+      enrichment_hidden: hidden_enrichments,
+      'enrichment_hidden[]': hidden_enrichments_arr,
+      enrichment_index: enrichment_indices,
+      'enrichment_index[]': enrichment_indices_arr
+    } = req.body;
+    
+    const vendor_id = req.user.vendor_id;
+    const files = req.files || [];
+
+    if (!product_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("product_id is required"));
+    }
+
+    // 1. Verify vendor ownership
+    const brandArr = await productService.getVendorBrands(vendor_id);
+    const isVendor = await productService.isVendorProduct(product_id, brandArr);
+
+    if (!isVendor) {
+      return res
+        .status(StatusCodes.FORBIDDEN)
+        .json(SystemResponse.forbiddenError("Unauthorized: Product does not belong to vendor"));
+    }
+
+    // 2. Normalize inputs
+    const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+    const idList = toArray(ids || idsArr);
+    const typeList = toArray(types || typesArr);
+    const hiddenList = toArray(hidden_enrichments || hidden_enrichments_arr);
+    const indexList = toArray(enrichment_indices || enrichment_indices_arr);
+
+    // 3. Validation: type[] is required for all slots
+    if (typeList.length === 0) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("type[] is required"));
+    }
+
+    // Validation: Min 4 desktop (1) and 4 mobile (2)
+    const typeCounts = typeList.reduce((acc, t) => {
       acc[t] = (acc[t] || 0) + 1;
       return acc;
     }, {});
 
-    // Dynamic validation
-    for (const t in typeCount) {
-      if (typeCount[t] < 4) {
-        return res
-          .status(StatusCodes.BAD_REQUEST)
-          .json(SystemResponse.badRequestError(`Please upload at least 4 images for type ${Number(t) === 1 ? "desktop" : "mobile"}`));
+    const totalValid = (files.length + hiddenList.length);
+    if ((typeCounts[1] || 0) < 4 || (typeCounts[2] || 0) < 4 || totalValid < 8) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("Please add 4 enrichment images for desktop and mobile view"));
+    }
+
+    // 4. Dimension & Budget Validation
+    const enrichmentInfo = await productService.getProductEnrichmentImages(product_id);
+    const heightMapping = enrichmentInfo.image_height_mapping;
+    
+    let currentDesktopHeight = 2400 - enrichmentInfo.desktop_remaining_height;
+    let currentMobileHeight = 4000 - enrichmentInfo.mobile_remaining_height;
+
+    const enrichmentToProcess = [];
+    const cleanFileName = (name) => name.replace(/[^a-zA-Z0-9._-]+/g, "");
+
+    for (let i = 0; i < typeList.length; i++) {
+      const type = Number(typeList[i]);
+      const currentId = idList[i] || null;
+      let currentImage = hiddenList[i] || null;
+      let newImageWidth = 0;
+      let newImageHeight = 0;
+
+      const filePos = indexList.length > 0 ? indexList.indexOf(String(i)) : i;
+      if (files[filePos]) {
+        const file = files[filePos];
+        const dimensions = sizeOf(file.buffer);
+        newImageWidth = dimensions.width;
+        newImageHeight = dimensions.height;
+
+        // Validation Rules
+        if (type === 1) { // Desktop
+          const oldHeight = currentId ? (heightMapping[currentId] || 0) : 0;
+          const newTotalHeight = currentDesktopHeight - oldHeight + newImageHeight;
+          if (newTotalHeight > 2400) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(`Desktop height budget exceeded at slot ${i+1}. Current: ${newTotalHeight}px, Max: 2400px`));
+          }
+          if (newImageWidth > 1260) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(`Desktop image width (Found: ${newImageWidth}px) exceeds 1260px at slot ${i+1}`));
+          }
+          currentDesktopHeight = newTotalHeight;
+        } else { // Mobile
+          const oldHeight = currentId ? (heightMapping[currentId] || 0) : 0;
+          const newTotalHeight = currentMobileHeight - oldHeight + newImageHeight;
+          if (newTotalHeight > 4000) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(`Mobile height budget exceeded at slot ${i+1}. Current: ${newTotalHeight}px, Max: 4000px`));
+          }
+          if (newImageWidth > 600) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(`Mobile image width (Found: ${newImageWidth}px) exceeds 600px at slot ${i+1}`));
+          }
+          currentMobileHeight = newTotalHeight;
+        }
+
+        // Upload
+        const sanitizedName = cleanFileName(file.originalname);
+        const dbImageName = `${product_id}_${sanitizedName}`;
+        const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
+        await uploadfile2({ ...file, originalname: dbImageName, key });
+        currentImage = dbImageName;
+      }
+
+      if (currentImage) {
+        enrichmentToProcess.push({
+          id: currentId,
+          type,
+          image: currentImage,
+          image_width: newImageWidth,
+          image_height: newImageHeight
+        });
       }
     }
 
-    // Fetch existing enrichment images for this product
-    const existingRows = await productService.getSelectedCol({
-      table: "ProductEnrichmentImage",
-      columns: ["id", "type"],
-      where: { product_id },
-      records: "multiple",
+    // 5. Log changes
+    const result = await productService.logProductEnrichmentRequest({
+      productId: product_id,
+      vendor_id,
+      enrichmentData: enrichmentToProcess
     });
 
-    // Prepare enrichment data with update/insert logic
-    const enrichmentData = files.map((file, index) => {
-      const dimensions = sizeOf(file.buffer);
+    if (result.action === "none") {
+      return res
+        .status(StatusCodes.SUCCESS)
+        .json(SystemResponse.success("No changes detected."));
+    }
 
-      // Match existing row by type (first match)
-      const existingIndex = existingRows.findIndex(
-        (row) => row.type === typeArr[index],
-      );
-      const existing =
-        existingIndex !== -1 ? existingRows.splice(existingIndex, 1)[0] : null;
-
-      return {
-        id: existing?.id || null, // update if exists
-        product_id,
-        type: typeArr[index],
-        image_width: dimensions.width,
-        image_height: dimensions.height,
-        image: file.originalname,
-      };
-    });
-
-    const saved = await productService.upsertEnrichmentImages(enrichmentData);
+    // 6. Event Payload
+    const eventPayload = {
+      "Enrichment Image": enrichmentToProcess.map(e => `web/assets/images/techjockey/gallery/${e.image}`).join(", ")
+    };
 
     return res
       .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success("Enrichment images processed successfully", saved));
+      .json(SystemResponse.success("We have recorded your changes! We will review and update soon.", {
+        next_step: `videos/${product_id}`,
+        details: eventPayload
+      }));
+
   } catch (error) {
+    console.error("Error in enrichment controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError("Internal Server Error in enrichment images"));
+      .json(SystemResponse.internalServerError("Internal Server Error in processing enrichment images"));
   }
 };

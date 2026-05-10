@@ -8,6 +8,7 @@ import Brand from "../../models/brand.model.js";
 import Product from "../../models/product.model.js";
 import Plan from "../../models/plan.model.js";
 import TblPlanSpec from "../../models/planSpec.model.js";
+import Vendor from "../../models/vendor.model.js";
 
 VendorBrandRelation.belongsTo(Brand, { foreignKey: "tbl_brand_id", targetKey: "brand_id" });
 Product.hasMany(Plan, { foreignKey: "product_id", sourceKey: "product_id" });
@@ -30,6 +31,9 @@ export const getDesignation = async () => {
 };
 
 export const getVendorById = async (profile_id) => {
+  if (!profile_id) {
+    throw new Error("profile_id is required");
+  }
   try {
     const result = await VendorAuth.findOne({
       attributes: ['id', 'vendor_id', 'first_name', 'last_name', 'email'],
@@ -56,6 +60,19 @@ export const getVendorDetailById = async (vendor_id) => {
   }
 };
 
+export const getVendorMode = async (vendor_id) => {
+  try {
+    const result = await Vendor.findOne({
+      attributes: ['vendor_mode'],
+      where: { id: vendor_id },
+      raw: true
+    });
+    return result ? result.vendor_mode : 0;
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const getVendorAgreement = async (vendor_id, version) => {
   try {
     const result = await VendorAgreement.findOne({
@@ -77,7 +94,7 @@ export const getVendorAgreement = async (vendor_id, version) => {
 export const isPreviousSigned = async (version, vendor_id) => {
   try {
     const count = await VendorAgreement.count({
-      where: { version, vendor_id }
+      where: { version, vendor_id, is_signed: 1 }
     });
     return count;
   } catch (error) {
@@ -105,7 +122,7 @@ export const getVendorBrands = async (vendor_id) => {
     const validBrandIds = [];
     for (const rel of relations) {
       if (
-        rel.status === 1 || 
+        rel.status === 1 ||
         (rel.Brand && rel.Brand.added_by === 'vendor' && Number(rel.Brand.added_by_id) === Number(vendor_id))
       ) {
         validBrandIds.push(rel.tbl_brand_id);
