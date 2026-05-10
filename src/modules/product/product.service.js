@@ -27,6 +27,7 @@ import ProductEnrichmentImage from "../../models/productEnrichmentImage.model.js
 import ProductVideo from "../../models/productVideo.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import { sendProductBrandUpdationEvents } from "../common/service/moengage/moengageApiService.js";
+import { mergeArray } from "../../helpers/format.js";
 
 
 VendorBrandRelation.belongsTo(Brand, { foreignKey: 'tbl_brand_id', targetKey: 'brand_id' });
@@ -55,6 +56,27 @@ ProductFeature.belongsTo(Feature, {
   targetKey: "feature_id",
 });
 
+const ORGANIZATION_TYPES = {
+  1: "Small Business", 2: "Startups", 3: "Medium Business", 
+  4: "Enterprises", 5: "SMBs", 6: "SMEs", 7: "MSMBs", 8: "MSMEs"
+};
+
+const DEPLOYMENTS = {
+  1: "Cloud", 2: "Premise"
+};
+
+const OPERATING_SYSTEMS = {
+  1: "Ubuntu", 2: "Windows", 3: "iOS", 4: "Android", 5: "MacOs", 6: "Windows Phone"
+};
+
+const DEVICES = {
+  1: "Desktop", 2: "Mobile"
+};
+
+const PRODUCT_IMAGE_URL_PREFIX = "web/assets/images/techjockey/products/";
+const PRODUCT_PRICING_URL_PREFIX = "web/assets/images/techjockey/products/pricing/";
+const PRODUCT_SCREENSHOT_URL_PREFIX = "web/assets/images/techjockey/products/screenshots/";
+const PRODUCT_GALLERY_URL_PREFIX = "web/assets/images/techjockey/gallery/";
 
 export const isVendorProduct = async (productId, brandArr) => {
   try {
@@ -950,22 +972,176 @@ export const geteditProductDetail = async (productId) => {
   }
 };
 
-
-const ORGANIZATION_TYPES = {
-  1: "Small Business", 2: "Startups", 3: "Medium Business", 
-  4: "Enterprises", 5: "SMBs", 6: "SMEs", 7: "MSMBs", 8: "MSMEs"
+const csvIdsToLabels = (csv, labels) => {
+  if (csv === undefined || csv === null || csv === "") return "";
+  return String(csv)
+    .split(",")
+    .map((v) => labels[Number(String(v).trim())])
+    .filter(Boolean)
+    .join(",");
 };
 
-const DEPLOYMENTS = {
-  1: "Cloud", 2: "Premise"
-};
+export const productUpdationRelatedEvent = async (
+  updateArr,
+  vendor_id,
+  profile_id,
+  table_name = ""
+) => {
+  try {
+    const data = {};
 
-const OPERATING_SYSTEMS = {
-  1: "Ubuntu", 2: "Windows", 3: "iOS", 4: "Android", 5: "MacOs", 6: "Windows Phone"
-};
+    if (table_name) {
+      const items = Array.isArray(updateArr) ? updateArr : [updateArr];
 
-const DEVICES = {
-  1: "Desktop", 2: "Mobile"
+      if (table_name === "tbl_product_screenshots") {
+        const altList = [];
+        const imgList = [];
+        for (const item of items) {
+          const row = item?.tbl_product_screenshots ?? item ?? {};
+          if (row.screenshot_img_alt) altList.push(row.screenshot_img_alt);
+          if (row.screenshot) imgList.push(`${PRODUCT_SCREENSHOT_URL_PREFIX}${row.screenshot}`);
+        }
+        data["Image Alt"] = altList.join(",");
+        data["Screenshot Image"] = imgList.join(",");
+      } else if (table_name === "tbl_product_enrichment_images") {
+        const imgList = [];
+        for (const item of items) {
+          const row = item?.tbl_product_enrichment_images ?? item ?? {};
+          if (row.enrichment_image) {
+            imgList.push(`${PRODUCT_GALLERY_URL_PREFIX}${row.enrichment_image}`);
+          }
+        }
+        data["Enrichment Image"] = imgList.join(",");
+      } else if (table_name === "tbl_description_gallery") {
+        const titleList = [];
+        const descList = [];
+        const imgList = [];
+        for (const item of items) {
+          const row = item?.tbl_description_gallery ?? item ?? {};
+          if (row.gallery_title) titleList.push(row.gallery_title);
+          if (row.gallery_description) descList.push(row.gallery_description);
+          if (row.gallery_image) imgList.push(`${PRODUCT_GALLERY_URL_PREFIX}${row.gallery_image}`);
+        }
+        data["Gallery Title"] = titleList.join(",");
+        data["Gallery Description"] = descList.join(",");
+        data["Gallery Image"] = imgList.join(",");
+      } else if (table_name === "tbl_product_videos") {
+        const titleList = [];
+        const urlList = [];
+        for (const item of items) {
+          const row = item?.tbl_product_videos ?? item ?? {};
+          if (row.video_title) titleList.push(row.video_title);
+          if (row.video_url) urlList.push(row.video_url);
+        }
+        data["Video Title"] = titleList.join(",");
+        data["Video Url"] = urlList.join(",");
+      }
+    } else {
+      const merged = mergeArray(updateArr || {});
+
+      if (merged.brand_id) {
+        const brand = await Brand.findOne({
+          attributes: ["brand_name"],
+          where: { brand_id: merged.brand_id },
+          raw: true,
+        });
+        data["Brand Name"] = brand?.brand_name || "";
+      }
+
+      if ("trial_available" in merged) {
+        data["Trial Available"] = Number(merged.trial_available) === 1 ? "Yes" : "No";
+      }
+
+      if ("free_downld_available" in merged) {
+        data["Free Download Available"] = Number(merged.free_downld_available) === 1 ? "Yes" : "No";
+      }
+
+      if (merged.category_id) {
+        const cat = await Category.findOne({
+          attributes: ["category_name"],
+          where: { category_id: merged.category_id },
+          raw: true,
+        });
+        data["Category"] = cat?.category_name || "";
+      }
+
+      // Accept both `image` (PHP literal) and `product_image` (actual flattened key from add_product)
+      const productImageVal = merged.image || merged.product_image;
+      if (productImageVal) {
+        data["Product Image"] = `${PRODUCT_IMAGE_URL_PREFIX}${productImageVal}`;
+      }
+
+      if (merged.pricing_document) {
+        data["Pricing Document"] = `${PRODUCT_PRICING_URL_PREFIX}${merged.pricing_document}`;
+      }
+
+      if (merged.deployment) {
+        data["Deployment"] = csvIdsToLabels(merged.deployment, DEPLOYMENTS);
+      }
+
+      if (merged.device) {
+        data["Device"] = csvIdsToLabels(merged.device, DEVICES);
+      }
+
+      if (merged.operating_system) {
+        data["Operating System"] = csvIdsToLabels(merged.operating_system, OPERATING_SYSTEMS);
+      }
+
+      if (merged.organization_type) {
+        data["Organization Type"] = csvIdsToLabels(merged.organization_type, ORGANIZATION_TYPES);
+      }
+
+      if (merged.languages) {
+        const langIds = String(merged.languages)
+          .split(",")
+          .map((v) => Number(String(v).trim()))
+          .filter(Boolean);
+        if (langIds.length) {
+          const langs = await Language.findAll({
+            attributes: ["language"],
+            where: { id: { [Op.in]: langIds } },
+            raw: true,
+          });
+          data["Languages"] = langs.map((l) => l.language).filter(Boolean).join(",");
+        }
+      }
+
+      if (merged.section_id) {
+        const feature = await Feature.findOne({
+          attributes: ["feature_name"],
+          where: { feature_id: merged.section_id },
+          raw: true,
+        });
+        data["Feature Name"] = feature?.feature_name || "";
+      }
+
+      if ("product_name" in merged) data["Product Name"] = merged.product_name ?? "";
+      if ("website_url" in merged) data["Website Url"] = merged.website_url ?? "";
+      if ("overview" in merged) {
+        data["Overview"] = String(merged.overview ?? "").replace(/<[^>]*>/g, "");
+      }
+      if ("feature_display_name" in merged) {
+        data["Feature Display Name"] = merged.feature_display_name ?? "";
+      }
+      if ("description" in merged) data["Description"] = merged.description ?? "";
+    }
+
+    const adminDetails = await VendorAuth.findOne({
+      attributes: ["id"],
+      where: { vendor_id, is_admin: 1, id: { [Op.ne]: profile_id } },
+      raw: true,
+    });
+
+    return await sendProductBrandUpdationEvents({
+      data,
+      event_name: "Product Information Submitted",
+      profile_ids: [adminDetails?.id, profile_id].filter(Boolean),
+    });
+  } catch (error) {
+    // Analytics must never break the product save — log and swallow.
+    console.error("productUpdationRelatedEvent error:", error.message);
+    return null;
+  }
 };
 
 export const getProductSpecificationDetails = async (product_id) => {

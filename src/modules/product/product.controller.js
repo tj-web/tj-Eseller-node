@@ -274,6 +274,19 @@ export const basicDetails = async (req, res) => {
     await transaction.commit();
     transaction = null;
 
+    if (isNewProduct) {
+      const moengagePayload = {
+        ...save,
+        product_image: uploadedImages[0]?.fileName,
+        pricing_document: uploadedDocuments[0]?.fileName ?? save.pricing_document,
+        category_id: categoryIds[0],
+        overview: descriptionForLog?.overview,
+      };
+      productService
+        .productUpdationRelatedEvent(moengagePayload, vendor_id, req.user?.profile_id)
+        .catch((err) => console.error("MoEngage product event error:", err.message));
+    }
+
     return res.status(StatusCodes.SUCCESS).json(
       SystemResponse.success("Product saved successfully", {
         product_id: productId,
@@ -430,6 +443,16 @@ export const editBasicDetails = async (req, res) => {
     await transaction.commit();
     transaction = null;
 
+    if (changes.length > 0) {
+      const moengagePayload = changes.reduce((acc, c) => {
+        acc[c.column_name] = c.updated_column_value;
+        return acc;
+      }, {});
+      productService
+        .productUpdationRelatedEvent(moengagePayload, vendor_id, req.user?.profile_id)
+        .catch((err) => console.error("MoEngage product event error:", err.message));
+    }
+
     return res.status(StatusCodes.SUCCESS).json(
       SystemResponse.success("Details updated successfully. Pending admin approval.", {
         product_id: product_id
@@ -557,6 +580,16 @@ export const ProductSpecification = async (req, res) => {
       vendor_id,
     );
 
+    if (result.changed_fields?.length > 0) {
+      const moengagePayload = result.changed_fields.reduce((acc, field) => {
+        acc[field] = productData[field];
+        return acc;
+      }, {});
+      productService
+        .productUpdationRelatedEvent(moengagePayload, vendor_id, req.user?.profile_id)
+        .catch((err) => console.error("MoEngage product event error:", err.message));
+    }
+
     return res.status(StatusCodes.SUCCESS)
      .json(SystemResponse.success("Changes have been recorded successfully!", result));
      } catch (error) { 
@@ -615,8 +648,17 @@ export const saveProductFeature = async (req, res) => {
       return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
     }
 
-    const message = result.action === "update" 
-      ? "Changes recorded! We will review and update soon." 
+    const moengagePayload = {
+      section_id: post.section_id,
+      description: post.description,
+      feature_display_name: post.feature_display_name,
+    };
+    productService
+      .productUpdationRelatedEvent(moengagePayload, vendor_id, req.user?.profile_id)
+      .catch((err) => console.error("MoEngage product event error:", err.message));
+
+    const message = result.action === "update"
+      ? "Changes recorded! We will review and update soon."
       : "New feature request recorded! We will review and update soon.";
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(message, { id: result.id, product_id: post.product_id }));
@@ -799,6 +841,19 @@ export const addScreenshots = async (req, res) => {
         .json(SystemResponse.success("No changes detected."));
     }
 
+    const moengageItems = screenshotsToProcess.map((s) => ({
+      screenshot_img_alt: s.alt_text,
+      screenshot: s.image,
+    }));
+    productService
+      .productUpdationRelatedEvent(
+        moengageItems,
+        vendor_id,
+        req.user?.profile_id,
+        "tbl_product_screenshots"
+      )
+      .catch((err) => console.error("MoEngage product event error:", err.message));
+
     // 5. Trigger event-like payload formatting (for response/logs)
     const eventPayload = {
       "Image Alt": screenshotsToProcess.map(s => s.alt_text).filter(Boolean).join(", "),
@@ -920,6 +975,22 @@ export const addGallery = async (req, res) => {
       vendor_id,
       galleryData: galleryToProcess
     });
+
+    if (result.action !== "none") {
+      const moengageItems = galleryToProcess.map((g) => ({
+        gallery_title: g.title,
+        gallery_description: g.description,
+        gallery_image: g.image,
+      }));
+      productService
+        .productUpdationRelatedEvent(
+          moengageItems,
+          vendor_id,
+          req.user?.profile_id,
+          "tbl_description_gallery"
+        )
+        .catch((err) => console.error("MoEngage product event error:", err.message));
+    }
 
     // 5. Build event payload (comma separated strings) for response
     const eventPayload = {
@@ -1083,6 +1154,19 @@ export const addVideo = async (req, res) => {
         .status(StatusCodes.SUCCESS)
         .json(SystemResponse.success("No changes detected."));
     }
+
+    const moengageItems = videoData.map((v) => ({
+      video_title: v.video_title,
+      video_url: v.video_url,
+    }));
+    productService
+      .productUpdationRelatedEvent(
+        moengageItems,
+        vendor_id,
+        req.user?.profile_id,
+        "tbl_product_videos"
+      )
+      .catch((err) => console.error("MoEngage product event error:", err.message));
 
     // 5. Success response with event payload
     const loggedChanges = result.changes || [];
@@ -1360,6 +1444,18 @@ export const enrichment = async (req, res) => {
         .status(StatusCodes.SUCCESS)
         .json(SystemResponse.success("No changes detected."));
     }
+
+    const moengageItems = enrichmentToProcess.map((e) => ({
+      enrichment_image: e.image,
+    }));
+    productService
+      .productUpdationRelatedEvent(
+        moengageItems,
+        vendor_id,
+        req.user?.profile_id,
+        "tbl_product_enrichment_images"
+      )
+      .catch((err) => console.error("MoEngage product event error:", err.message));
 
     // 6. Event Payload
     const eventPayload = {
