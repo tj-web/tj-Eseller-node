@@ -43,7 +43,7 @@ export const login = async (req, res, next) => {
       throw new AppError("Invalid credentials", 400);
     }
 
-    if (user.Vendor.status === 0) {
+    if (user.Vendor?.status === 0) {
       throw new AppError("Account disabled", 403);
     }
 
@@ -71,9 +71,11 @@ export const login = async (req, res, next) => {
         id: user.vendor_id,
         email: user.email,
         name: `${user.Vendor?.first_name} ${user.Vendor?.last_name}`,
+        vendor_mode: user.Vendor?.vendor_mode ?? 0,
       })
     );
   } catch (error) {
+    console.error("Login Error:", error);
     if (error.statusCode === 400 || error.statusCode === 403) {
       return res
         .status(StatusCodes.BAD_REQUEST)
@@ -280,8 +282,12 @@ export const verifyOtp = async (req, res, next) => {
 
     return res
       .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success("Login successful via OTP", result.user));
+      .json(SystemResponse.success("Login successful via OTP", {
+        ...result.user,
+        vendor_mode: result.user.Vendor?.vendor_mode ?? 0
+      }));
   } catch (error) {
+    console.error("Verify OTP Error:", error);
     if (error.statusCode && error.statusCode !== 500) {
       return res
         .status(StatusCodes.BAD_REQUEST)

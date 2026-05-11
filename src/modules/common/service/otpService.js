@@ -135,6 +135,7 @@ export const verifyOtpService = async (phone_number, otp, ip, deviceId) => {
       id: user.vendor_id,
       email: user.email,
       name: `${user.first_name} ${user.last_name}`,
+      Vendor: user.Vendor
     },
   };
 };

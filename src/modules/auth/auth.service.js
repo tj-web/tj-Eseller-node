@@ -329,6 +329,7 @@ export const generateAuthTokens = (user) => {
     v_name: user.Vendor?.first_name,
     v_lname: user.Vendor?.last_name,
     v_email: user.email,
+    vendor_mode: user.Vendor?.vendor_mode ?? 0,
   };
 
   const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
