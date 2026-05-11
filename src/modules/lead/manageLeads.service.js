@@ -1037,7 +1037,7 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
 /**
  * Searches for people on Apollo.
  */
-const employeeData = async (domain, queryString) => {
+const employeeData = async (domain, categoryParams) => {
     const apiKey = process.env.APOLLO_API_KEY;
     const headers = {
         "Accept": "application/json",
@@ -1046,44 +1046,43 @@ const employeeData = async (domain, queryString) => {
         "x-api-key": apiKey
     };
 
-    let resArr = [];
-    const urlWithQuery = `https://api.apollo.io/api/v1/mixed_people/search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-
-    try {
-        const response = await fetchWithCurl(urlWithQuery, headers);
-        const data = await response.json();
-        const people = (data.people || []).slice(0, 5);
-
-        resArr = people.map(emp => ({
-            apollo_people_id: emp.id,
-            emp_name: emp.name,
-            linkedin_url: emp.linkedin_url,
-            twitter_id: emp.twitter_url,
-            photo: emp.photo_url,
-            designation: emp.title
-        }));
-
-        if (resArr.length < 5) {
-            const remainLen = 5 - resArr.length;
-            const urlWithoutQuery = `https://api.apollo.io/api/v1/mixed_people/search?q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-            const responseNoQuery = await fetchWithCurl(urlWithoutQuery, headers);
-            const dataNoQuery = await responseNoQuery.json();
-            const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
-
-            resArr.push(...morePeople.map(emp => ({
+    const fetchPeople = async (titles = []) => {
+        const url = `https://api.apollo.io/api/v1/mixed_people/search`;
+        const body = {
+            api_key: apiKey,
+            q_organization_domains_list: [domain],
+            person_titles: titles
+        };
+        try {
+            const data = await fetchWithCurl(url, headers, JSON.stringify(body));
+            return (data.people || []).map(emp => ({
                 apollo_people_id: emp.id,
                 emp_name: emp.name,
                 linkedin_url: emp.linkedin_url,
                 twitter_id: emp.twitter_url,
                 photo: emp.photo_url,
                 designation: emp.title
-            })));
+            }));
+        } catch (err) {
+            console.error("Apollo Search Step Error:", err.message);
+            return [];
         }
-    } catch (error) {
-        console.error("Apollo Employee Search Error:", error);
+    };
+
+    let resArr = await fetchPeople(categoryParams?.search_keys || []);
+
+    if (resArr.length < 5) {
+        const morePeople = await fetchPeople([]); // Fallback to general search
+        const existingIds = new Set(resArr.map(p => p.apollo_people_id));
+        for (const person of morePeople) {
+            if (resArr.length >= 5) break;
+            if (!existingIds.has(person.apollo_people_id)) {
+                resArr.push(person);
+            }
+        }
     }
 
-    return resArr;
+    return resArr.slice(0, 5);
 };
 
 /**
@@ -1146,10 +1145,18 @@ const getKeyData = async (key) => {
 /**
  * Wrapper for fetch to simulate PHP's fetchWithCurl.
  */
-const fetchWithCurl = async (url, headers) => {
-    const response = await fetch(url, { method: 'POST', headers });
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-    return response;
+const fetchWithCurl = async (url, headers, body = null) => {
+    const options = {
+        method: body ? 'POST' : 'GET',
+        headers
+    };
+    if (body) options.body = body;
+
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        throw new Error(`HTTP Error: ${response.status}`);
+    }
+    return await response.json();
 };
 
 export const getLeadInsightPlanDetails=async (vendor_id) => {
@@ -1327,7 +1334,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
     }
 
     // 3. Fetch Buyer Activity Timeline from MongoDB
-    if (lead.user_id) {
+    if (lead.user_id || lead_id) {
         try {
             const db = mongoose.connection?.db;
             if (!db) {
@@ -1336,10 +1343,13 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
             }
             const tracksCollection = db.collection('tracks');
 
-            // Get related GUUIDs (simplified version of PHP logic)
-            const guuids = await tracksCollection.distinct('feeds.guuid', {
-                'feeds.customer_id': String(lead.user_id)
-            });
+            let guuids = [];
+            // Get related GUUIDs if user_id exists
+            if (lead.user_id) {
+                guuids = await tracksCollection.distinct('feeds.guuid', {
+                    'feeds.customer_id': String(lead.user_id)
+                });
+            }
 
             const activityQuery = [
                 {
@@ -1370,38 +1380,35 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
 
             const activities = await tracksCollection.aggregate(activityQuery).toArray();
 
-            // Process activities to match PHP final_activity_array format
-            const finalActivityMap = {};
-            for (const activity of activities) {
-                let assetName = '';
-                let assetType = '';
-                const feedAction = activity.feed_action;
+            // Process activities to match Frontend LeadCard format
+            const formattedActivities = activities.map(activity => {
+                let description = '';
+                const pageInfo = activity.page_info;
+                const productName = pageInfo?.product_name || activity.product_info?.product_name || activity.formdata?.product_name;
 
-                // Extraction logic matching Lmslib.php
-                const productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name;
-                const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
-
-                if (productName) {
-                    assetName = (plan_id === limited_access_plan_id) ? (productName.substring(0, 5) + "********") : productName;
-                    assetType = 'Product';
-                } else if (categoryName) {
-                    assetName = (plan_id === limited_access_plan_id) ? (categoryName.substring(0, 5) + "********") : categoryName;
-                    assetType = 'Category';
-                } else if (activity.page_url?.includes('techjockey.com') && feedAction === 'page_view') {
-                    assetName = 'visited_home_page';
-                    assetType = 'visited_home_page';
+                if (typeof pageInfo === 'string') {
+                    description = pageInfo;
+                } else if (productName) {
+                    description = `Viewed **${productName}** product details`;
+                } else if (activity.page_url?.includes('techjockey.com') && activity.feed_action === 'page_view') {
+                    description = 'Visited Home Page';
+                } else {
+                    description = activity.feed_action || 'Performed an action';
                 }
 
-                if (assetName && feedAction && assetType) {
-                    if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
-                    if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
-                    if (!finalActivityMap[assetType][assetName][feedAction]) {
-                        finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
-                    }
-                    finalActivityMap[assetType][assetName][feedAction].count++;
-                }
-            }
-            result.customer_activity_details = finalActivityMap;
+                return {
+                    time: new Date(activity.created_at).toLocaleString('en-US', { 
+                        day: '2-digit', month: 'short', year: 'numeric', 
+                        hour: '2-digit', minute: '2-digit', hour12: true 
+                    }),
+                    description: description,
+                    raw_time: activity.created_at
+                };
+            });
+
+            result.customer_activity_details = {
+                activities: formattedActivities
+            };
         } catch (mongoError) {
             console.error("MongoDB Insight Error:", mongoError);
         }
