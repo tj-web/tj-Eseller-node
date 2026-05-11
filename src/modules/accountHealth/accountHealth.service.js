@@ -389,6 +389,14 @@ export const getProfileCompletionService = async (vendor_id) => {
           model: Product,
           attributes: ["product_name"],
           required: false, // Matching PHP 'LEFT'
+          include: [
+            {
+              model: ProductImage,
+              attributes: ["image"],
+              where: { default: 1 },
+              required: false,
+            },
+          ],
         },
       ],
     });

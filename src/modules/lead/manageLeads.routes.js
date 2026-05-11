@@ -14,12 +14,14 @@ import {
     getVendorContactsController,
     getLeadInsightsController,
     unlockLeadInsightsController,
-    unlockContactController
+    unlockContactController,
+    getLeadLocationsController
 } from "./manageLeads.controller.js";
 
 const router = express.Router();
 
 router.get("/get-leads", getLeadsController);
+router.get("/get-lead-locations", getLeadLocationsController);
 router.get("/get-demos", getDemosController);
 router.get("/get-lead-history", getLeadHistoryController);
 router.post("/add-remark-reminder", addRemarkReminderController);

@@ -12,6 +12,9 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import StateMaster from "../../models/stateMaster.model.js";
+import CityMaster from "../../models/cityMaster.model.js";
+import CountriesMaster from "../../models/countriesMaster.model.js";
 
 
 /**
@@ -104,7 +107,10 @@ export const getLeads=async (vendor_id, post) => {
         action: post.lead_action || '',
         is_trashed: post.is_trashed || 0,
         limit: parseInt(post.limit) || 10,
-        page: parseInt(post.page) || 0
+        page: parseInt(post.page) || 0,
+        srch_country: post.srch_country || '',
+        srch_state: post.srch_state || '',
+        srch_city: post.srch_city || ''
     };
 
     const offset = filters.page * filters.limit;
@@ -165,6 +171,14 @@ export const getLeads=async (vendor_id, post) => {
 
     if (filters.is_trashed) {
         whereClause.is_trashed = filters.is_trashed;
+    }
+
+    if (filters.srch_state) {
+        whereClause.state = filters.srch_state;
+    }
+
+    if (filters.srch_city) {
+        whereClause.city = filters.srch_city;
     }
 
     const { count, rows } = await TblLeads.findAndCountAll({
@@ -797,6 +811,46 @@ export const scheduleCallback=async (vendor_id, data) => {
         message: acdResponse.status ? (acdResponse.message || 'Callback scheduled successfully') : (acdResponse.message || 'Failed to trigger call'),
         data: acdResponse.data
     };
+};
+
+/**
+ * Get lead locations (States/Cities) for search filters.
+ */
+export const getLeadLocationsService = async (search_by, context_id) => {
+    try {
+        if (search_by === "state") {
+            return await StateMaster.findAll({
+                where: {
+                    countries_id: 99, // Restricted to India as per requirement
+                    status: 1,
+                },
+                attributes: [
+                    ["state_id", "id"],
+                    ["state_name", "text"],
+                ],
+                order: [["state_name", "ASC"]],
+                raw: true,
+            });
+        } else if (search_by === "city") {
+            if (!context_id) return [];
+            return await CityMaster.findAll({
+                where: {
+                    state_id: context_id,
+                    status: 1,
+                    is_deleted: 0
+                },
+                attributes: [
+                    ["city_id", "id"],
+                    ["city_name", "text"],
+                ],
+                order: [["city_name", "ASC"]],
+                raw: true,
+            });
+        }
+        return [];
+    } catch (error) {
+        throw error;
+    }
 };
 
 /**
