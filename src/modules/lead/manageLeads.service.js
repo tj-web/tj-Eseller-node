@@ -17,7 +17,7 @@ import CityMaster from "../../models/cityMaster.model.js";
 import CountriesMaster from "../../models/countriesMaster.model.js";
 
 
- * Retrieves vendor lead insight permissions and allowed products.
+ /* Retrieves vendor lead insight permissions and allowed products.
  */
 const getVendorInsightPermission = async (vendor_id) => {
     const vendor = await Vendor.findByPk(vendor_id, {

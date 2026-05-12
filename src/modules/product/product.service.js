@@ -459,7 +459,7 @@ export const uploadPricingDocumentOnly = async (productId, documentFiles) => {
   if (!documentFiles || documentFiles.length === 0) return [];
   const savedDocs = [];
 
-  // Upload pricing documents to S3 under pricing/pending for vendor edits
+  // Upload pricing documents to S3  under pricing/pending for vendor edits
   for (const doc of documentFiles) {
     const originalName = doc.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
     const fileName = `${productId}_${originalName}`;
