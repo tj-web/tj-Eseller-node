@@ -59,8 +59,7 @@ app.use(`${API_PREFIX}/leads`, authenticate, vendorModeMiddleware, leadsRoutes);
 app.use(`${API_PREFIX}/sales`, authenticate, vendorModeMiddleware, salesRoutes);
 app.use(`${API_PREFIX}/apiintegration`, authenticate, vendorModeMiddleware, apiIntegrationRoutes);
 
-// do not apply authenticate in authRoutes here , it should be done
-// in specific routes inside route folder
+// Authentication is applied to specific routes within authRoutes if needed
 
 app.use(`${API_PREFIX}/eseller-agreement`, authenticate, vendorModeMiddleware, agreementRoutes);
 app.use(`${API_PREFIX}/account-health`, authenticate, vendorModeMiddleware, accountHealthRoutes);

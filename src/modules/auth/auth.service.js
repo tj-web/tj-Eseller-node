@@ -62,7 +62,7 @@ export const handleResetPassword = async (token, newPassword) => {
       }
     );
 
-    /* update vendor */
+    // Update vendor table password
     await Vendor.update(
       { password: hashedPassword },
       {
@@ -80,7 +80,7 @@ export const handleResetPassword = async (token, newPassword) => {
     throw error;
   }
 };
-// ******************************************************
+
 
 export const logoutService = async (refreshToken) => {
   if (!refreshToken) {
@@ -107,7 +107,7 @@ export const logoutService = async (refreshToken) => {
   };
 };
 
-// ************************************************************************
+
 
 export const handleForgotPassword = async (email) => {
   const normalizedEmail = email.trim().toLowerCase();
@@ -148,7 +148,7 @@ export const handleForgotPassword = async (email) => {
   return true;
 };
 
-// *****************************************************************************
+
 export const registerVendor = async (data) => {
   const {
     frmtype,
@@ -312,9 +312,9 @@ export const registerVendor = async (data) => {
   }
 };
 
-/* =========================================
-   GENERATE TOKENS
-========================================= */
+/**
+ * Generates auth and refresh tokens for a user.
+ */
 export const generateAuthTokens = (user) => {
   if (!process.env.ACCESS_TOKEN_SECRET) {
     throw new Error("Missing ACCESS_TOKEN_SECRET");
@@ -372,8 +372,9 @@ export const createLoginHistory = async (
   }
 };
 
-// ****************************** Verify Password ************************
-export const verifyPassword = async (inputPassword, dbPassword) => {
+/**
+ * Verifies the provided password against the database hash.
+ */export const verifyPassword = async (inputPassword, dbPassword) => {
   const hashed = await hashPassword(inputPassword);
   return hashed === dbPassword;
 };
