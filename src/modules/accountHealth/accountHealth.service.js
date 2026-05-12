@@ -144,7 +144,7 @@ export const getHealthScoreService = async (vendor_id) => {
       }
     }
 
-    // 4. Response Time (Aligned with PHP Source: VendorAnalytics)
+    // 4. Response Time (Source: VendorAnalytics)
     const analytics = await VendorAnalytics.findOne({
       where: { vendor_id },
       attributes: [
@@ -383,12 +383,12 @@ export const getProfileCompletionService = async (vendor_id) => {
         {
           model: Brand,
           attributes: ["brand_name", "image"],
-          required: true, // Matching PHP 'JOIN'
+          required: true, // INNER JOIN
         },
         {
           model: Product,
           attributes: ["product_name"],
-          required: false, // Matching PHP 'LEFT'
+          required: false, // LEFT JOIN
           include: [
             {
               model: ProductImage,
@@ -490,10 +490,10 @@ export const getTrustedSellerService = async (vendor_id) => {
       }
     }
 
-    // 3. Response Time (Aligned with PHP Source: VendorAnalytics + OMS PI Filtering)
+    // 3. Response Time (Source: VendorAnalytics + OMS PI Filtering)
     let whereAnalytics = { vendor_id };
 
-    // Apply OMS PI Plan filtering if enabled (parity with Code B)
+    // Apply OMS PI Plan filtering if enabled
     if (vendor.show_current_plan_data === 1) {
       const activePlans = await sequelize.query(
         `

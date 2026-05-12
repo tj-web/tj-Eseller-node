@@ -4,6 +4,7 @@ import {
   insertRecordWithoutId,
   updateRecord,
 } from "../../General_Function/general_helper.js";
+import { refreshTokenResponse } from "../../utilis/tokenRefresh.js";
 import {
   getAgreementProductPlans,
   getDesignation,
@@ -115,8 +116,14 @@ export const agreementFormController = async (req, res) => {
         const updateResult = await updateRecord("vendor_agreement", { id: agreement_data.id }, data);
         if (updateResult) {
           await updateRecord("vendors", { id: vendor_id }, { vendor_mode: 2 });
-          return res.status(200).json({ success: true, message: "Agreement Signed Successfully" });
-        } else {
+          const decoded = await refreshTokenResponse(req, res);
+          return res.status(200).json({
+            success: true,
+            message: "Agreement Signed Successfully",
+            vendor_mode: decoded?.vendor_mode ?? 0,
+          });
+        }
+        else {
           return res.status(200).json({ success: false, message: "Problem in updating." });
         }
       }
