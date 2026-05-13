@@ -245,6 +245,41 @@ export const getProductList = async (
   };
 };
 
+export const getVendorProductsCountService = async (brand_arr, srch_product_name = "") => {
+  if (!brand_arr || brand_arr.length === 0) {
+    return { all: 0, active: 0, inactive: 0 };
+  }
+
+  const whereConditions = {
+    is_deleted: 0,
+    brand_id: { [Op.in]: brand_arr },
+  };
+
+  if (srch_product_name) {
+    whereConditions.product_name = { [Op.like]: `%${srch_product_name}%` };
+  }
+
+  const rows = await Product.findAll({
+    attributes: [
+      "status",
+      [sequelize.fn("COUNT", sequelize.col("product_id")), "count"],
+    ],
+    where: whereConditions,
+    group: ["status"],
+    raw: true,
+  });
+
+  const counts = { all: 0, active: 0, inactive: 0 };
+  for (const row of rows) {
+    const n = Number(row.count) || 0;
+    counts.all += n;
+    if (row.status === 1) counts.active += n;
+    else counts.inactive += n;
+  }
+
+  return counts;
+};
+
 export const getProductLeadsCount = async (productId) => {
   try {
     const count = await TblLeads.count({
@@ -481,6 +516,20 @@ export const saveProductDescription = async (descriptionData, externalTransactio
   try {
     const { product_id, brief, overview, description, internal_description } = descriptionData;
 
+    // Validation: DB columns are VARCHAR(255) - enforce max length
+    const MAX_LEN = 255;
+    const tooLongField = (name, value) => typeof value === 'string' && value.length > MAX_LEN ? name : null;
+    const violations = [
+      tooLongField('brief', brief),
+      tooLongField('overview', overview),
+      tooLongField('description', description),
+      tooLongField('internal_description', internal_description),
+    ].filter(Boolean);
+
+    if (violations.length > 0) {
+      throw new Error(`Product description fields exceed maximum length ${MAX_LEN}: ${violations.join(', ')}`);
+    }
+
     const existingDesc = await ProductDescription.findOne({
       where: { product_id },
       transaction, 
@@ -602,6 +651,16 @@ export const logProductSaveToVendorLogs = async ({
       });
     }
 
+    // Validate lengths for vendor_logs (updated_column_value is VARCHAR(255))
+    const MAX_LOG_LEN = 255;
+    const tooLong = fieldsToLog
+      .filter(f => f.value !== undefined && f.value !== null && String(f.value).length > MAX_LOG_LEN)
+      .map(f => `${f.table}.${f.column}`);
+
+    if (tooLong.length > 0) {
+      throw new Error(`Vendor log fields exceed maximum length ${MAX_LOG_LEN}: ${tooLong.join(', ')}`);
+    }
+
     // Create vendor log entries for each field
     for (const field of fieldsToLog) {
       if (field.value === undefined || field.value === null || field.value === "") continue;
@@ -617,7 +676,7 @@ export const logProductSaveToVendorLogs = async ({
         table_name: field.table,
         column_name: field.column,
         p_key,
-        updated_column_value: field.value.toString(),
+        updated_column_value: String(field.value).toString(),
         linked_attribute: "",
         item_updated_id,
         reject_reason: "",
@@ -821,7 +880,7 @@ export const getProductDetail = async (product_id) => {
       include: [
         { model: ProductDescription, attributes: ['overview', 'description'] },
         { model: ProductSpecification },
-        { model: ProductImage, attributes: ['image'] }
+        { model: ProductImage, attributes: ['image'], where: { default: 1 }, required: false }
       ]
     });
 
