@@ -13,7 +13,8 @@ import {
     getVendorContacts,
     getLeadInsights,
     unlockLeadInsights,
-    unlockContact
+    unlockContact,
+    getLeadLocationsService
 } from "./manageLeads.service.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 import StatusCodes from "../../utilis/statusCodes.js";
@@ -185,6 +186,19 @@ export const unlockLeadInsightsController = async (req, res) => {
         const vendor_id = req.user.vendor_id;
         const result = await unlockLeadInsights(vendor_id, { ...req.body });
         return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead insights unlocked successfully", result));
+    } catch (error) {
+        return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
+    }
+};
+
+export const getLeadLocationsController = async (req, res) => {
+    try {
+        const { search_by, context_id } = req.query;
+        if (!search_by) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError("search_by is required (state/city)"));
+        }
+        const results = await getLeadLocationsService(search_by, context_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Locations fetched successfully", results));
     } catch (error) {
         return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
     }

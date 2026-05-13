@@ -18,6 +18,7 @@ import salesRoutes from "./modules/sales/sales.route.js";
 import apiIntegrationRoutes from "./modules/apiintegration/apiintegration.route.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
+import { vendorModeMiddleware } from "./middlewares/vendorModeMiddleware.js";
 
 global.CONSTANTS = AWS_paths();
 
@@ -34,6 +35,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan("dev"));
+app.use("/assets", express.static("assets"));
 
 app.get("/", (req, res) => {
   res.status(200).send("Eseller API is running.");
@@ -45,23 +47,23 @@ app.get("/health", function (req, res) {
 
 const API_PREFIX = process.env.API_VERSION_PATH;
 
-app.use(`${API_PREFIX}/dashboard`, authenticate, dashboardRoutes);
-app.use(`${API_PREFIX}/lead`, authenticate, manageLeads);
-app.use(`${API_PREFIX}/orders`, authenticate, orderRoutes);
-app.use(`${API_PREFIX}/brands`, authenticate, brandRoutes);
-app.use(`${API_PREFIX}/product`, authenticate, manageProduct);
-app.use(`${API_PREFIX}/help-support`, authenticate, helpSupportRoutes);
-app.use(`${API_PREFIX}/company-information`, authenticate, companyInformationRoutes);
+// Apply authenticate and vendorModeMiddleware to protected routes
+app.use(`${API_PREFIX}/dashboard`, authenticate, vendorModeMiddleware, dashboardRoutes);
+app.use(`${API_PREFIX}/lead`, authenticate, vendorModeMiddleware, manageLeads);
+app.use(`${API_PREFIX}/orders`, authenticate, vendorModeMiddleware, orderRoutes);
+app.use(`${API_PREFIX}/brands`, authenticate, vendorModeMiddleware, brandRoutes);
+app.use(`${API_PREFIX}/product`, authenticate, vendorModeMiddleware, manageProduct);
+app.use(`${API_PREFIX}/help-support`, authenticate, vendorModeMiddleware, helpSupportRoutes);
+app.use(`${API_PREFIX}/company-information`, authenticate, vendorModeMiddleware, companyInformationRoutes);
 app.use(`${API_PREFIX}/auth`, authRoutes);
-app.use(`${API_PREFIX}/leads`, authenticate, leadsRoutes);
-app.use(`${API_PREFIX}/sales`, authenticate, salesRoutes);
-app.use(`${API_PREFIX}/apiintegration`, authenticate, apiIntegrationRoutes);
+app.use(`${API_PREFIX}/leads`, authenticate, vendorModeMiddleware, leadsRoutes);
+app.use(`${API_PREFIX}/sales`, authenticate, vendorModeMiddleware, salesRoutes);
+app.use(`${API_PREFIX}/apiintegration`, authenticate, vendorModeMiddleware, apiIntegrationRoutes);
 
-// do not apply authenticate in authRoutes here , it should be done
-// in specific routes inside route folder
+// Authentication is applied to specific routes within authRoutes if needed
 
-app.use(`${API_PREFIX}/eseller-agreement`, authenticate, agreementRoutes);
-app.use(`${API_PREFIX}/account-health`, authenticate, accountHealthRoutes);
+app.use(`${API_PREFIX}/eseller-agreement`, authenticate, vendorModeMiddleware, agreementRoutes);
+app.use(`${API_PREFIX}/account-health`, authenticate, vendorModeMiddleware, accountHealthRoutes);
 
 app.use(errorHandler);
 

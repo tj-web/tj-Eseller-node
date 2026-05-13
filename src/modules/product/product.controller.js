@@ -77,6 +77,33 @@ export const fetchVendorProducts = async (req, res) => {
   }
 };
 
+/*******  product counts by status (for tab badges)   ******/
+
+export const getProductsCount = async (req, res) => {
+  try {
+    const vendor_id = req.user.vendor_id;
+    const { srch_product_name = "" } = req.query;
+
+    if (!vendor_id) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError("vendor_id is required"));
+    }
+
+    const brand_arr = await productService.getVendorBrands(vendor_id);
+    const counts = await productService.getVendorProductsCountService(brand_arr, srch_product_name);
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Product counts fetched successfully.", counts));
+  } catch (error) {
+    console.error("Error fetching product counts:", error);
+    return res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(SystemResponse.internalServerError("Internal Server Error in product counts"));
+  }
+};
+
 export const getLeadsCount = async (req, res) => {
   try {
     const { productId } = req.params;
@@ -223,13 +250,23 @@ export const basicDetails = async (req, res) => {
         post?.description ||
         post?.internal_description
       ) {
-        await productService.saveProductDescription({
-          product_id: productId,
-          brief: post?.brief ?? "",
-          overview: post?.overview ?? "",
-          description: post?.description ?? "",
-          internal_description: post?.internal_description ?? "",
-        }, transaction);
+        try {
+          await productService.saveProductDescription({
+            product_id: productId,
+            brief: post?.brief ?? "",
+            overview: post?.overview ?? "",
+            description: post?.description ?? "",
+            internal_description: post?.internal_description ?? "",
+          }, transaction);
+        } catch (err) {
+          // Rollback and return 400 for validation errors (frontend will display)
+          if (transaction) await transaction.rollback();
+          // Recognize the validation error thrown by service
+          if (err && err.message && err.message.includes('exceed maximum length')) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(err.message));
+          }
+          throw err;
+        }
       }
 
       // === STEP 6: Save product categories ===
@@ -258,18 +295,26 @@ export const basicDetails = async (req, res) => {
       ? [post.product_category]
       : [];
 
-    await productService.logProductSaveToVendorLogs({
-      product_id: productId,
-      vendor_id,
-      productData: save,
-      imageFileName: uploadedImages[0]?.fileName || null,
-      documentFileName: uploadedDocuments[0]?.fileName || null,
-      categoryIds,
-      descriptionData: descriptionForLog,
-      isNewProduct,
-      existingRecordIds: {},
-      transaction,
-    });
+    try {
+      await productService.logProductSaveToVendorLogs({
+        product_id: productId,
+        vendor_id,
+        productData: save,
+        imageFileName: uploadedImages[0]?.fileName || null,
+        documentFileName: uploadedDocuments[0]?.fileName || null,
+        categoryIds,
+        descriptionData: descriptionForLog,
+        isNewProduct,
+        existingRecordIds: {},
+        transaction,
+      });
+    } catch (err) {
+      if (transaction) await transaction.rollback();
+      if (err && err.message && err.message.includes('exceed maximum length')) {
+        return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(err.message));
+      }
+      throw err;
+    }
 
     await transaction.commit();
     transaction = null;
@@ -1118,7 +1163,7 @@ export const viewProduct = async (req, res) => {
     }
 
     const productData = await productService.getProductDetail(product_id);
-
+    
     if (!productData) {
       return res
         .status(StatusCodes.NOT_FOUND)

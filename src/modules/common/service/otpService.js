@@ -8,125 +8,106 @@ import { createLoginHistory, generateAuthTokens } from "../../auth/auth.service.
 
 /* =========================================
    SEND OTP
-========================================= */
-export const sendOtpService = async (phone_number) => {
-  if (!validator.isMobilePhone(phone_number, "any")) {
-    throw new AppError("Invalid phone number", 400);
-  }
-
+ ========================================= */
+export const sendOtpService = async (phone_number, dial_code = "91") => {
   const user = await findUserByPhone(phone_number);
 
   if (!user) {
-    console.warn(`OTP Failed: Phone '${phone_number}' not found in database`);
-    throw new AppError("Account not found for this phone number", 404);
+    throw new AppError("Account Not Found!.", 404);
   }
 
-  const now = new Date();
+  // Use the canonical phone and dial_code from the database to avoid duplicates (e.g. 91+91...)
+  const dCode = user.dial_code || dial_code || "91";
+  const pNumber = user.phone || phone_number;
 
-  /* ---------- cooldown ---------- */
-  const lastOtp = await Otp.findOne({
-    where: { phone_number },
-    order: [["created_date", "DESC"]],
-  });
+  const payload = {
+    minute: dCode === "91" ? 2 : 3,
+    dial_code: dCode,
+  };
 
-  if (lastOtp) {
-    const diff = now - new Date(lastOtp.created_date);
-    if (diff < 30 * 1000) {
-      throw new AppError("Wait 30 seconds before requesting OTP again", 429);
-    }
+  if (dCode !== "91") {
+    payload.type = "email";
+    payload.email = user.email;
+    payload.subject = "Eseller - Verification Code";
+  } else {
+    payload.phone_number = pNumber;
+    payload.type = "phone";
   }
 
-  /* ---------- limit ---------- */
-  const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+  const url = `${process.env.MAINSITE_URL}tjapi/send_otp`;
+  
+  console.log(`Sending OTP to DialCode: ${dCode}, Phone: ${pNumber} via ${url}`);
 
-  const otpCount = await Otp.count({
-    where: {
-      phone_number,
-      created_date: {
-        [Op.gte]: twelveHoursAgo,
-      },
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.TJ_API_OTP_TOKEN}`,
     },
+    body: JSON.stringify(payload),
   });
 
-  if (otpCount >= 5) {
-    throw new AppError(
-      "Maximum OTP limit reached. Try again after 12 hours.",
-      429,
-    );
+  const result = await response.json();
+  console.log("TJ API Response:", result);
+
+  if (!result.status) {
+    throw new AppError(result.msg || "Failed to send OTP", 400);
   }
 
-  /* ---------- generate ---------- */
-  const otp = Math.floor(1000 + Math.random() * 9000);
-  const validTill = new Date(now.getTime() + 5 * 60 * 1000);
-
-  try {
-    await Otp.create({
-      phone_number,
-      otp,
-      created_date: now,
-      valid_till: validTill,
-      is_verified: 0,
-      otp_count: otpCount + 1,
-      msg: `Your OTP is ${otp}`,
-    });
-    console.log(`Successfully saved OTP to DB for phone: ${phone_number}`);
-  } catch (err) {
-    console.error("Database error while creating OTP record:", err);
-    throw err;
-  }
+  /* Log attempt - Using 'native_auth' to match DB ENUM allowed values */
+  await createLoginHistory(user, "website", "eseller", null, "native_auth");
 
   return true;
 };
 
 /* =========================================
    VERIFY OTP
-========================================= */
+ ========================================= */
+export const verifyOtpService = async (phone_number, otp, ip, deviceId, dial_code = "91") => {
+  const user = await findUserByPhone(phone_number);
+  if (!user) {
+    throw new AppError("Account Not Found!.", 404);
+  }
 
-export const verifyOtpService = async (phone_number, otp, ip, deviceId) => {
-  const now = new Date();
+  const dCode = user.dial_code || dial_code || "91";
+  const pNumber = user.phone || phone_number;
 
-  /* ---------- find OTP ---------- */
-  const record = await Otp.findOne({
-    where: {
-      phone_number,
-      otp,
-      is_verified: 0,
-      valid_till: {
-        [Op.gte]: now,
-      },
+  const payload = {
+    dial_code: dCode,
+    otp: otp,
+  };
+
+  if (dCode !== "91") {
+    payload.type = "email";
+    payload.email = user.email;
+    payload.subject = "Eseller - Verification Code";
+  } else {
+    payload.phone_number = pNumber;
+    payload.type = "phone";
+  }
+
+  const url = `${process.env.MAINSITE_URL}tjapi/verify_otp`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.TJ_API_OTP_TOKEN}`,
     },
-    order: [["created_date", "DESC"]],
+    body: JSON.stringify(payload),
   });
 
-  if (!record) {
-    throw new AppError("Invalid or expired OTP", 400);
+  const result = await response.json();
+
+  if (!result.status || result.error_code) {
+    throw new AppError(result.msg || "Invalid or expired OTP", 400);
   }
 
-  /* ---------- mark used ---------- */
-  const updated = await Otp.update(
-    { is_verified: 1 },
-    {
-      where: {
-        id: record.id,
-        is_verified: 0,
-      },
-    },
-  );
-
-  if (!updated[0]) {
-    throw new AppError("OTP already used", 400);
-  }
-
-  /* ---------- get user ---------- */
-  const user = await findUserByPhone(phone_number);
-
-  if (!user || user.Vendor.status === 0) {
-    throw new AppError("Invalid OTP", 400);
-  }
-
+  /* Successful Verification */
   const { accessToken, refreshToken } = generateAuthTokens(user);
 
-  await createLoginHistory(user, ip, deviceId, refreshToken);
+  /* Log login - Using 'native_auth' to match DB ENUM allowed values */
+  await createLoginHistory(user, ip, deviceId, refreshToken, "native_auth");
 
   return {
     accessToken,
@@ -135,6 +116,7 @@ export const verifyOtpService = async (phone_number, otp, ip, deviceId) => {
       id: user.vendor_id,
       email: user.email,
       name: `${user.first_name} ${user.last_name}`,
+      Vendor: user.Vendor
     },
   };
 };

@@ -6,7 +6,43 @@ const router = express.Router();
 
 // --- Multer Configuration ---
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+
+const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE
+  ? parseInt(process.env.MAX_FILE_SIZE, 10)
+  : 5 * 1024 * 1024; // 5 MB default per-file
+
+const ALLOWED_IMAGE_MIMES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
+
+const ALLOWED_DOC_MIMES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+
+const fileFilter = (req, file, cb) => {
+  if (file.fieldname === "image") {
+    if (ALLOWED_IMAGE_MIMES.includes(file.mimetype)) return cb(null, true);
+    return cb(new Error("Only image files are allowed for the image field"));
+  }
+
+  if (file.fieldname === "documents" || file.fieldname === "file") {
+    if (
+      ALLOWED_DOC_MIMES.includes(file.mimetype) ||
+      file.mimetype.startsWith("image/")
+    )
+      return cb(null, true);
+    return cb(new Error("Invalid document/file type"));
+  }
+
+  cb(null, false);
+};
+
+const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE }, fileFilter });
 
 const productBasicUpload = upload.fields([
   { name: "image", maxCount: 5 },
@@ -15,6 +51,7 @@ const productBasicUpload = upload.fields([
 ]);
 
 // --- 1. PRODUCT DISCOVERY & LISTING ---
+router.get("/status-counts", productController.getProductsCount);
 router.get("/product_list", productController.fetchVendorProducts);
 router.get("/:productId/leads-count", productController.getLeadsCount);
 router.get("/product_brands", productController.brand_arr);

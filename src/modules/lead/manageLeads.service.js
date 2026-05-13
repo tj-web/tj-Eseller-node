@@ -12,10 +12,12 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import StateMaster from "../../models/stateMaster.model.js";
+import CityMaster from "../../models/cityMaster.model.js";
+import CountriesMaster from "../../models/countriesMaster.model.js";
 
 
-/**
- * Helper to get vendor's lead insight permissions and allowed products.
+ /* Retrieves vendor lead insight permissions and allowed products.
  */
 const getVendorInsightPermission = async (vendor_id) => {
     const vendor = await Vendor.findByPk(vendor_id, {
@@ -26,9 +28,6 @@ const getVendorInsightPermission = async (vendor_id) => {
         return { allowed: false, productIds: [] };
     }
 
-    // Return allowed: true if the feature is enabled for the vendor.
-    // We can also fetch the list of products they HAVE a plan for, but if we want to show it for all, we return all.
-    // Matching the user's request to see the button and unlock flow.
     return {
         allowed: true,
         isFeatureEnabled: true
@@ -104,7 +103,10 @@ export const getLeads=async (vendor_id, post) => {
         action: post.lead_action || '',
         is_trashed: post.is_trashed || 0,
         limit: parseInt(post.limit) || 10,
-        page: parseInt(post.page) || 0
+        page: parseInt(post.page) || 0,
+        srch_country: post.srch_country || '',
+        srch_state: post.srch_state || '',
+        srch_city: post.srch_city || ''
     };
 
     const offset = filters.page * filters.limit;
@@ -155,7 +157,7 @@ export const getLeads=async (vendor_id, post) => {
         }
     }
 
-    // PHP Search Logic Refined
+    // Search logic
     if (filters.srch_by && filters.srch_value) {
         if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
             whereClause.is_contact_viewed = { [Op.gt]: 0 };
@@ -165,6 +167,14 @@ export const getLeads=async (vendor_id, post) => {
 
     if (filters.is_trashed) {
         whereClause.is_trashed = filters.is_trashed;
+    }
+
+    if (filters.srch_state) {
+        whereClause.state = filters.srch_state;
+    }
+
+    if (filters.srch_city) {
+        whereClause.city = filters.srch_city;
     }
 
     const { count, rows } = await TblLeads.findAndCountAll({
@@ -356,7 +366,7 @@ export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
         const demoJson = demo.toJSON();
         const lead = demoJson.lead;
 
-        // PHP Masking Logic Refined for demos
+        // Masking logic for demos
         const isInternational = lead.dial_code !== '91';
         const contactViewed = lead.is_contact_viewed > 0;
         const showContact = lead.is_show_contact > 0;
@@ -472,9 +482,9 @@ export const leadStatusHandler=async (vendor_id, body) => {
 };
 
 /**
- * Port of updateLeadStatusManual from PHP.
+ * Updates lead status manually.
  */
-export const updateLeadStatusManual=async (data, source = 'web') => {
+export const updateLeadStatusManual = async (data, source = 'web') => {
     if (!data.lead_id) return false;
 
     const previousLead = await TblLeads.findOne({
@@ -548,7 +558,7 @@ export const getLeadDetails=async (vendor_id, leadId) => {
     if (!lead) return null;
     const leadJson = lead.toJSON();
 
-    // PHP Masking Logic Refined for details
+    // Masking logic for details
     const isInternational = leadJson.dial_code !== '91';
     const contactViewed = leadJson.is_contact_viewed > 0;
     const showContact = (isInternational || leadJson.is_show_contact > 0);
@@ -737,7 +747,7 @@ export const scheduleCallback=async (vendor_id, data) => {
     if (date && hour && minute) {
         scheduledTime = `${date} ${hour}:${minute}:00`;
     } else {
-        // Default to "Now" in IST (UTC+5:30) like PHP
+        // Default to "Now" in IST (UTC+5:30)
         const now = new Date();
         // Add 5.5 hours for IST + 1 minute buffer
         now.setMinutes(now.getMinutes() + 331);
@@ -800,6 +810,46 @@ export const scheduleCallback=async (vendor_id, data) => {
 };
 
 /**
+ * Get lead locations (States/Cities) for search filters.
+ */
+export const getLeadLocationsService = async (search_by, context_id) => {
+    try {
+        if (search_by === "state") {
+            return await StateMaster.findAll({
+                where: {
+                    countries_id: 99, // Restricted to India as per requirement
+                    status: 1,
+                },
+                attributes: [
+                    ["state_id", "id"],
+                    ["state_name", "text"],
+                ],
+                order: [["state_name", "ASC"]],
+                raw: true,
+            });
+        } else if (search_by === "city") {
+            if (!context_id) return [];
+            return await CityMaster.findAll({
+                where: {
+                    state_id: context_id,
+                    status: 1,
+                    is_deleted: 0
+                },
+                attributes: [
+                    ["city_id", "id"],
+                    ["city_name", "text"],
+                ],
+                order: [["city_name", "ASC"]],
+                raw: true,
+            });
+        }
+        return [];
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
  * Retrieves vendor phone numbers.
  */
 export const getVendorContacts=async (vendor_id) => {
@@ -815,10 +865,9 @@ export const getVendorContacts=async (vendor_id) => {
 };
 
 /**
- * Port of fetch_lead_insights_data from PHP.
  * Orchestrates enrichment from Apollo.
  */
-export const fetchLeadInsightsData=async (lead_id, vendor_id) => {
+export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     const leadData = await TblLeads.findOne({
         attributes: ['id', 'email', 'company_id', 'category_id', 'leadinsight'],
         where: { id: lead_id }
@@ -1144,7 +1193,7 @@ const getKeyData = async (key) => {
 };
 
 /**
- * Wrapper for fetch to simulate PHP's fetchWithCurl.
+ * Wrapper for fetch.
  */
 const fetchWithCurl = async (url, headers) => {
     const response = await fetch(url, { method: 'POST', headers });
@@ -1336,7 +1385,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
             }
             const tracksCollection = db.collection('tracks');
 
-            // Get related GUUIDs (simplified version of PHP logic)
+            // Get related GUUIDs
             const guuids = await tracksCollection.distinct('feeds.guuid', {
                 'feeds.customer_id': String(lead.user_id)
             });
@@ -1370,14 +1419,14 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
 
             const activities = await tracksCollection.aggregate(activityQuery).toArray();
 
-            // Process activities to match PHP final_activity_array format
+            // Process activities to match timeline format
             const finalActivityMap = {};
             for (const activity of activities) {
                 let assetName = '';
                 let assetType = '';
                 const feedAction = activity.feed_action;
 
-                // Extraction logic matching Lmslib.php
+                // Extraction logic
                 const productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name;
                 const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
 
@@ -1411,9 +1460,9 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
 };
 
 /**
- * Unlock lead insights interest with exact PHP parity.
+ * Unlock lead insights interest.
  */
-export const unlockLeadInsights=async (vendor_id, data) => {
+export const unlockLeadInsights = async (vendor_id, data) => {
     console.log("Unlocking insights for vendor:", vendor_id, "Data:", data);
     const { company, email, date = null, time = [], remark = null, gp = null } = data;
 
@@ -1435,7 +1484,7 @@ export const unlockLeadInsights=async (vendor_id, data) => {
         });
         console.log("Interest saved successfully");
 
-        // 2. Queue Email (Matching PHP template)
+        // 2. Queue Email notification
         const timeArr = Array.isArray(time) ? time : JSON.parse(time || '[]');
         const emailBody = `
 <!DOCTYPE html>

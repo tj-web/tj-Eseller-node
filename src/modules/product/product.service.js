@@ -144,7 +144,7 @@ export const getVendorBrandsDetails = async (vendor_id) => {
 };
 
 
-// ----------------------------------------GetProductList----------------------------
+// ---------------------------------------- Get Product List ----------------------------
 
 export const getProductList = async (
   brand_arr,
@@ -245,6 +245,41 @@ export const getProductList = async (
   };
 };
 
+export const getVendorProductsCountService = async (brand_arr, srch_product_name = "") => {
+  if (!brand_arr || brand_arr.length === 0) {
+    return { all: 0, active: 0, inactive: 0 };
+  }
+
+  const whereConditions = {
+    is_deleted: 0,
+    brand_id: { [Op.in]: brand_arr },
+  };
+
+  if (srch_product_name) {
+    whereConditions.product_name = { [Op.like]: `%${srch_product_name}%` };
+  }
+
+  const rows = await Product.findAll({
+    attributes: [
+      "status",
+      [sequelize.fn("COUNT", sequelize.col("product_id")), "count"],
+    ],
+    where: whereConditions,
+    group: ["status"],
+    raw: true,
+  });
+
+  const counts = { all: 0, active: 0, inactive: 0 };
+  for (const row of rows) {
+    const n = Number(row.count) || 0;
+    counts.all += n;
+    if (row.status === 1) counts.active += n;
+    else counts.inactive += n;
+  }
+
+  return counts;
+};
+
 export const getProductLeadsCount = async (productId) => {
   try {
     const count = await TblLeads.count({
@@ -259,7 +294,7 @@ export const getProductLeadsCount = async (productId) => {
   }
 };
 
-// ----------------------------------------GetCategoryList----------------------------
+// ---------------------------------------- Get Category List ----------------------------
 
 export const getCategoryList = async (search = "", limit = 20, offset = 0) => {
   const safeLimit = parseInt(limit) || 20;
@@ -459,7 +494,7 @@ export const uploadPricingDocumentOnly = async (productId, documentFiles) => {
   if (!documentFiles || documentFiles.length === 0) return [];
   const savedDocs = [];
 
-  // Upload pricing documents to S3 under pricing/pending for vendor edits
+  // Upload pricing documents to S3  under pricing/pending for vendor edits
   for (const doc of documentFiles) {
     const originalName = doc.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
     const fileName = `${productId}_${originalName}`;
@@ -480,6 +515,20 @@ export const saveProductDescription = async (descriptionData, externalTransactio
 
   try {
     const { product_id, brief, overview, description, internal_description } = descriptionData;
+
+    // Validation: DB columns are VARCHAR(255) - enforce max length
+    const MAX_LEN = 255;
+    const tooLongField = (name, value) => typeof value === 'string' && value.length > MAX_LEN ? name : null;
+    const violations = [
+      tooLongField('brief', brief),
+      tooLongField('overview', overview),
+      tooLongField('description', description),
+      tooLongField('internal_description', internal_description),
+    ].filter(Boolean);
+
+    if (violations.length > 0) {
+      throw new Error(`Product description fields exceed maximum length ${MAX_LEN}: ${violations.join(', ')}`);
+    }
 
     const existingDesc = await ProductDescription.findOne({
       where: { product_id },
@@ -602,6 +651,16 @@ export const logProductSaveToVendorLogs = async ({
       });
     }
 
+    // Validate lengths for vendor_logs (updated_column_value is VARCHAR(255))
+    const MAX_LOG_LEN = 255;
+    const tooLong = fieldsToLog
+      .filter(f => f.value !== undefined && f.value !== null && String(f.value).length > MAX_LOG_LEN)
+      .map(f => `${f.table}.${f.column}`);
+
+    if (tooLong.length > 0) {
+      throw new Error(`Vendor log fields exceed maximum length ${MAX_LOG_LEN}: ${tooLong.join(', ')}`);
+    }
+
     // Create vendor log entries for each field
     for (const field of fieldsToLog) {
       if (field.value === undefined || field.value === null || field.value === "") continue;
@@ -617,7 +676,7 @@ export const logProductSaveToVendorLogs = async ({
         table_name: field.table,
         column_name: field.column,
         p_key,
-        updated_column_value: field.value.toString(),
+        updated_column_value: String(field.value).toString(),
         linked_attribute: "",
         item_updated_id,
         reject_reason: "",
@@ -812,8 +871,7 @@ export const replaceProductCategories = async ({
 export const startProductBasicDetailsTransaction = async () =>
   Product.sequelize.transaction();
 
-//--------------This function will fetch the data of the existing product for editing purpose----------------
-
+// Fetch existing product data for editing
 export const getProductDetail = async (product_id) => {
   try {
     // 1. Fetch main product data with basic associations
@@ -822,7 +880,7 @@ export const getProductDetail = async (product_id) => {
       include: [
         { model: ProductDescription, attributes: ['overview', 'description'] },
         { model: ProductSpecification },
-        { model: ProductImage, attributes: ['image'] }
+        { model: ProductImage, attributes: ['image'], where: { default: 1 }, required: false }
       ]
     });
 
@@ -838,7 +896,7 @@ export const getProductDetail = async (product_id) => {
       BusinessType.findAll({ raw: true })
     ]);
 
-    // 3. Logic to handle comma-separated IDs (The "Developer way" to replace FIND_IN_SET)
+    // 3. Handle comma-separated IDs
     const spec = product.ProductSpecification || {};
     
     // Helper function to filter lookup tables based on comma-separated IDs in the spec
@@ -870,7 +928,7 @@ export const getProductDetail = async (product_id) => {
       hw_configuration: spec.hw_configuration,
       sw_configuration: spec.sw_configuration,
 
-      // Mapped Names (Replacing the raw SQL literals)
+      // Mapped Names
       operating_system_names: getNames(spec.operating_system, allOS, 'id', 'os_name'),
       operating_system_images: getNames(spec.operating_system, allOS, 'id', 'os_image'),
       industries_names: getNames(spec.industries, allIndustries, 'id', 'name'),
@@ -1086,7 +1144,7 @@ export const saveOrUpdateProductSpecification = async (
       raw: true
     });
 
-    // 2. Define fields to compare (matching the PHP logic)
+    // 2. Define fields to compare
     const trackingFields = [
       'deployment',
       'device',
@@ -1642,7 +1700,7 @@ export const upsertEnrichmentImages = async (enrichmentData) => {
 };
 
 /**
- * Fetch enrichment images and compute budget math for parity with legacy PHP.
+ * Fetch enrichment images and compute budget math.
  */
 export const getProductEnrichmentImages = async (productId) => {
   try {
@@ -1859,7 +1917,7 @@ export const getProductVideos = async (productId) => {
 };
 
 /**
- * Handle video approval workflow via vendor_logs (Legacy PHP parity)
+ * Handle video approval workflow via vendor_logs.
  */
 export const logProductVideoRequest = async ({
   productId,

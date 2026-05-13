@@ -3,7 +3,6 @@ import sequelize from "../db/connection.js";
 import { unserialize } from "php-serialize";
 import { getAllOrders } from "../modules/order/orders.model.js";
 
-
 function safeUnserialize(value) {
   try {
     if (!value) return [];
@@ -42,7 +41,6 @@ export async function vendorOrders({ vendor_id, params = {} }) {
       const tax_rate = 0;
 
       const subTotal = Number(order.sub_total) || 0;
-
       const prod_img = order.image
         ? (CONSTANTS?.AWS_FETCH_PRODUCT_IMAGES || "") + order.image
         : DIR_FS_PRODUCT_NOIMAGE;
@@ -51,22 +49,17 @@ export async function vendorOrders({ vendor_id, params = {} }) {
         product_name: order.product_name,
         product_image: prod_img,
         plan_details: "",
-
         plan_variables: order.plan_variables
           ? safeUnserialize(order.plan_variables)
           : [],
-
         plan_other_variables: order.plan_other_variables
           ? safeUnserialize(order.plan_other_variables)
           : [],
-
         gst_type: order.gst_type,
         sub_total: subTotal,
         gst: (subTotal * tax_rate) / 100,
         product_total: subTotal + (subTotal * tax_rate) / 100,
       };
-
-
       const poDoc = order.doc_number
         ? process.env.AWS_PATH + "oms/omspo/" + order.doc_number + ".pdf"
         : "";
@@ -129,7 +122,6 @@ export async function vendorOrders({ vendor_id, params = {} }) {
           order_id: order.order_id,
           product_name: order.product_name,
           product_image: prod_img,
-
           order_date: new Date(order.order_date).toLocaleString("en-GB", {
             day: "2-digit",
             month: "2-digit",
@@ -148,7 +140,6 @@ export async function vendorOrders({ vendor_id, params = {} }) {
           order_total: 0,
 
           order_detail: [],
-          order_tracking: [],
         };
       }
 
