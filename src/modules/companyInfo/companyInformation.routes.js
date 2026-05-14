@@ -3,7 +3,10 @@ import multer from "multer";
 import { getCompanyInfo, searchLocation, saveAccountInfo } from "./companyInformationController.js";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 router.get("/", getCompanyInfo);
 router.get("/search-location", searchLocation);
