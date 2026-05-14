@@ -25,9 +25,9 @@ const ALLOWED_DOC_MIMES = [
 ];
 
 const fileFilter = (req, file, cb) => {
-  if (file.fieldname === "image") {
+  if (file.fieldname === "image" || file.fieldname === "gallery" || file.fieldname === "screenshot") {
     if (ALLOWED_IMAGE_MIMES.includes(file.mimetype)) return cb(null, true);
-    return cb(new Error("Only image files are allowed for the image field"));
+    return cb(new Error(`Only image files are allowed for the ${file.fieldname} field`));
   }
 
   if (file.fieldname === "documents" || file.fieldname === "file") {
