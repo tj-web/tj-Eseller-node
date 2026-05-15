@@ -1272,191 +1272,221 @@ const timeAgo = (date) => {
  * Get lead insights with ownership verification.
  */
 export const getLeadInsights=async (vendor_id, lead_id) => {
-    const full_access_plan_id = 38;
-    const limited_access_plan_id = 39;
+    try {
+        const full_access_plan_id = 38;
+        const limited_access_plan_id = 39;
 
-    const vendor = await Vendor.findByPk(vendor_id, {
-        attributes: ['lead_insight_display']
-    });
+        const vendor = await Vendor.findByPk(vendor_id, {
+            attributes: ['lead_insight_display']
+        });
 
-    if (!vendor || vendor.lead_insight_display != 1) {
-        return null;
-    }
+        if (!vendor || vendor.lead_insight_display != 1) {
+            return null;
+        }
 
-    const planDetails = await getLeadInsightPlanDetails(vendor_id);
-    let plan_name = 'No Plan';
-    let plan_id = '';
+        const planDetails = await getLeadInsightPlanDetails(vendor_id);
+        let plan_name = 'No Plan';
+        let plan_id = '';
 
-    if (planDetails) {
-        const pi_status = planDetails.pi_status;
-        const end_date = planDetails.end_date;
-        const currentDate = new Date().toISOString().split('T')[0];
+        if (planDetails) {
+            const pi_status = planDetails.pi_status;
+            const end_date = planDetails.end_date;
+            const currentDate = new Date().toISOString().split('T')[0];
 
-        if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate) {
-            plan_id = planDetails.lead_plan_id;
-            plan_name = planDetails.plan_name || 'Paid Access';
+            if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate) {
+                plan_id = planDetails.lead_plan_id;
+                plan_name = planDetails.plan_name || 'Paid Access';
 
-            if (plan_id == full_access_plan_id) {
-                await fetchLeadInsightsData(lead_id, vendor_id);
+                if (plan_id == full_access_plan_id) {
+                    await fetchLeadInsightsData(lead_id, vendor_id);
+                }
+            } else {
+                // Expired or inactive plan -> Limited Access
+                plan_id = limited_access_plan_id;
+                plan_name = planDetails.plan_name || 'Full Free Access (Limited)';
             }
         } else {
-            // Expired or inactive plan -> Limited Access
+            // No plan at all -> still show Limited Access (Blurred) as requested by user
             plan_id = limited_access_plan_id;
-            plan_name = planDetails.plan_name || 'Full Free Access (Limited)';
-        }
-    } else {
-        // No plan at all -> still show Limited Access (Blurred) as requested by user
-        plan_id = limited_access_plan_id;
-        plan_name = 'Free Access (Limited)';
-    }
-
-    await verifyLeadOwnership(vendor_id, lead_id);
-
-    const lead = await TblLeads.findByPk(lead_id, {
-        attributes: ['id', 'user_id', 'email', 'company_id', 'category_id', 'product_name']
-    });
-    if (!lead) return null;
-
-    const result = {
-        customer_activity_details: { activities: [] },
-        customer_company_information: {},
-        top_five_key_people: [],
-        device: 'web',
-        leadinsight_plan_name: plan_name,
-        leadinsight_plan_id: plan_id,
-        full_access_plan_id,
-        limited_access_plan_id,
-        has_recent_submission: await hasRecentSubmission(vendor_id)
-    };
-
-    // 1. Fetch Company Information from MySQL
-    if (lead.company_id) {
-        let company = await sequelize.query(
-            `SELECT id as company_id, company as name, employees_size as size, industry, website, company_linkedin_url, logo_url 
-             FROM tbl_companies WHERE id = ?`,
-            { replacements: [lead.company_id], type: QueryTypes.SELECT, plain: true }
-        );
-
-        if (company && plan_id === limited_access_plan_id) {
-            // Redact sensitive company info for Limited Access
-            company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
-            company.website = company.website ? "********" : null;
-            company.company_linkedin_url = company.company_linkedin_url ? "********" : null;
-            company.logo_url = null; // Do not send logo
-            // Industry and Size are generally safe to show to encourage unlocking
+            plan_name = 'Free Access (Limited)';
         }
 
-        result.customer_company_information = company || {};
+        await verifyLeadOwnership(vendor_id, lead_id);
 
-        // 2. Fetch Top 5 Key People from MySQL
-        let keyPeople = await sequelize.query(
-            `SELECT * FROM (
-                SELECT id, company_id, emp_name, emp_email, linkedin_id, photo, designation, mapped_categories,
-                ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY id ASC) AS \`rank\`
-                FROM tbl_companies_employees WHERE company_id = ?
-                ${lead.category_id ? 'AND FIND_IN_SET(?, mapped_categories) > 0' : ''}
-            ) AS Top5KeyEmployee WHERE \`rank\` <= 5`,
-            {
-                replacements: lead.category_id ? [lead.company_id, lead.category_id] : [lead.company_id],
-                type: QueryTypes.SELECT
+        const lead = await TblLeads.findByPk(lead_id, {
+            attributes: ['id', 'user_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state']
+        });
+        if (!lead) return null;
+
+        const totalCredits = lead?.oms_pi_id ? await OmsPiDetail.sum('total_lead', {
+            where: { id: lead.oms_pi_id }
+        }) : 0;
+
+        const usedCredits = lead?.oms_pi_id ? await TblLeads.sum('credit_used', {
+            where: { oms_pi_id: lead.oms_pi_id, is_trashed: 0 }
+        }) : 0;
+
+        const latestCallback = await TblRequestCallbacks.findOne({
+            where: { lead_id },
+            order: [['created_at', 'DESC']],
+            attributes: ['designation']
+        });
+
+        const result = {
+            customer_activity_details: { activities: [] },
+            customer_company_information: {},
+            top_five_key_people: [],
+            device: 'web',
+            leadinsight_plan_name: plan_name,
+            leadinsight_plan_id: plan_id,
+            total_credits: totalCredits,
+            used_credits: usedCredits,
+            lead_credit_used: lead.credit_used,
+            full_access_plan_id,
+            limited_access_plan_id,
+            has_recent_submission: await hasRecentSubmission(vendor_id),
+            actions: await getLeadActions(lead),
+            current_status: lead.status,
+            current_action: lead.lead_action,
+            buying_stage: (lead.status === 2 || lead.status === 12) ? 'Decision' : (lead.status === 1 ? 'Evaluation' : 'Awareness'),
+            city: lead.city,
+            state: lead.state,
+            designation: latestCallback ? latestCallback.designation : null
+        };
+
+        // 1. Fetch Company Information from MySQL
+        if (lead.company_id) {
+            let company = await sequelize.query(
+                `SELECT id as company_id, company as name, employees_size as team_size, industry, website, company_linkedin_url as linkedin, logo_url 
+                 FROM tbl_companies WHERE id = ?`,
+                { replacements: [lead.company_id], type: QueryTypes.SELECT, plain: true }
+            );
+
+            if (company && plan_id === limited_access_plan_id) {
+                // Redact sensitive company info for Limited Access
+                company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
+                company.website = company.website ? "********" : null;
+                company.linkedin = company.linkedin ? "********" : null;
+                company.logo_url = null; // Do not send logo
+                // Industry and Team Size are generally safe to show to encourage unlocking
             }
-        );
 
-        if (keyPeople && plan_id === limited_access_plan_id) {
-            keyPeople = keyPeople.map(person => ({
-                ...person,
-                emp_name: person.emp_name ? person.emp_name.substring(0, 3) + "********" : "********",
-                emp_email: "********",
-                linkedin_id: person.linkedin_id ? "********" : null,
-                photo: null // Do not send photo
-            }));
-        }
-
-        result.top_five_key_people = keyPeople || [];
-    }
-
-    // 3. Fetch Buyer Activity Timeline from MongoDB
-    if (lead.user_id) {
-        try {
-            const db = mongoose.connection?.db;
-            if (!db) {
-                console.warn("MongoDB connection not established for Lead Insights");
-                return result;
+            if (company) {
+                Object.assign(result, company);
             }
-            const tracksCollection = db.collection('tracks');
+            result.customer_company_information = company || {};
 
-            // Get related GUUIDs
-            const guuids = await tracksCollection.distinct('feeds.guuid', {
-                'feeds.customer_id': String(lead.user_id)
-            });
-
-            const activityQuery = [
+            // 2. Fetch Top 5 Key People from MySQL
+            let keyPeople = await sequelize.query(
+                `SELECT id, company_id, emp_name, emp_email, linkedin_id, photo, designation, mapped_categories
+                 FROM tbl_companies_employees WHERE company_id = ?
+                 ${lead.category_id ? 'AND FIND_IN_SET(?, mapped_categories) > 0' : ''}
+                 LIMIT 5`,
                 {
-                    $match: {
-                        $or: [
-                            { 'feeds.guuid': { $in: guuids } },
-                            { 'feeds.lead_id': Number(lead_id) },
-                            { 'feeds.lead_id': String(lead_id) }
-                        ]
-                    }
-                },
-                { $unwind: '$feeds' },
-                { $sort: { created_at: -1 } },
-                { $limit: 40 },
-                {
-                    $project: {
-                        _id: 0,
-                        guuid: '$feeds.guuid',
-                        page_url: '$feeds.page_url',
-                        feed_action: '$feeds.feed_action',
-                        page_info: '$feeds.page_info',
-                        formdata: '$feeds.formdata',
-                        product_info: '$feeds.product_info',
-                        created_at: '$created_at'
-                    }
+                    replacements: lead.category_id ? [lead.company_id, lead.category_id] : [lead.company_id],
+                    type: QueryTypes.SELECT
                 }
-            ];
+            );
 
-            const activities = await tracksCollection.aggregate(activityQuery).toArray();
-
-            // Process activities to match timeline format
-            const finalActivityMap = {};
-            for (const activity of activities) {
-                let assetName = '';
-                let assetType = '';
-                const feedAction = activity.feed_action;
-
-                // Extraction logic
-                const productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name;
-                const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
-
-                if (productName) {
-                    assetName = (plan_id === limited_access_plan_id) ? (productName.substring(0, 5) + "********") : productName;
-                    assetType = 'Product';
-                } else if (categoryName) {
-                    assetName = (plan_id === limited_access_plan_id) ? (categoryName.substring(0, 5) + "********") : categoryName;
-                    assetType = 'Category';
-                } else if (activity.page_url?.includes('techjockey.com') && feedAction === 'page_view') {
-                    assetName = 'visited_home_page';
-                    assetType = 'visited_home_page';
-                }
-
-                if (assetName && feedAction && assetType) {
-                    if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
-                    if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
-                    if (!finalActivityMap[assetType][assetName][feedAction]) {
-                        finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
-                    }
-                    finalActivityMap[assetType][assetName][feedAction].count++;
-                }
+            if (keyPeople && plan_id === limited_access_plan_id) {
+                keyPeople = keyPeople.map(person => ({
+                    ...person,
+                    emp_name: person.emp_name ? person.emp_name.substring(0, 3) + "********" : "********",
+                    emp_email: "********",
+                    linkedin_id: person.linkedin_id ? "********" : null,
+                    photo: null // Do not send photo
+                }));
             }
-            result.customer_activity_details = finalActivityMap;
-        } catch (mongoError) {
-            console.error("MongoDB Insight Error:", mongoError);
-        }
-    }
 
-    return result;
+            result.top_five_key_people = keyPeople || [];
+        }
+
+        // 3. Fetch Buyer Activity Timeline from MongoDB
+        if (lead.user_id) {
+            try {
+                const db = mongoose.connection?.db;
+                if (!db) {
+                    console.warn("MongoDB connection not established for Lead Insights");
+                    return result;
+                }
+                const tracksCollection = db.collection('tracks');
+
+                // Get related GUUIDs
+                const guuids = await tracksCollection.distinct('feeds.guuid', {
+                    'feeds.customer_id': String(lead.user_id)
+                });
+
+                const activityQuery = [
+                    {
+                        $match: {
+                            $or: [
+                                { 'feeds.guuid': { $in: guuids } },
+                                { 'feeds.lead_id': Number(lead_id) },
+                                { 'feeds.lead_id': String(lead_id) }
+                            ]
+                        }
+                    },
+                    { $unwind: '$feeds' },
+                    { $sort: { created_at: -1 } },
+                    { $limit: 40 },
+                    {
+                        $project: {
+                            _id: 0,
+                            guuid: '$feeds.guuid',
+                            page_url: '$feeds.page_url',
+                            feed_action: '$feeds.feed_action',
+                            page_info: '$feeds.page_info',
+                            formdata: '$feeds.formdata',
+                            product_info: '$feeds.product_info',
+                            created_at: '$created_at'
+                        }
+                    }
+                ];
+
+                const activities = await tracksCollection.aggregate(activityQuery).toArray();
+
+                // Process activities to match timeline format
+                const finalActivityMap = {};
+                for (const activity of activities) {
+                    let assetName = '';
+                    let assetType = '';
+                    const feedAction = activity.feed_action;
+
+                    // Extraction logic
+                    const productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name;
+                    const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
+
+                    if (productName) {
+                        assetName = (plan_id === limited_access_plan_id) ? (productName.substring(0, 5) + "********") : productName;
+                        assetType = 'Product';
+                    } else if (categoryName) {
+                        assetName = (plan_id === limited_access_plan_id) ? (categoryName.substring(0, 5) + "********") : categoryName;
+                        assetType = 'Category';
+                    } else if (activity.page_url?.includes('techjockey.com') && feedAction === 'page_view') {
+                        assetName = 'visited_home_page';
+                        assetType = 'visited_home_page';
+                    }
+
+                    if (assetName && feedAction && assetType) {
+                        if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
+                        if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
+                        if (!finalActivityMap[assetType][assetName][feedAction]) {
+                            finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
+                        }
+                        finalActivityMap[assetType][assetName][feedAction].count++;
+                    }
+                }
+                result.customer_activity_details = finalActivityMap;
+            } catch (mongoError) {
+                console.error("MongoDB Insight Error:", mongoError);
+            }
+        }
+
+        return result;
+    } catch (error) {
+        console.error("DEBUG - getLeadInsights Error:", error);
+        throw error;
+    }
 };
 
 /**
