@@ -809,9 +809,9 @@ export const addScreenshots = async (req, res) => {
       const currentAlt = alt_texts[i];
       let currentImage = hidden_screenshots[i] || null;
 
-      // Map file to index i if it exists
       // The frontend sends screenshot_index[] telling us which file belongs to which slot
-      const filePos = screenshot_indices.indexOf(String(i));
+      const filePos = screenshot_indices.findIndex(idx => String(idx) === String(i));
+      
       if (filePos !== -1 && files[filePos]) {
         const file = files[filePos];
         const sanitizedOriginalName = cleanFileName(file.originalname);
@@ -903,9 +903,10 @@ export const addGallery = async (req, res) => {
     }
 
     // 2. Normalize inputs
-    const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+    const toArray = (val) => Array.isArray(val) ? val : (val !== undefined && val !== null ? [val] : []);
     const idList = toArray(ids || idsArr);
     const titleList = toArray(titles || titlesArr);
+    // Support both 'desc' and 'description' field names
     const descList = toArray(descriptions || descriptionsArr || req.body.description || req.body['description[]']);
     const hiddenList = toArray(hidden_galleries || hidden_galleries_arr);
     const indexList = toArray(gallery_indices || gallery_indices_arr);
@@ -922,8 +923,10 @@ export const addGallery = async (req, res) => {
       let currentImage = hiddenList[i] || null;
 
       // Check for file at this index
-      // If gallery_index[] is missing (e.g. Postman), we fall back to sequential mapping
-      const filePos = indexList.length > 0 ? indexList.indexOf(String(i)) : fileCounter;
+      // Using findIndex with string comparison to handle cases where indices might be parsed as numbers
+      const filePos = indexList.length > 0 
+        ? indexList.findIndex(idx => String(idx) === String(i)) 
+        : fileCounter;
       
       if (filePos !== -1 && files[filePos]) {
         const file = files[filePos];
@@ -1115,6 +1118,16 @@ export const addVideo = async (req, res) => {
       video_url: url || "",
       video_title: titleList[i] || ""
     }));
+
+    // 3.5 Enforce max 10 videos per product (existing + new additions)
+    const existingVideos = await productService.getProductVideos(product_id);
+    const existingCount = Array.isArray(existingVideos) ? existingVideos.length : 0;
+    const newItemsCount = videoData.filter(v => !v.id || String(v.id) === "0").length;
+    if (existingCount + newItemsCount > 10) {
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json(SystemResponse.badRequestError(`Maximum 10 videos are allowed per product. Current: ${existingCount}, Attempting to add: ${newItemsCount}`));
+    }
 
     // 4. Log changes for approval
     const result = await productService.logProductVideoRequest({
