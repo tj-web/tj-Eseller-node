@@ -1415,7 +1415,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
                 const guuids = await tracksCollection.distinct('feeds.guuid', {
                     'feeds.customer_id': String(lead.customer_id)
                 });
-
+console.log('guuids', guuids);
                 const activityQuery = [
                     {
                         $match: {
@@ -1442,9 +1442,9 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
                         }
                     }
                 ];
-
+console.log('activityQuery',activityQuery);
                 const activities = await tracksCollection.aggregate(activityQuery).toArray();
-
+console.log('activities', activities);
                 // Process activities to match timeline format
                 const finalActivityMap = {};
                 for (const activity of activities) {
@@ -1476,6 +1476,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
                         finalActivityMap[assetType][assetName][feedAction].count++;
                     }
                 }
+                console.log('finalActivityMap', finalActivityMap);
                 result.customer_activity_details = finalActivityMap;
             } catch (mongoError) {
                 console.error("MongoDB Insight Error:", mongoError);
