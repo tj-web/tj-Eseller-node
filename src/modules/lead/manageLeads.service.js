@@ -1314,7 +1314,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
         await verifyLeadOwnership(vendor_id, lead_id);
 
         const lead = await TblLeads.findByPk(lead_id, {
-            attributes: ['id', 'user_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state']
+            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state']
         });
         if (!lead) return null;
 
@@ -1402,7 +1402,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
         }
 
         // 3. Fetch Buyer Activity Timeline from MongoDB
-        if (lead.user_id) {
+        if (lead.customer_id) {
             try {
                 const db = mongoose.connection?.db;
                 if (!db) {
@@ -1413,7 +1413,7 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
 
                 // Get related GUUIDs
                 const guuids = await tracksCollection.distinct('feeds.guuid', {
-                    'feeds.customer_id': String(lead.user_id)
+                    'feeds.customer_id': String(lead.customer_id)
                 });
 
                 const activityQuery = [
