@@ -14,7 +14,7 @@ import {
     getVendorContactsController,
     getLeadInsightsController,
     unlockLeadInsightsController,
-    unlockContactController,
+    showContactInfoController,
     getLeadLocationsController
 } from "./manageLeads.controller.js";
 
@@ -35,6 +35,6 @@ router.post("/schedule-callback", scheduleCallbackController);
 router.get("/get-vendor-contacts", getVendorContactsController);
 router.get("/get-lead-insights", getLeadInsightsController);
 router.post("/unlock-lead-insights", unlockLeadInsightsController);
-router.post("/unlock-contact", unlockContactController);
+router.post("/show-contact-info", showContactInfoController);
 
 export default router;

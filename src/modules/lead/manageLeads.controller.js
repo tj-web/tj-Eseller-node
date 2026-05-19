@@ -13,7 +13,7 @@ import {
     getVendorContacts,
     getLeadInsights,
     unlockLeadInsights,
-    unlockContact,
+    showContactInfo,
     getLeadLocationsService
 } from "./manageLeads.service.js";
 import SystemResponse from "../../utilis/systemResponse.js";
@@ -169,12 +169,12 @@ export const getLeadInsightsController = async (req, res) => {
     }
 };
 
-export const unlockContactController = async (req, res) => {
+export const showContactInfoController = async (req, res) => {
     try {
         const vendor_id = req.user.vendor_id;
         const { lead_id } = req.query.lead_id ? req.query : req.body;
-        const result = await unlockContact(vendor_id, lead_id);
-        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Contact unlocked successfully", result));
+        const result = await showContactInfo(vendor_id, lead_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Data fetched successfully", result));
     } catch (error) {
         const status = error.message.includes("Unauthorized") ? StatusCodes.FORBIDDEN : StatusCodes.INTERNAL_SERVER_ERROR;
         return res.status(status).json(SystemResponse.getErrorResponse(error.message, null, status));

@@ -209,15 +209,19 @@ export const getLeads = async (vendor_id, post) => {
 
 
         const isInternational = leadJson.dial_code !== '91';
-        const contactViewed = leadJson.is_contact_viewed > 0;
+        const contactViewed = parseInt(leadJson.is_contact_viewed, 10) > 0;
+        leadJson.is_contact_viewed = parseInt(leadJson.is_contact_viewed, 10);
 
         const showContact = (isInternational || leadJson.is_show_contact > 0);
         leadJson.is_show_contact = showContact ? 1 : 0;
 
-
-        leadJson.email = maskString(leadJson.email, 'email');
-        leadJson.phone = maskString(leadJson.phone, 'phone');
-        leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+        if (!contactViewed) {
+            leadJson.email = maskString(leadJson.email, 'email');
+            leadJson.phone = maskString(leadJson.phone, 'phone');
+            leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+        } else {
+            leadJson.show_contact_phone = leadJson.phone;
+        }
 
         const latestRemark = await LeadHistory.findOne({
             where: { lead_id: lead.id, type: 'remark' },
@@ -354,7 +358,8 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
         const lead = demoJson.lead;
 
         const isInternational = lead.dial_code !== '91';
-        const contactViewed = lead.is_contact_viewed > 0;
+        const contactViewed = parseInt(lead.is_contact_viewed, 10) > 0;
+        lead.is_contact_viewed = parseInt(lead.is_contact_viewed, 10);
         const showContact = lead.is_show_contact > 0;
 
         if (!contactViewed) {
@@ -544,19 +549,17 @@ export const getLeadDetails = async (vendor_id, leadId) => {
     const leadJson = lead.toJSON();
 
     const isInternational = leadJson.dial_code !== '91';
-    const contactViewed = leadJson.is_contact_viewed > 0;
+    const contactViewed = parseInt(leadJson.is_contact_viewed, 10) > 0;
+    leadJson.is_contact_viewed = parseInt(leadJson.is_contact_viewed, 10);
     const showContact = (isInternational || leadJson.is_show_contact > 0);
     leadJson.is_show_contact = showContact ? 1 : 0;
 
     if (!contactViewed) {
         leadJson.email = maskString(leadJson.email, 'email');
-    }
-
-    if (isInternational || showContact || contactViewed) {
-        leadJson.show_contact_phone = leadJson.phone;
-    } else {
         leadJson.phone = maskString(leadJson.phone, 'phone');
         leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+    } else {
+        leadJson.show_contact_phone = leadJson.phone;
     }
 
     const leadModelType = leadJson.product ? leadJson.product.lead_model_type : 2;
@@ -1779,7 +1782,7 @@ function getAvgTimeMinute(beginDate, endDate) {
 /**
  * Unlocks contact with ownership verification.
  */
-export const unlockContact = async (vendor_id, lead_id) => {
+export const showContactInfo = async (vendor_id, lead_id) => {
     await verifyLeadOwnership(vendor_id, lead_id);
 
     const leadInfo = await TblLeads.findOne({
@@ -1819,7 +1822,7 @@ export const unlockContact = async (vendor_id, lead_id) => {
                     });
                 }
             } catch (mongoErr) {
-                console.error("Failed to write to MongoDB tracks inside unlockContact:", mongoErr);
+                console.error("Failed to write to MongoDB tracks inside showContactInfo:", mongoErr);
             }
 
             try {
