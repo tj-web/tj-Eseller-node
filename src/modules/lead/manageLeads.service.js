@@ -853,15 +853,22 @@ export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     const { email, leadinsight, company_id, category_id } = leadData.toJSON();
     const domain = isBusinessEmail(email);
     let employeeCount = 0;
+    let companyExists = false;
     if (company_id) {
         const countRes = await sequelize.query(
             "SELECT COUNT(*) as cnt FROM tbl_companies_employees WHERE company_id = ?",
             { replacements: [company_id], type: QueryTypes.SELECT, plain: true }
         );
         employeeCount = countRes ? countRes.cnt : 0;
+
+        const companyRes = await sequelize.query(
+            "SELECT COUNT(*) as cnt FROM tbl_companies WHERE id = ?",
+            { replacements: [company_id], type: QueryTypes.SELECT, plain: true }
+        );
+        companyExists = companyRes && companyRes.cnt > 0;
     }
 
-    if (!domain || (leadinsight === 1 && company_id && employeeCount > 0)) {
+    if (!domain || (leadinsight === 1 && company_id && companyExists && employeeCount > 0)) {
         return 0;
     }
 
@@ -950,7 +957,8 @@ const getOrganizationData = async (domain) => {
         return { status: 0, msg: "API Key missing" };
     }
 
-    const url = `${process.env.APOLLO_API_URL}organizations/enrich?domain=${encodeURIComponent(domain)}`;
+    const APOLLO_API_URL = process.env.APOLLO_API_URL || "https://api.apollo.io/api/v1/";
+    const url = `${APOLLO_API_URL}organizations/enrich?domain=${encodeURIComponent(domain)}`;
 
     try {
         const response = await fetch(url, {
@@ -962,7 +970,10 @@ const getOrganizationData = async (domain) => {
             }
         });
 
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`HTTP Error: ${response.status} - ${errBody}`);
+        }
         const data = await response.json();
 
         if (data.organization && data.organization.id) {
@@ -998,6 +1009,8 @@ const getOrganizationData = async (domain) => {
                     domain
                 }
             };
+        } else {
+            console.warn(`Apollo Enrichment: Domain "${domain}" profile not found in Apollo database. Response:`, JSON.stringify(data));
         }
     } catch (error) {
         console.error("Apollo Organization Enrichment Error:", error);
@@ -1027,20 +1040,42 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
             apolloPeopleIds.push(employee.apollo_people_id);
 
             const existingEmployee = await sequelize.query(
-                "SELECT id, emp_email, apollo_people_id, mapped_categories FROM tbl_companies_employees WHERE apollo_people_id = ?",
+                "SELECT id, company_id, emp_email, apollo_people_id, mapped_categories FROM tbl_companies_employees WHERE apollo_people_id = ?",
                 { replacements: [employee.apollo_people_id], type: QueryTypes.SELECT, plain: true }
             );
 
             if (existingEmployee) {
                 const existingMapped = existingEmployee.mapped_categories || "";
                 const mappedArray = existingMapped.split(',').map(s => s.trim()).filter(Boolean);
+                let needsUpdate = false;
+                let updatedMapped = existingMapped;
 
                 if (!mappedArray.includes(String(category_id))) {
                     mappedArray.push(category_id);
-                    const updatedMapped = mappedArray.filter(Boolean).join(',');
+                    updatedMapped = mappedArray.filter(Boolean).join(',');
+                    needsUpdate = true;
+                }
+
+                const currentCompanyId = existingEmployee.company_id;
+                const targetCompanyId = companyDetails.company_id;
+                let finalCompanyId = currentCompanyId;
+
+                if (targetCompanyId && currentCompanyId !== targetCompanyId) {
+                    finalCompanyId = targetCompanyId;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
                     await sequelize.query(
-                        "UPDATE tbl_companies_employees SET mapped_categories = ? WHERE apollo_people_id = ?",
-                        { replacements: [updatedMapped || null, employee.apollo_people_id || null], type: QueryTypes.UPDATE }
+                        "UPDATE tbl_companies_employees SET mapped_categories = ?, company_id = ? WHERE apollo_people_id = ?",
+                        {
+                            replacements: [
+                                updatedMapped || null,
+                                finalCompanyId || null,
+                                employee.apollo_people_id || null
+                            ],
+                            type: QueryTypes.UPDATE
+                        }
                     );
                 }
             } else {
@@ -1078,21 +1113,19 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
  */
 const employeeData = async (domain, department = []) => {
     const apiKey = process.env.APOLLO_API_KEY;
-    const url = "https://api.apollo.io/api/v1/mixed_people/api_search";
+    const APOLLO_API_URL = process.env.APOLLO_API_URL || "https://api.apollo.io/api/v1/";
+    const url = `${APOLLO_API_URL}mixed_people/api_search`;
     const headers = {
         "Accept": "application/json",
         "Cache-Control": "no-cache",
         "Content-Type": "application/json",
-        "x-api-key": apiKey
+        "X-Api-Key": apiKey
     };
 
     let resArr = [];
-    // const urlWithQuery = `https://api.apollo.io/api/v1/mixed_people/search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-    const urlWithQuery = `${process.env.APOLLO_API_URL}mixed_people/api_search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
     try {
         const payload = {
-            api_key: apiKey,
-            q_organization_domains_list: [domain],
+            q_organization_domains: domain,
             page: 1,
             per_page: 5
         };
@@ -1111,27 +1144,27 @@ const employeeData = async (domain, department = []) => {
         const data = await response.json();
         const people = (data.people || []).slice(0, 5);
 
-        resArr = people.map(emp => ({
-            apollo_people_id: emp.id,
-            emp_name: emp.name,
-            linkedin_url: emp.linkedin_url,
-            twitter_id: emp.twitter_url,
-            photo: emp.photo_url,
-            designation: emp.title
-        }));
+        resArr = people.map(emp => {
+            const firstName = emp.first_name || "";
+            const lastName = emp.last_name || emp.last_name_obfuscated || "";
+            const empName = emp.name || `${firstName} ${lastName}`.trim();
+            return {
+                apollo_people_id: emp.id,
+                emp_name: empName || "Anonymous",
+                linkedin_url: emp.linkedin_url || null,
+                twitter_id: emp.twitter_url || null,
+                photo: emp.photo_url || null,
+                designation: emp.title || null
+            };
+        });
 
         if (resArr.length < 5 && department && department.length > 0) {
             const remainLen = 5 - resArr.length;
             const fallbackPayload = {
-                api_key: apiKey,
-                q_organization_domains_list: [domain],
+                q_organization_domains: domain,
                 page: 1,
                 per_page: 5
             };
-            // const urlWithoutQuery = `https://api.apollo.io/api/v1/mixed_people/search?q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-            const urlWithoutQuery = `${process.env.APOLLO_API_URL}v1/mixed_people/api_search?q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
-            const dataNoQuery = await responseNoQuery.json();
-            const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
 
             const responseNoQuery = await fetch(url, {
                 method: 'POST',
@@ -1143,14 +1176,19 @@ const employeeData = async (domain, department = []) => {
                 const dataNoQuery = await responseNoQuery.json();
                 const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
 
-                resArr.push(...morePeople.map(emp => ({
-                    apollo_people_id: emp.id,
-                    emp_name: emp.name,
-                    linkedin_url: emp.linkedin_url,
-                    twitter_id: emp.twitter_url,
-                    photo: emp.photo_url,
-                    designation: emp.title
-                })));
+                resArr.push(...morePeople.map(emp => {
+                    const firstName = emp.first_name || "";
+                    const lastName = emp.last_name || emp.last_name_obfuscated || "";
+                    const empName = emp.name || `${firstName} ${lastName}`.trim();
+                    return {
+                        apollo_people_id: emp.id,
+                        emp_name: empName || "Anonymous",
+                        linkedin_url: emp.linkedin_url || null,
+                        twitter_id: emp.twitter_url || null,
+                        photo: emp.photo_url || null,
+                        designation: emp.title || null
+                    };
+                }));
             }
         }
     } catch (error) {
@@ -1412,6 +1450,18 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     type: QueryTypes.SELECT
                 }
             );
+
+            if ((!keyPeople || keyPeople.length === 0) && lead.company_id) {
+                keyPeople = await sequelize.query(
+                    `SELECT id, company_id, emp_name, emp_email, linkedin_id, photo, designation, mapped_categories
+                     FROM tbl_companies_employees WHERE company_id = ?
+                     LIMIT 5`,
+                    {
+                        replacements: [lead.company_id],
+                        type: QueryTypes.SELECT
+                    }
+                );
+            }
 
             if (keyPeople && plan_id === limited_access_plan_id) {
                 keyPeople = keyPeople.map(person => ({
