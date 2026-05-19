@@ -1887,3 +1887,188 @@ export const getLeadActions = async (lead) => {
 
     return Object.values(actionsMap);
 };
+
+/**
+ * Get lead insights with ownership verification.
+ */
+
+export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
+    try {
+        const vendor = await Vendor.findByPk(vendor_id, {
+            attributes: ['lead_insight_display']
+        });
+
+        if (!vendor || vendor.lead_insight_display != 1) {
+            return null;
+        }
+
+        const lead = await TblLeads.findByPk(lead_id, {
+            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state']
+        });
+        if (!lead) return null;
+
+        if(lead.customer_id) {
+            const db = mongoose.connection?.db;
+            if (!db) {
+                console.warn("MongoDB connection not established for Lead Insights");
+                return result;
+            }
+            let customerRelatedData = await getCustomerRelatedGuuids(lead.customer_id);
+            
+
+
+            const activityQuery = [
+              {
+                $match: {
+                  $or: [
+                    { "feeds.guuid": { $in: guuids } },
+                    { "feeds.lead_id": Number(lead_id) },
+                    { "feeds.lead_id": String(lead_id) },
+                  ],
+                },
+              },
+
+              {
+                $unwind: "$feeds",
+              },
+
+              // filter category + exclude current/lead product
+              {
+                $match: {
+                  "feeds.page_info.category_id": String(lead.category_id),
+
+                  "feeds.page_info.product_id": {
+                    $exists: true,
+                    $ne: null,
+                    $nin: [
+                      String(lead.product_id), // external lead/current product id
+                      Number(lead.product_id),
+                    ],
+                  },
+                },
+              },
+
+              // group by product
+              {
+                $group: {
+                  _id: "$feeds.page_info.product_id",
+
+                  product_id: {
+                    $first: "$feeds.page_info.product_id",
+                  },
+
+                  product_name: {
+                    $first: "$feeds.page_info.product_name",
+                  },
+
+                  visits: {
+                    $sum: 1,
+                  },
+                },
+              },
+
+              // sort by most visited
+              {
+                $sort: {
+                  visits: -1,
+                },
+              },
+
+              {
+                $project: {
+                  _id: 0,
+                  product_id: 1,
+                  product_name: 1,
+                  visits: 1,
+                },
+              },
+
+              {
+                $limit: 20,
+              },
+            ];
+            const tracksCollection = db.collection('tracks');
+            const relatedProducts = await tracksCollection.aggregate(activityQuery).toArray();
+
+            console.log(relatedProducts);
+
+
+
+
+            
+        }
+    } catch (error) {
+        console.error("Error while fetching getLeadCompetiterInsights. Error:", error);
+        throw error;
+    }
+}
+
+
+export const getCustomerRelatedGuuids = async (customerId) => {
+  try {
+    const customerIds = [
+      String(customerId),
+      Number(customerId),
+    ].filter((v, i, arr) => v !== "NaN" && arr.indexOf(v) === i);
+
+    const db = mongoose.connection?.db;
+    if (!db) {
+        console.warn("MongoDB connection not established for Lead Insights");
+        return result;
+    }
+    const activityQuery = [
+      {
+        $match: {
+          "feeds.customer_id": { $in: customerIds },
+        },
+      },
+      {
+        $project: {
+          feeds: 1,
+        },
+      },
+      {
+        $unwind: "$feeds",
+      },
+      {
+        $match: {
+          "feeds.customer_id": { $in: customerIds },
+          "feeds.guuid": {
+            $exists: true,
+            $ne: null,
+          },
+        },
+      },
+      {
+        $sort: {
+          "feeds.created_at": -1,
+        },
+      },
+      {
+        $group: {
+          _id: "$feeds.guuid",
+          guuid: { $first: "$feeds.guuid" },
+        },
+      },
+      {
+        $limit: 10,
+      },
+      {
+        $project: {
+          _id: 0,
+          guuid: 1,
+        },
+      },
+    ];
+    const tracksCollection = db.collection('tracks');
+    const customerRelatedGuuids =
+      await tracksCollection.aggregate(activityQuery, {
+        batchSize: 10,
+      }).toArray();
+
+    return customerRelatedGuuids || [];
+  } catch (error) {
+    console.error("Error fetching customer related guuids:", error);
+    return [];
+  }
+};
