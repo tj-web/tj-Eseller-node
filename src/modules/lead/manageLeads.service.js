@@ -852,8 +852,16 @@ export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     if (!leadData) return 0;
     const { email, leadinsight, company_id, category_id } = leadData.toJSON();
     const domain = isBusinessEmail(email);
+    let employeeCount = 0;
+    if (company_id) {
+        const countRes = await sequelize.query(
+            "SELECT COUNT(*) as cnt FROM tbl_companies_employees WHERE company_id = ?",
+            { replacements: [company_id], type: QueryTypes.SELECT, plain: true }
+        );
+        employeeCount = countRes ? countRes.cnt : 0;
+    }
 
-    if (!domain || leadinsight === 1) {
+    if (!domain || (leadinsight === 1 && company_id && employeeCount > 0)) {
         return 0;
     }
 
@@ -966,7 +974,7 @@ const getOrganizationData = async (domain) => {
             const [company_id] = await sequelize.query(
                 `INSERT INTO tbl_companies (
                     organization_id, company, employees_size, industry, website, domain, 
-                    company_linkedin_url, facebook_url, twitter_url, \` company_street\`, 
+                    company_linkedin_url, facebook_url, twitter_url, company_street, 
                     company_city, company_state, company_country, company_postal_code, 
                     company_address, logo_url, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1004,19 +1012,18 @@ const getOrganizationData = async (domain) => {
 const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => {
     const categoryParams = await getKeyData(category_id);
     const department = categoryParams?.search_keys || [];
-    let queryString = '';
 
-    if (department.length > 0) {
-        queryString = department.map(item => `person_titles[]=${encodeURIComponent(item)}`).join('&') + '&';
-    }
-
-    const empData = await employeeData(domain, queryString);
+    const empData = await employeeData(domain, department);
     const apolloPeopleIds = [];
 
     if (empData && empData.length > 0) {
         const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
         for (const employee of empData) {
+            if (!employee.apollo_people_id) {
+                continue;
+            }
+
             apolloPeopleIds.push(employee.apollo_people_id);
 
             const existingEmployee = await sequelize.query(
@@ -1033,19 +1040,26 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
                     const updatedMapped = mappedArray.filter(Boolean).join(',');
                     await sequelize.query(
                         "UPDATE tbl_companies_employees SET mapped_categories = ? WHERE apollo_people_id = ?",
-                        { replacements: [updatedMapped, employee.apollo_people_id], type: QueryTypes.UPDATE }
+                        { replacements: [updatedMapped || null, employee.apollo_people_id || null], type: QueryTypes.UPDATE }
                     );
                 }
             } else {
                 await sequelize.query(
                     `INSERT INTO tbl_companies_employees (
-                        company_id, emp_name, linkedin_id, twitter_id, photo, 
-                        designation, apollo_people_id, mapped_categories, created_at
+                         company_id, emp_name, linkedin_id, twitter_id, photo, 
+                         designation, apollo_people_id, mapped_categories, created_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     {
                         replacements: [
-                            companyDetails.company_id, employee.emp_name, employee.linkedin_url, employee.twitter_id,
-                            employee.photo, employee.designation, employee.apollo_people_id, category_id, createdAt
+                            companyDetails.company_id || null,
+                            employee.emp_name || "",
+                            employee.linkedin_url || "",
+                            employee.twitter_id || "",
+                            employee.photo || "",
+                            employee.designation || "",
+                            employee.apollo_people_id || "",
+                            category_id || null,
+                            createdAt || null
                         ],
                         type: QueryTypes.INSERT
                     }
@@ -1062,8 +1076,9 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
 /**
  * Searches for people on Apollo.
  */
-const employeeData = async (domain, queryString) => {
+const employeeData = async (domain, department = []) => {
     const apiKey = process.env.APOLLO_API_KEY;
+    const url = "https://api.apollo.io/api/v1/mixed_people/api_search";
     const headers = {
         "Accept": "application/json",
         "Cache-Control": "no-cache",
@@ -1073,9 +1088,26 @@ const employeeData = async (domain, queryString) => {
 
     let resArr = [];
     // const urlWithQuery = `https://api.apollo.io/api/v1/mixed_people/search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-       const urlWithQuery = `${process.env.APOLLO_API_URL}mixed_people/api_search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
+    const urlWithQuery = `${process.env.APOLLO_API_URL}mixed_people/api_search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
     try {
-        const response = await fetchWithCurl(urlWithQuery, headers);
+        const payload = {
+            api_key: apiKey,
+            q_organization_domains_list: [domain],
+            page: 1,
+            per_page: 5
+        };
+
+        if (department && department.length > 0) {
+            payload.person_titles = department;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
         const data = await response.json();
         const people = (data.people || []).slice(0, 5);
 
@@ -1088,22 +1120,38 @@ const employeeData = async (domain, queryString) => {
             designation: emp.title
         }));
 
-        if (resArr.length < 5) {
+        if (resArr.length < 5 && department && department.length > 0) {
             const remainLen = 5 - resArr.length;
+            const fallbackPayload = {
+                api_key: apiKey,
+                q_organization_domains_list: [domain],
+                page: 1,
+                per_page: 5
+            };
             // const urlWithoutQuery = `https://api.apollo.io/api/v1/mixed_people/search?q_organization_domains_list[]=${encodeURIComponent(domain)}`;
             const urlWithoutQuery = `${process.env.APOLLO_API_URL}v1/mixed_people/api_search?q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
-            const responseNoQuery = await fetchWithCurl(urlWithoutQuery, headers);
             const dataNoQuery = await responseNoQuery.json();
             const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
 
-            resArr.push(...morePeople.map(emp => ({
-                apollo_people_id: emp.id,
-                emp_name: emp.name,
-                linkedin_url: emp.linkedin_url,
-                twitter_id: emp.twitter_url,
-                photo: emp.photo_url,
-                designation: emp.title
-            })));
+            const responseNoQuery = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(fallbackPayload)
+            });
+
+            if (responseNoQuery.ok) {
+                const dataNoQuery = await responseNoQuery.json();
+                const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
+
+                resArr.push(...morePeople.map(emp => ({
+                    apollo_people_id: emp.id,
+                    emp_name: emp.name,
+                    linkedin_url: emp.linkedin_url,
+                    twitter_id: emp.twitter_url,
+                    photo: emp.photo_url,
+                    designation: emp.title
+                })));
+            }
         }
     } catch (error) {
         console.error("Apollo Employee Search Error:", error);
