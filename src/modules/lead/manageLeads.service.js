@@ -1073,8 +1073,8 @@ const employeeData = async (domain, queryString) => {
 
     let resArr = [];
     const urlWithQuery = `https://api.apollo.io/api/v1/mixed_people/search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-//    const urlWithQuery =
-// `https://api.apollo.io/api/v1/mixed_people/api_search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
+    //    const urlWithQuery =
+    // `https://api.apollo.io/api/v1/mixed_people/api_search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
     try {
         const response = await fetchWithCurl(urlWithQuery, headers);
         const data = await response.json();
@@ -1093,7 +1093,7 @@ const employeeData = async (domain, queryString) => {
             const remainLen = 5 - resArr.length;
             const urlWithoutQuery = `https://api.apollo.io/api/v1/mixed_people/search?q_organization_domains_list[]=${encodeURIComponent(domain)}`;
             // const urlWithoutQuery =
-// `https://api.apollo.io/api/v1/mixed_people/api_search?q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
+            // `https://api.apollo.io/api/v1/mixed_people/api_search?q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
             const responseNoQuery = await fetchWithCurl(urlWithoutQuery, headers);
             const dataNoQuery = await responseNoQuery.json();
             const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
@@ -1379,8 +1379,9 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
 
             result.top_five_key_people = keyPeople || [];
         }
-        const customerId = lead.customer_id || lead.user_id;
-        if (customerId) {
+
+        // 3. Fetch Buyer Activity Timeline from MongoDB
+        if (lead.customer_id) {
             try {
                 const db = mongoose.connection?.db;
                 if (!db) {
@@ -1390,9 +1391,8 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 const tracksCollection = db.collection('tracks');
 
                 const guuids = await tracksCollection.distinct('feeds.guuid', {
-                    'feeds.customer_id': { $in: [String(customerId), Number(customerId)] }
+                    'feeds.customer_id': String(lead.customer_id)
                 });
-
                 const activityQuery = [
                     {
                         $match: {
@@ -1420,9 +1420,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                         }
                     }
                 ];
-
                 const activities = await tracksCollection.aggregate(activityQuery).toArray();
-
                 // Process activities to match timeline format
                 const finalActivityMap = {};
                 for (const activity of activities) {
