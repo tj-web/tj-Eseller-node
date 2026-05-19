@@ -7,10 +7,10 @@ import { prepareOemPlansData } from "../../helpers/oemHelper.js";
 
 export const planSubscribeRequest = async (req, res) => {
   try {
-    const { plan_name, budget, reminder_date, hour, minute } = req.body;
+    const { plan_name, reminder_date, hour, minute } = req.body;
     const { profile_id, vendor_id } = req.user;
 
-    if (!budget || !reminder_date || !hour || !minute) {
+    if (!reminder_date || !hour || !minute) {
       return res
         .status(StatusCodes.BAD_REQUEST)
         .json(SystemResponse.badRequestError("Missing required fields."));
@@ -18,7 +18,7 @@ export const planSubscribeRequest = async (req, res) => {
 
     const result = await planSubscribeRequestService(
       { profile_id, vendor_id },
-      { plan_name, budget, reminder_date, hour, minute }
+      { plan_name, reminder_date, hour, minute }
     );
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));

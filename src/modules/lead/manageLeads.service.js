@@ -950,7 +950,7 @@ const getOrganizationData = async (domain) => {
         return { status: 0, msg: "API Key missing" };
     }
 
-    const url = `https://api.apollo.io/api/v1/organizations/enrich?domain=${encodeURIComponent(domain)}`;
+    const url = `${process.env.APOLLO_API_URL}organizations/enrich?domain=${encodeURIComponent(domain)}`;
 
     try {
         const response = await fetch(url, {
@@ -1087,6 +1087,8 @@ const employeeData = async (domain, department = []) => {
     };
 
     let resArr = [];
+    // const urlWithQuery = `https://api.apollo.io/api/v1/mixed_people/search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}`;
+    const urlWithQuery = `${process.env.APOLLO_API_URL}mixed_people/api_search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
     try {
         const payload = {
             api_key: apiKey,
@@ -1126,6 +1128,10 @@ const employeeData = async (domain, department = []) => {
                 page: 1,
                 per_page: 5
             };
+            // const urlWithoutQuery = `https://api.apollo.io/api/v1/mixed_people/search?q_organization_domains_list[]=${encodeURIComponent(domain)}`;
+            const urlWithoutQuery = `${process.env.APOLLO_API_URL}v1/mixed_people/api_search?q_organization_domains_list[]=${encodeURIComponent(domain)}&page=1&per_page=5`;
+            const dataNoQuery = await responseNoQuery.json();
+            const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
 
             const responseNoQuery = await fetch(url, {
                 method: 'POST',
