@@ -32,7 +32,7 @@ export const planSubscribeRequestService = async (authData, postData) => {
   const transaction = await sequelize.transaction();
   try {
     const { profile_id, vendor_id } = authData;
-    const { plan_name, budget, reminder_date, hour, minute } = postData;
+    const { plan_name, reminder_date, hour, minute } = postData;
 
     // 1. Fetch Vendor Data via ORM
     const vendorData = await VendorAuth.findOne({
@@ -54,10 +54,7 @@ export const planSubscribeRequestService = async (authData, postData) => {
     const reminder_datetime = `${reminder_date} ${hour}:${minute}:00`;
     const actual_plan_name = plan_name || "Upgrade Now";
     
-    // Replace Rupee symbol with space to avoid DB collation issues
-    const sanitizedBudget = budget.replace(/₹/g, " ");
-
-    const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Budget: ${sanitizedBudget} <br /> Selected Date and Time by User: ${reminder_datetime}`;
+    const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Selected Date and Time by User: ${reminder_datetime}`;
 
     // 2. Determine Account Manager (adSales_AM)
     // First, check if a lead already exists for this vendor to reuse the AM organically
@@ -153,7 +150,6 @@ export const planSubscribeRequestService = async (authData, postData) => {
       <p><strong>Email:</strong> ${vendorData.email}</p>
       <p><strong>Contact:</strong> ${vendorData.phone}</p>
       <p><strong>Plan Name:</strong> ${actual_plan_name}</p>
-      <p><strong>Budget:</strong> ${sanitizedBudget}</p>
       <p><strong>Preferred Callback Time:</strong> ${reminder_date} ${hour}:${minute}</p>
     `;
 
