@@ -12,6 +12,7 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import VendorDetails from "../../models/vendorDetail.model.js";
 import StateMaster from "../../models/stateMaster.model.js";
 import CityMaster from "../../models/cityMaster.model.js";
 import CountriesMaster from "../../models/countriesMaster.model.js";
@@ -214,10 +215,13 @@ export const getLeads = async (vendor_id, post) => {
         const showContact = (isInternational || leadJson.is_show_contact > 0);
         leadJson.is_show_contact = showContact ? 1 : 0;
 
-
-        leadJson.email = maskString(leadJson.email, 'email');
-        leadJson.phone = maskString(leadJson.phone, 'phone');
-        leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+        if (!contactViewed && !isInternational) {
+            leadJson.email = maskString(leadJson.email, 'email');
+            leadJson.phone = maskString(leadJson.phone, 'phone');
+            leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+        } else {
+            leadJson.show_contact_phone = leadJson.phone;
+        }
 
         const latestRemark = await LeadHistory.findOne({
             where: { lead_id: lead.id, type: 'remark' },
@@ -357,15 +361,12 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
         const contactViewed = lead.is_contact_viewed > 0;
         const showContact = lead.is_show_contact > 0;
 
-        if (!contactViewed) {
+        if (!contactViewed && !isInternational) {
             lead.email = maskString(lead.email, 'email');
-        }
-
-        if (isInternational || showContact || contactViewed) {
-            demoJson.show_contact_phone = lead.phone;
-        } else {
             lead.phone = maskString(lead.phone, 'phone');
             demoJson.show_contact_phone = maskString(lead.phone, 'phone');
+        } else {
+            demoJson.show_contact_phone = lead.phone;
         }
 
         const latestRemark = await LeadHistory.findOne({
@@ -1638,6 +1639,18 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             }
         }
 
+        const twoDaysAgo = new Date();
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        const recentRequest = await VendorLeadInsightInterest.findOne({
+            where: {
+                vendor_id: vendor_id,
+                submitted_at: {
+                    [Op.gte]: twoDaysAgo
+                }
+            }
+        });
+        result.has_recent_submission = !!recentRequest;
+
         return result;
     } catch (error) {
         console.error("DEBUG - getLeadInsights Error:", error);
@@ -1649,7 +1662,16 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
  * Unlock lead insights interest.
  */
 export const unlockLeadInsights = async (vendor_id, data) => {
-    const { company, email, date = null, time = [], remark = null, gp = null } = data;
+    let { company, email, date = null, time = [], remark = null, gp = null } = data;
+
+    if (!company || !email || !gp) {
+        const vendor = await Vendor.findByPk(vendor_id);
+        const vendorDetails = await VendorDetails.findOne({ where: { vendor_id } });
+        
+        if (!company && vendorDetails) company = vendorDetails.company;
+        if (!email && vendor) email = vendor.email;
+        if (!gp && vendor) gp = `${vendor.first_name || ''} ${vendor.last_name || ''}`.trim();
+    }
 
     const submitted_at = new Date();
     const createdAtStr = submitted_at.toISOString().slice(0, 19).replace('T', ' ');
@@ -1700,8 +1722,14 @@ export const unlockLeadInsights = async (vendor_id, data) => {
 </body>
 </html>`;
 
+        const [managerData] = await sequelize.query(
+            `SELECT au.adminusers_email AS email FROM vendors v LEFT JOIN tbl_adminusers au ON au.adminusers_id = v.acc_manager_id WHERE v.id = ?`,
+            { replacements: [vendor_id], type: QueryTypes.SELECT }
+        );
+        const toEmail = managerData?.email || 'Aniruddha_chaturvedi@techjockey.com';
+
         await EmailQueue.create({
-            to: 'Aniruddha_chaturvedi@techjockey.com',
+            to: toEmail,
             subject: `New Interest in Unlock Lead Insights from ${company}`,
             body: emailBody,
             type: 'lead_insight_interest',
@@ -1781,10 +1809,31 @@ export const unlockContact = async (vendor_id, lead_id) => {
 
     const leadInfo = await TblLeads.findOne({
         where: { id: lead_id },
-        attributes: ['id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone']
+        attributes: ['id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone', 'dial_code', 'is_show_contact', 'product_id'],
+        include: [{
+            model: TblProduct,
+            as: 'product',
+            attributes: ['lead_model_type']
+        }]
     });
 
-    if (leadInfo && leadInfo.is_contact_viewed === 0) {
+    if (!leadInfo) throw new Error("Lead not found");
+
+    const isInternational = leadInfo.dial_code !== '91';
+    let canShowContact = isInternational || leadInfo.is_show_contact === 1;
+
+    const leadModelType = leadInfo.product ? leadInfo.product.lead_model_type : 2;
+    const isValidModel = [1, 3, 4, 7].includes(leadModelType);
+
+    if (!canShowContact) {
+        throw new Error("You do not have permission to view this contact.");
+    }
+    
+    if (!isInternational && !isValidModel) {
+        throw new Error("You do not have permission to view this contact.");
+    }
+
+    if (leadInfo.is_contact_viewed === 0) {
         await TblLeads.update(
             { is_contact_viewed: 1 },
             { where: { id: lead_id } }
@@ -1869,7 +1918,8 @@ export const unlockContact = async (vendor_id, lead_id) => {
         status: true,
         message: 'Contact unlocked successfully',
         email: updatedLead ? updatedLead.email : null,
-        phone: updatedLead ? updatedLead.phone : null
+        phone: updatedLead ? updatedLead.phone : null,
+        is_show_contact: canShowContact ? 1 : 0
     };
 };
 

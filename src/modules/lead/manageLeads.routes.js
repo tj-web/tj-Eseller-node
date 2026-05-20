@@ -36,7 +36,7 @@ router.post("/schedule-callback", scheduleCallbackController);
 router.get("/get-vendor-contacts", getVendorContactsController);
 router.get("/get-lead-insights", getLeadInsightsController);
 router.post("/unlock-lead-insights", unlockLeadInsightsController);
-router.post("/unlock-contact", unlockContactController);
+router.post("/show-contact-info", unlockContactController);
 router.get("/competiter-insights", getCompetiterInsights );
 
 export default router;
