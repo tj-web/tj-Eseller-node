@@ -1914,9 +1914,8 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 return result;
             }
             let customerRelatedData = await getCustomerRelatedGuuids(lead.customer_id);
-            
-
-
+            let guuids = customerRelatedData.map(item => item.guuid);
+            console.log('guuids', guuids);
             const activityQuery = [
               {
                 $match: {
@@ -1987,15 +1986,11 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 $limit: 20,
               },
             ];
+            console.log('activityQuery', activityQuery);
             const tracksCollection = db.collection('tracks');
             const relatedProducts = await tracksCollection.aggregate(activityQuery).toArray();
-
-            console.log(relatedProducts);
-
-
-
-
-            
+            console.log('relatedProducts', relatedProducts);
+            return relatedProducts;   
         }
     } catch (error) {
         console.error("Error while fetching getLeadCompetiterInsights. Error:", error);

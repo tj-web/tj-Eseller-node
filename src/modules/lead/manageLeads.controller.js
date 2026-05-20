@@ -209,7 +209,8 @@ export const getCompetiterInsights = async(req, res) => {
     try {
         const vendor_id = req.user.vendor_id;
         const lead_id = req.query.lead_id;
-        const result = await getLeadCompetiterInsights(vendor_id, lead_id);
+        const results = await getLeadCompetiterInsights(vendor_id, lead_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Competiter Insights fetched successfully", results));
     } catch (error) {
         return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json(SystemResponse.internalServerError(error.message));
     }
