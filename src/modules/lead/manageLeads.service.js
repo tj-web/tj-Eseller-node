@@ -2084,7 +2084,8 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 $limit: 20,
               },
             ];
-            console.log('activityQuery', activityQuery);
+            const mongoCompassQuery = `db.tracks.aggregate(${JSON.stringify(activityQuery, null, 2)})`;
+            console.log('mongoCompassQuery', mongoCompassQuery);
             const tracksCollection = db.collection('tracks');
             const relatedProducts = await tracksCollection.aggregate(activityQuery).toArray();
             console.log('relatedProducts', relatedProducts);
@@ -2099,69 +2100,79 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
 
 export const getCustomerRelatedGuuids = async (customerId) => {
   try {
-    const customerIds = [
-      String(customerId),
-      Number(customerId),
-    ].filter((v, i, arr) => v !== "NaN" && arr.indexOf(v) === i);
-
     const db = mongoose.connection?.db;
     if (!db) {
-        console.warn("MongoDB connection not established for Lead Insights");
-        return result;
+      console.warn("MongoDB connection not established");
+      return [];
     }
-    const activityQuery = [
-      {
-        $match: {
-          "feeds.customer_id": { $in: customerIds },
-        },
-      },
-      {
-        $project: {
-          feeds: 1,
-        },
-      },
-      {
-        $unwind: "$feeds",
-      },
-      {
-        $match: {
-          "feeds.customer_id": { $in: customerIds },
-          "feeds.guuid": {
-            $exists: true,
-            $ne: null,
-          },
-        },
-      },
-      {
-        $sort: {
-          "feeds.created_at": -1,
-        },
-      },
-      {
-        $group: {
-          _id: "$feeds.guuid",
-          guuid: { $first: "$feeds.guuid" },
-        },
-      },
-      {
-        $limit: 10,
-      },
-      {
-        $project: {
-          _id: 0,
-          guuid: 1,
-        },
-      },
-    ];
-    const tracksCollection = db.collection('tracks');
-    const customerRelatedGuuids =
-      await tracksCollection.aggregate(activityQuery, {
-        batchSize: 10,
-      }).toArray();
 
-    return customerRelatedGuuids || [];
+    const tracksCollection = db.collection("tracks");
+
+    const runAggregation = async (customerIdValue) => {
+      return await tracksCollection
+        .aggregate(
+          [
+            {
+              $unwind: "$feeds",
+            },
+            {
+              $match: {
+                "feeds.customer_id": customerIdValue,
+                "feeds.guuid": {
+                  $exists: true,
+                  $ne: null,
+                },
+              },
+            },
+            {
+              $sort: {
+                "feeds.created_at": -1,
+              },
+            },
+            {
+              $group: {
+                _id: "$feeds.guuid",
+                guuid: {
+                  $first: "$feeds.guuid",
+                },
+              },
+            },
+            {
+              $limit: 10,
+            },
+            {
+              $project: {
+                _id: 0,
+                guuid: 1,
+              },
+            },
+          ],
+          {
+            batchSize: 10,
+          }
+        )
+        .toArray();
+    };
+
+    // First try string customer_id
+    let customerRelatedGuuids = await runAggregation(
+      String(customerId)
+    );
+
+    // Retry with number customer_id if empty
+    if (!customerRelatedGuuids.length) {
+      customerRelatedGuuids = await runAggregation(
+        Number(customerId)
+      );
+    }
+
+    return customerRelatedGuuids;
   } catch (error) {
-    console.error("Error fetching customer related guuids:", error);
+    console.error(
+      "Error fetching customer related guuids:",
+      error
+    );
+
     return [];
   }
 };
