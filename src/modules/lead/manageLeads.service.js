@@ -1649,7 +1649,6 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
  * Unlock lead insights interest.
  */
 export const unlockLeadInsights = async (vendor_id, data) => {
-    console.log("Unlocking insights for vendor:", vendor_id, "Data:", data);
     const { company, email, date = null, time = [], remark = null, gp = null } = data;
 
     const submitted_at = new Date();
@@ -1667,7 +1666,6 @@ export const unlockLeadInsights = async (vendor_id, data) => {
             preferred_call_date: date,
             preferred_call_time: time ? (typeof time === 'string' ? time : JSON.stringify(time)) : '[]'
         });
-        console.log("Interest saved successfully");
 
         const timeArr = Array.isArray(time) ? time : JSON.parse(time || '[]');
         const emailBody = `
@@ -1712,7 +1710,6 @@ export const unlockLeadInsights = async (vendor_id, data) => {
             created_at: createdAtStr,
             updated_at: createdAtStr
         });
-        console.log("Email queued successfully");
 
         return { status: true, message: 'Thank you for your interest! Our team will contact you shortly.' };
     } catch (err) {
@@ -2013,7 +2010,6 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
             }
             let customerRelatedData = await getCustomerRelatedGuuids(lead.customer_id);
             let guuids = customerRelatedData.map(item => item.guuid);
-            console.log('guuids', guuids);
             const activityQuery = [
               {
                 $match: {
@@ -2082,11 +2078,9 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 $limit: 20,
               },
             ];
-            const mongoCompassQuery = `db.tracks.aggregate(${JSON.stringify(activityQuery, null, 2)})`;
-            console.log('mongoCompassQuery', mongoCompassQuery);
+            const mongoCompassQuery = `db.tracks.aggregate(${JSON.stringify(activityQuery, null, 2)})`; 
             const tracksCollection = db.collection('tracks');
             const relatedProducts = await tracksCollection.aggregate(activityQuery).toArray();
-            console.log('relatedProducts', relatedProducts);
             return relatedProducts;   
         }
     } catch (error) {
