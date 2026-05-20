@@ -2019,8 +2019,6 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 $match: {
                   $or: [
                     { "feeds.guuid": { $in: guuids } },
-                    { "feeds.lead_id": Number(lead_id) },
-                    { "feeds.lead_id": String(lead_id) },
                   ],
                 },
               },
