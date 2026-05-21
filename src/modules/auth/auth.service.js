@@ -128,6 +128,7 @@ export const handleForgotPassword = async (email) => {
   const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
   const mainsiteUrl = process.env.MAINSITE_URL || "https://www.techjockey.com/";
   const assetUrl = `${mainsiteUrl}assets/images/`;
+  const tjassetUrl = `${mainsiteUrl}assets/nw-wb/emailer_img/`;
 
   const emailBody = `
     <link href="https://fonts.googleapis.com/css?family=Poppins:300,400,600,700" rel="stylesheet">
@@ -157,16 +158,16 @@ export const handleForgotPassword = async (email) => {
         </tr>
         <tr>
             <td align="center" bgcolor="#ffffff">
-                <p style="margin-bottom:5px;margin-top:35px;"><a href="${mainsiteUrl}"><img src="${assetUrl}tjlogo.png" alt="logo"></a></p>
+                <p style="margin-bottom:5px;margin-top:35px;"><a href="${mainsiteUrl}"><img src="${tjassetUrl}tjlogo.png" alt="logo"></a></p>
                 <p style="color:#4a4a4a;font-size:20px;margin-top:0px;margin-bottom:5px;font-family: 'Poppins', sans-serif;">We are there for you always</p>
                 <p style="font-size:14px;margin-top:0px;margin-bottom:0px;font-family: 'Poppins', sans-serif;">
                     <a href="mailto:support@techjockey.com">support@techjockey.com</a> |
                     <a href="tel:+1 (800) 123-4567">+1 (800) 123-4567</a>
                 </p>
                 <p style="margin-bottom:20px;margin-top:20px;">
-                    <a href="https://www.facebook.com/Techjockey/" style="display:inline-block;padding-left:10px;padding-right:10px;"><img src="${assetUrl}fb.png" alt="facebook"></a>
-                    <a href="https://twitter.com/TechJockeys" style="display:inline-block;padding-left:10px;padding-right:10px;"><img src="${assetUrl}tw.png" alt="twitter"></a>
-                    <a href="https://www.youtube.com/channel/UCv-PgwHTncZZ5i1iLs67rXQ" style="display:inline-block;padding-left:10px;padding-right:10px;"><img src="${assetUrl}yt.png" alt="youtube"></a>
+                    <a href="https://www.facebook.com/Techjockey/" style="display:inline-block;padding-left:10px;padding-right:10px;"><img src="${tjassetUrl}fb.png" alt="facebook"></a>
+                    <a href="https://twitter.com/TechJockeys" style="display:inline-block;padding-left:10px;padding-right:10px;"><img src="${tjassetUrl}tw.png" alt="twitter"></a>
+                    <a href="https://www.youtube.com/channel/UCv-PgwHTncZZ5i1iLs67rXQ" style="display:inline-block;padding-left:10px;padding-right:10px;"><img src="${tjassetUrl}yt.png" alt="youtube"></a>
                 </p>
             </td>
         </tr>
