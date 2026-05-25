@@ -13,7 +13,8 @@ import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
-import CountriesMaster from "../../models/countriesMaster.model.js";
+import StateMaster from "../../models/stateMaster.model.js";
+import CityMaster from "../../models/cityMaster.model.js";
 import KnowlarityAcdStatus from "../../models/knowlarityAcdStatus.model.js";
 import KnowlarityHistory from "../../models/knowlarityHistory.model.js";
 import Companies from "../../models/companies.model.js";
@@ -1012,7 +1013,7 @@ const getOrganizationData = async (domain) => {
             const newCompany = await Companies.create({
                 organization_id: org.id,
                 company: org.name || '',
-                employee_size: companySize,
+                employees_size: companySize,
                 industry: org.industry || '',
                 website: org.website_url || '',
                 domain: domain,
@@ -1442,7 +1443,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 attributes: [
                     ['id', 'company_id'],
                     ['company', 'name'],
-                    ['employee_size', 'team_size'],
+                    ['employees_size', 'team_size'],
                     'industry',
                     'website',
                     ['company_linkedin_url', 'linkedin'],
