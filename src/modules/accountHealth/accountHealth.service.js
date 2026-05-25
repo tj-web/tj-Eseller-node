@@ -14,6 +14,8 @@ import VendorAnalytics from "../../models/vendorAnalytics.model.js";
 import VendorDetail from "../../models/vendorDetail.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import EmailQueue from "../../models/emailQueue.model.js";
+import OmsPiDetail from "../../models/omsPiDetail.model.js";
+import LeadsPlan from "../../models/leadsPlan.model.js";
 import { AppError } from "../../utilis/appError.js";
 
 // Define Associations
@@ -24,6 +26,7 @@ Review.hasMany(ReviewReplies, { foreignKey: "review_id" });
 ReviewReplies.belongsTo(VendorAuth, { foreignKey: "replied_by_profile_id" });
 Review.belongsTo(Product, { foreignKey: "product_id" });
 Product.hasMany(ProductImage, { foreignKey: "product_id" });
+OmsPiDetail.belongsTo(LeadsPlan, { foreignKey: "lead_plan_id" });
 
 /* =========================================
    HELPERS
@@ -495,21 +498,24 @@ export const getTrustedSellerService = async (vendor_id) => {
 
     // Apply OMS PI Plan filtering if enabled
     if (vendor.show_current_plan_data === 1) {
-      const activePlans = await sequelize.query(
-        `
-        SELECT opd.start_date, opd.end_date
-        FROM oms_pi_details opd
-        LEFT JOIN tbl_leads_plan tlp ON tlp.id = opd.lead_plan_id
-        WHERE tlp.plan_type = 'credit'
-          AND opd.vendor_id = :vendor_id
-          AND (CURDATE() BETWEEN opd.start_date AND opd.end_date)
-          AND opd.pi_status = 3
-      `,
-        {
-          replacements: { vendor_id },
-          type: QueryTypes.SELECT,
-        }
-      );
+      const activePlans = await OmsPiDetail.findAll({
+        attributes: ["start_date", "end_date"],
+        where: {
+          vendor_id,
+          pi_status: 3,
+          start_date: { [Op.lte]: fn("CURDATE") },
+          end_date: { [Op.gte]: fn("CURDATE") },
+        },
+        include: [
+          {
+            model: LeadsPlan,
+            attributes: [],
+            where: { plan_type: "credit" },
+            required: true,
+          },
+        ],
+        raw: true,
+      });
 
       if (activePlans.length > 0) {
         const planConditions = activePlans

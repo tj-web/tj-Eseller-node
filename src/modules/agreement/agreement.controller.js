@@ -5,6 +5,9 @@ import {
   updateRecord,
 } from "../../General_Function/general_helper.js";
 import { refreshTokenResponse } from "../../utilis/tokenRefresh.js";
+import { AppError } from "../../utilis/appError.js";
+import SystemResponse from "../../utilis/systemResponse.js";
+import StatusCodes from "../../utilis/statusCodes.js";
 import {
   getAgreementProductPlans,
   getDesignation,
@@ -17,14 +20,14 @@ import {
 } from "./agreement.service.js";
 
 export const getAgreements = async (req, res) => {
-  const vendor_id = req.user?.vendor_id;
-  const profile_id = req.user?.profile_id;
-
-  if (!vendor_id || !profile_id) {
-    return res.status(401).json({ success: false, message: "Unauthorized: Missing vendor or profile ID" });
-  }
-
   try {
+    const vendor_id = req.user?.vendor_id;
+    const profile_id = req.user?.profile_id;
+
+    if (!vendor_id || !profile_id) {
+      throw new AppError("Unauthorized: Missing vendor or profile ID", StatusCodes.UNAUTHORIZED);
+    }
+
     const arr_designation = await getDesignation();
     const basic_data = await getVendorById(profile_id);
     const profile_data = await getVendorDetailById(vendor_id);
@@ -34,19 +37,17 @@ export const getAgreements = async (req, res) => {
     const vendor_mode = await getVendorMode(vendor_id);
 
     if (!brands || brands.length === 0) {
-      return res.status(200).json({
-        success: false,
-        message: "Add or Request your brand before signing the agreement!",
-      });
+      return res.status(StatusCodes.SUCCESS).json(
+        SystemResponse.success("Add or Request your brand before signing the agreement!", {})
+      );
     }
 
     const product_list = await getAgreementProductPlans(vendor_id);
 
     if (!product_list || Object.keys(product_list).length === 0) {
-      return res.status(200).json({
-        success: false,
-        message: "Add your product before signing the agreement!",
-      });
+      return res.status(StatusCodes.SUCCESS).json(
+        SystemResponse.success("Add your product before signing the agreement!", {})
+      );
     }
 
     const data = {
@@ -61,22 +62,23 @@ export const getAgreements = async (req, res) => {
       product_list: product_list,
       vendor_mode: vendor_mode,
     };
-    return res.status(200).json({ success: true, data });
+    return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Agreements fetched successfully", data));
   } catch (error) {
-    console.error("Error in getAgreements:", error);
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
+    const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
+    const message = error.statusCode ? error.message : "Internal Server Error";
+    return res.status(statusCode).json(SystemResponse.getErrorResponse(message, {}, statusCode));
   }
 };
 
 export const agreementFormController = async (req, res) => {
-  const vendor_id = req.user?.vendor_id;
-  const { type } = req.body;
-
-  if (!vendor_id) {
-    return res.status(401).json({ success: false, message: "Unauthorized: Missing vendor ID" });
-  }
-
   try {
+    const vendor_id = req.user?.vendor_id;
+    const { type } = req.body;
+
+    if (!vendor_id) {
+      throw new AppError("Unauthorized: Missing vendor ID", StatusCodes.UNAUTHORIZED);
+    }
+
     const agreement_data = await getVendorAgreement(vendor_id, "V2");
 
     if (type === "agreement_form") {
@@ -100,13 +102,13 @@ export const agreementFormController = async (req, res) => {
         };
         await insertRecordWithoutId("vendor_agreement", form_data);
       }
-      return res.status(200).json({ success: true, message: "Company Details Updated Successfully" });
+      return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Company Details Updated Successfully", {}));
     }
 
     if (type === "acceptance_form") {
       const { agreement_by } = req.body;
       if (!agreement_data || !agreement_data.company) {
-        return res.status(200).json({ success: false, message: "Update your details first." });
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Update your details first.", {}));
       } else {
         const data = {
           agreement_date: getCurrentDateNoHIs(),
@@ -117,21 +119,18 @@ export const agreementFormController = async (req, res) => {
         if (updateResult) {
           await updateRecord("vendors", { id: vendor_id }, { vendor_mode: 2 });
           const decoded = await refreshTokenResponse(req, res);
-          return res.status(200).json({
-            success: true,
-            message: "Agreement Signed Successfully",
-            vendor_mode: decoded?.vendor_mode ?? 0,
-          });
+          return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Agreement Signed Successfully", { vendor_mode: decoded?.vendor_mode ?? 0 }));
         }
         else {
-          return res.status(200).json({ success: false, message: "Problem in updating." });
+          throw new AppError("Problem in updating.", StatusCodes.INTERNAL_SERVER_ERROR);
         }
       }
     }
 
-    return res.status(400).json({ success: false, message: "Invalid type provided." });
+    throw new AppError("Invalid type provided.", StatusCodes.BAD_REQUEST);
   } catch (error) {
-    console.error("Error in agreementFormController:", error);
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
+    const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
+    const message = error.statusCode ? error.message : "Internal Server Error";
+    return res.status(statusCode).json(SystemResponse.getErrorResponse(message, {}, statusCode));
   }
 };

@@ -13,10 +13,18 @@ import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
-import StateMaster from "../../models/stateMaster.model.js";
-import CityMaster from "../../models/cityMaster.model.js";
 import CountriesMaster from "../../models/countriesMaster.model.js";
+import KnowlarityAcdStatus from "../../models/knowlarityAcdStatus.model.js";
+import KnowlarityHistory from "../../models/knowlarityHistory.model.js";
+import Companies from "../../models/companies.model.js";
+import CompaniesEmployees from "../../models/companiesEmployees.model.js";
+import LeadsCallAttempt from "../../models/leadsCallAttempt.model.js";
+import VendorAnalytics from "../../models/vendorAnalytics.model.js";
+import AdminUsers from "../../models/adminUser.model.js";
+import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 
+import { AppError } from "../../utilis/appError.js";
+import StatusCodes from "../../utilis/statusCodes.js";
 
 /**
  * Retrieves vendor lead insight permissions and allowed products.
@@ -65,7 +73,7 @@ const verifyLeadOwnership = async (vendor_id, lead_id) => {
         where: { id: lead_id, vendor_id: vendor_id },
         attributes: ['id']
     });
-    if (!lead) throw new Error("Unauthorized: Lead does not belong to vendor");
+    if (!lead) throw new AppError("Unauthorized: Lead does not belong to vendor", StatusCodes.FORBIDDEN);
     return lead;
 };
 
@@ -452,7 +460,7 @@ export const addRemarkReminder = async (data) => {
 export const leadStatusHandler = async (vendor_id, body) => {
     const { lead_id, action, action_name } = body;
 
-    if (!lead_id) throw new Error('Lead Id is required');
+    if (!lead_id) throw new AppError('Lead Id is required', StatusCodes.BAD_REQUEST);
     await verifyLeadOwnership(vendor_id, lead_id);
 
     const response = await updateLeadStatusManual(
@@ -613,21 +621,41 @@ export const getLeadAcdHistory = async (vendor_id, acd_uuid, type) => {
         where: { acd_uuid: acd_uuid, vendor_id: vendor_id },
         attributes: ['id']
     });
-    if (!lead) throw new Error("Unauthorized: ACD record does not belong to vendor");
+    if (!lead) throw new AppError("Unauthorized: ACD record does not belong to vendor", StatusCodes.FORBIDDEN);
 
-    const sql = `
-        SELECT trc.recording_url, trc.call_status, tkas.display_name, trc.last_updated
-        FROM tbl_request_callbacks as trc
-        INNER JOIN tbl_knowlarity_acd_status as tkas ON tkas.status_id = trc.call_status 
-        WHERE (trc.acd_uuid = :acd_uuid OR trc.parent_acd_uuid = :acd_uuid) 
-        AND tkas.source = 2 
-        AND tkas.type = (CASE WHEN trc.action_performed = 'GetFreeDemo' THEN 2 ELSE 1 END) 
-        ORDER BY start_date
-    `;
+    if (!TblRequestCallbacks.associations.acdStatus) {
+        TblRequestCallbacks.belongsTo(KnowlarityAcdStatus, { foreignKey: 'call_status', targetKey: 'status_id', as: 'acdStatus' });
+    }
 
-    return await sequelize.query(sql, {
-        replacements: { acd_uuid },
-        type: QueryTypes.SELECT
+    const records = await TblRequestCallbacks.findAll({
+        where: {
+            [Op.or]: [
+                { acd_uuid: acd_uuid },
+                { parent_acd_uuid: acd_uuid }
+            ]
+        },
+        include: [{
+            model: KnowlarityAcdStatus,
+            as: 'acdStatus',
+            required: true,
+            where: {
+                source: 2,
+                [Op.and]: sequelize.literal("`acdStatus`.`type` = (CASE WHEN `TblRequestCallbacks`.`action_performed` = 'GetFreeDemo' THEN 2 ELSE 1 END)")
+            },
+            attributes: ['display_name']
+        }],
+        attributes: ['recording_url', 'call_status', 'last_updated'],
+        order: [['start_date', 'ASC']]
+    });
+
+    return records.map(r => {
+        const data = r.toJSON();
+        return {
+            recording_url: data.recording_url,
+            call_status: data.call_status,
+            display_name: data.acdStatus?.display_name,
+            last_updated: data.last_updated
+        };
     });
 };
 
@@ -644,10 +672,13 @@ export const acceptDemo = async (vendor_id, data) => {
         { where: { acd_uuid: acd_uuid, lead_id: lead_id } }
     );
 
-    await sequelize.query(
-        "INSERT INTO tbl_knowlarity_history (acd_uuid, type, source, status_id, event_data) VALUES (?, ?, ?, ?, ?)",
-        { replacements: [acd_uuid, 2, '2', 7, 'Accepted by vendor'], type: QueryTypes.INSERT }
-    );
+    await KnowlarityHistory.create({
+        acd_uuid: acd_uuid,
+        type: 2,
+        source: '2',
+        status_id: 7,
+        event_data: 'Accepted by vendor'
+    });
 
     await LeadHistory.create({
         lead_id,
@@ -706,7 +737,6 @@ const triggerACD = async (data) => {
         const result = await response.json();
         return result;
     } catch (err) {
-        console.error("ACD Trigger Failed:", err);
         return { status: false, message: err.message };
     }
 };
@@ -720,7 +750,7 @@ export const scheduleCallback = async (vendor_id, data) => {
     const lead = await TblLeads.findOne({
         where: { id: lead_id, vendor_id: vendor_id }
     });
-    if (!lead) throw new Error("Unauthorized: Lead does not belong to vendor");
+    if (!lead) throw new AppError("Unauthorized: Lead does not belong to vendor", StatusCodes.FORBIDDEN);
 
     let scheduledTime;
     if (date && hour && minute) {
@@ -856,28 +886,25 @@ export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     let employeeCount = 0;
     let companyExists = false;
     if (company_id) {
-        const countRes = await sequelize.query(
-            "SELECT COUNT(*) as cnt FROM tbl_companies_employees WHERE company_id = ?",
-            { replacements: [company_id], type: QueryTypes.SELECT, plain: true }
-        );
-        employeeCount = countRes ? countRes.cnt : 0;
+        employeeCount = await CompaniesEmployees.count({
+            where: { company_id: company_id }
+        });
 
-        const companyRes = await sequelize.query(
-            "SELECT COUNT(*) as cnt FROM tbl_companies WHERE id = ?",
-            { replacements: [company_id], type: QueryTypes.SELECT, plain: true }
-        );
-        companyExists = companyRes && companyRes.cnt > 0;
+        companyExists = await Companies.count({
+            where: { id: company_id }
+        }) > 0;
     }
 
     if (!domain || (leadinsight === 1 && company_id && companyExists && employeeCount > 0)) {
-        return 0;
+        return { status: 1, message: "Company profile details found." };
     }
 
     let organization = null;
-    const companyDetail = await sequelize.query(
-        "SELECT id, domain, organization_id FROM tbl_companies WHERE domain = ?",
-        { replacements: [domain], type: QueryTypes.SELECT, plain: true }
-    );
+    const companyDetail = await Companies.findOne({
+        attributes: ['id', 'domain', 'organization_id'],
+        where: { domain: domain },
+        raw: true
+    });
 
     if (companyDetail) {
         organization = {
@@ -954,7 +981,6 @@ const getCompanySize = (value) => {
 const getOrganizationData = async (domain) => {
     const apiKey = process.env.APOLLO_API_KEY;
     if (!apiKey || apiKey === 'YOUR_APOLLO_API_KEY_HERE') {
-        console.warn("Apollo API Key missing or placeholder. Skipping enrichment.");
         return { status: 0, msg: "API Key missing" };
     }
 
@@ -983,23 +1009,26 @@ const getOrganizationData = async (domain) => {
             const companySize = getCompanySize(estimatedNumEmployees);
             const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-            const [company_id] = await sequelize.query(
-                `INSERT INTO tbl_companies (
-                    organization_id, company, employees_size, industry, website, domain, 
-                    company_linkedin_url, facebook_url, twitter_url, company_street, 
-                    company_city, company_state, company_country, company_postal_code, 
-                    company_address, logo_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                {
-                    replacements: [
-                        org.id, org.name || '', companySize, org.industry || '', org.website_url || '', domain,
-                        org.linkedin_url || '', org.facebook_url || '', org.twitter_url || '', org.street_address || '',
-                        org.city || '', org.state || '', org.country || '', org.postal_code || '',
-                        org.raw_address || '', org.logo_url || '', createdAt
-                    ],
-                    type: QueryTypes.INSERT
-                }
-            );
+            const newCompany = await Companies.create({
+                organization_id: org.id,
+                company: org.name || '',
+                employee_size: companySize,
+                industry: org.industry || '',
+                website: org.website_url || '',
+                domain: domain,
+                company_linkedin_url: org.linkedin_url || '',
+                facebook_url: org.facebook_url || '',
+                twitter_url: org.twitter_url || '',
+                company_street: org.street_address || '',
+                company_city: org.city || '',
+                company_state: org.state || '',
+                company_country: org.country || '',
+                company_postal_code: org.postal_code || '',
+                company_address: org.raw_address || '',
+                logo_url: org.logo_url || '',
+                created_at: createdAt
+            });
+            const company_id = newCompany.id;
 
             return {
                 status: 1,
@@ -1011,10 +1040,10 @@ const getOrganizationData = async (domain) => {
                 }
             };
         } else {
-            console.warn(`Apollo Enrichment: Domain "${domain}" profile not found in Apollo database. Response:`, JSON.stringify(data));
+            // Apollo Enrichment: Domain profile not found
         }
     } catch (error) {
-        console.error("Apollo Organization Enrichment Error:", error);
+        // Ignored
     }
 
     return { status: 0, msg: "organization not found", data: { domain } };
@@ -1040,10 +1069,11 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
 
             apolloPeopleIds.push(employee.apollo_people_id);
 
-            const existingEmployee = await sequelize.query(
-                "SELECT id, company_id, emp_email, apollo_people_id, mapped_categories FROM tbl_companies_employees WHERE apollo_people_id = ?",
-                { replacements: [employee.apollo_people_id], type: QueryTypes.SELECT, plain: true }
-            );
+            const existingEmployee = await CompaniesEmployees.findOne({
+                attributes: ['id', 'company_id', 'emp_email', 'apollo_people_id', 'mapped_categories'],
+                where: { apollo_people_id: employee.apollo_people_id },
+                raw: true
+            });
 
             if (existingEmployee) {
                 const existingMapped = existingEmployee.mapped_categories || "";
@@ -1067,39 +1097,23 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
                 }
 
                 if (needsUpdate) {
-                    await sequelize.query(
-                        "UPDATE tbl_companies_employees SET mapped_categories = ?, company_id = ? WHERE apollo_people_id = ?",
-                        {
-                            replacements: [
-                                updatedMapped || null,
-                                finalCompanyId || null,
-                                employee.apollo_people_id || null
-                            ],
-                            type: QueryTypes.UPDATE
-                        }
+                    await CompaniesEmployees.update(
+                        { mapped_categories: updatedMapped || null, company_id: finalCompanyId || null },
+                        { where: { apollo_people_id: employee.apollo_people_id || null } }
                     );
                 }
             } else {
-                await sequelize.query(
-                    `INSERT INTO tbl_companies_employees (
-                         company_id, emp_name, linkedin_id, twitter_id, photo, 
-                         designation, apollo_people_id, mapped_categories, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    {
-                        replacements: [
-                            companyDetails.company_id || null,
-                            employee.emp_name || "",
-                            employee.linkedin_url || "",
-                            employee.twitter_id || "",
-                            employee.photo || "",
-                            employee.designation || "",
-                            employee.apollo_people_id || "",
-                            category_id || null,
-                            createdAt || null
-                        ],
-                        type: QueryTypes.INSERT
-                    }
-                );
+                await CompaniesEmployees.create({
+                    company_id: companyDetails.company_id || null,
+                    emp_name: employee.emp_name || "",
+                    linkedin_id: employee.linkedin_url || "",
+                    twitter_id: employee.twitter_id || "",
+                    photo: employee.photo || "",
+                    designation: employee.designation || "",
+                    apollo_people_id: employee.apollo_people_id || "",
+                    mapped_categories: category_id ? String(category_id) : null,
+                    created_at: createdAt || null
+                });
             }
         }
 
@@ -1141,7 +1155,7 @@ const employeeData = async (domain, department = []) => {
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        if (!response.ok) throw new AppError(`HTTP Error: ${response.status}`, StatusCodes.INTERNAL_SERVER_ERROR);
         const data = await response.json();
         const people = (data.people || []).slice(0, 5);
 
@@ -1193,7 +1207,7 @@ const employeeData = async (domain, department = []) => {
             }
         }
     } catch (error) {
-        console.error("Apollo Employee Search Error:", error);
+        // Ignored
     }
 
     return resArr;
@@ -1223,21 +1237,21 @@ const getEmployeeEmails = async (apollo_people_ids) => {
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        if (!response.ok) throw new AppError(`HTTP Error: ${response.status}`, StatusCodes.INTERNAL_SERVER_ERROR);
         const data = await response.json();
 
         if (data.matches && data.matches.length > 0) {
             for (const empData of data.matches) {
                 if (empData.email) {
-                    await sequelize.query(
-                        "UPDATE tbl_companies_employees SET emp_email = ? WHERE apollo_people_id = ?",
-                        { replacements: [empData.email, empData.id], type: QueryTypes.UPDATE }
+                    await CompaniesEmployees.update(
+                        { emp_email: empData.email },
+                        { where: { apollo_people_id: empData.id } }
                     );
                 }
             }
         }
     } catch (error) {
-        console.error("Apollo Bulk Match Error:", error);
+        // Ignored
     }
 };
 
@@ -1261,7 +1275,7 @@ const getKeyData = async (key) => {
  */
 const fetchWithCurl = async (url, headers) => {
     const response = await fetch(url, { method: 'POST', headers });
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+    if (!response.ok) throw new AppError(`HTTP Error: ${response.status}`, StatusCodes.INTERNAL_SERVER_ERROR);
     return response;
 };
 
@@ -1424,11 +1438,19 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         };
 
         if (lead.company_id) {
-            let company = await sequelize.query(
-                `SELECT id as company_id, company as name, employees_size as team_size, industry, website, company_linkedin_url as linkedin, logo_url 
-                 FROM tbl_companies WHERE id = ?`,
-                { replacements: [lead.company_id], type: QueryTypes.SELECT, plain: true }
-            );
+            let company = await Companies.findOne({
+                attributes: [
+                    ['id', 'company_id'],
+                    ['company', 'name'],
+                    ['employee_size', 'team_size'],
+                    'industry',
+                    'website',
+                    ['company_linkedin_url', 'linkedin'],
+                    'logo_url'
+                ],
+                where: { id: lead.company_id },
+                raw: true
+            });
 
             if (company && plan_id === limited_access_plan_id) {
                 company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
@@ -1441,27 +1463,26 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 Object.assign(result, company);
             }
             result.customer_company_information = company || {};
-            let keyPeople = await sequelize.query(
-                `SELECT id, company_id, emp_name, emp_email, linkedin_id, photo, designation, mapped_categories
-                 FROM tbl_companies_employees WHERE company_id = ?
-                 ${lead.category_id ? 'AND FIND_IN_SET(?, mapped_categories) > 0' : ''}
-                 LIMIT 5`,
-                {
-                    replacements: lead.category_id ? [lead.company_id, lead.category_id] : [lead.company_id],
-                    type: QueryTypes.SELECT
-                }
-            );
+            let keyPeople;
+            if (lead.category_id) {
+                keyPeople = await CompaniesEmployees.findAll({
+                    attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
+                    where: {
+                        company_id: lead.company_id,
+                        [Op.and]: sequelize.literal(`FIND_IN_SET('${lead.category_id}', mapped_categories) > 0`)
+                    },
+                    limit: 5,
+                    raw: true
+                });
+            }
 
             if ((!keyPeople || keyPeople.length === 0) && lead.company_id) {
-                keyPeople = await sequelize.query(
-                    `SELECT id, company_id, emp_name, emp_email, linkedin_id, photo, designation, mapped_categories
-                     FROM tbl_companies_employees WHERE company_id = ?
-                     LIMIT 5`,
-                    {
-                        replacements: [lead.company_id],
-                        type: QueryTypes.SELECT
-                    }
-                );
+                keyPeople = await CompaniesEmployees.findAll({
+                    attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
+                    where: { company_id: lead.company_id },
+                    limit: 5,
+                    raw: true
+                });
             }
 
             if (keyPeople && plan_id === limited_access_plan_id) {
@@ -1482,7 +1503,6 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             try {
                 const db = mongoose.connection?.db;
                 if (!db) {
-                    console.warn("MongoDB connection not established for Lead Insights");
                     return result;
                 }
                 const tracksCollection = db.collection('tracks');
@@ -1532,21 +1552,30 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     let productVendorId = null;
                     if (productId || productName) {
                         try {
-                            const productCondition = productId ? 'p.product_id = ?' : 'p.product_name = ?';
-                            const productReplacement = productId || productName;
-                            const [productDetails] = await sequelize.query(
-                                `SELECT vbr.vendor_id, p.product_name 
-                                 FROM tbl_product p 
-                                 JOIN vendor_brand_relation vbr ON p.brand_id = vbr.tbl_brand_id 
-                                 WHERE ${productCondition} LIMIT 1`,
-                                { replacements: [productReplacement], type: QueryTypes.SELECT }
-                            );
+                            if (!TblProduct.associations.vendorBrandRelations) {
+                                TblProduct.hasMany(VendorBrandRelation, { foreignKey: 'tbl_brand_id', sourceKey: 'brand_id', as: 'vendorBrandRelations' });
+                            }
+                            const productCondition = productId ? { product_id: productId } : { product_name: productName };
+                            const productDetailsResult = await TblProduct.findOne({
+                                attributes: ['product_name'],
+                                where: productCondition,
+                                include: [{
+                                    model: VendorBrandRelation,
+                                    as: 'vendorBrandRelations',
+                                    attributes: ['vendor_id'],
+                                    required: true
+                                }]
+                            });
+                            const productDetails = productDetailsResult ? {
+                                vendor_id: productDetailsResult.vendorBrandRelations[0]?.vendor_id,
+                                product_name: productDetailsResult.product_name
+                            } : null;
                             if (productDetails) {
                                 productVendorId = productDetails.vendor_id;
                                 if (!productName) productName = productDetails.product_name;
                             }
                         } catch (err) {
-                            console.error("Error fetching product ownership for activity:", err);
+                            // Ignored
                         }
                     }
 
@@ -1635,7 +1664,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 activityTimeline.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                 result.activity = activityTimeline.slice(0, 10);
             } catch (mongoError) {
-                console.error("MongoDB Insight Error:", mongoError);
+                // Ignored
             }
         }
 
@@ -1653,7 +1682,6 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
 
         return result;
     } catch (error) {
-        console.error("DEBUG - getLeadInsights Error:", error);
         throw error;
     }
 };
@@ -1667,7 +1695,7 @@ export const unlockLeadInsights = async (vendor_id, data) => {
     if (!company || !email || !gp) {
         const vendor = await Vendor.findByPk(vendor_id);
         const vendorDetails = await VendorDetails.findOne({ where: { vendor_id } });
-        
+
         if (!company && vendorDetails) company = vendorDetails.company;
         if (!email && vendor) email = vendor.email;
         if (!gp && vendor) gp = `${vendor.first_name || ''} ${vendor.last_name || ''}`.trim();
@@ -1722,11 +1750,19 @@ export const unlockLeadInsights = async (vendor_id, data) => {
 </body>
 </html>`;
 
-        const [managerData] = await sequelize.query(
-            `SELECT au.adminusers_email AS email FROM vendors v LEFT JOIN tbl_adminusers au ON au.adminusers_id = v.acc_manager_id WHERE v.id = ?`,
-            { replacements: [vendor_id], type: QueryTypes.SELECT }
-        );
-        const toEmail = managerData?.email || 'Aniruddha_chaturvedi@techjockey.com';
+        if (!Vendor.associations.manager) {
+            Vendor.belongsTo(AdminUsers, { foreignKey: 'acc_manager_id', targetKey: 'adminusers_id', as: 'manager' });
+        }
+        const vendorRec = await Vendor.findOne({
+            attributes: ['id'],
+            where: { id: vendor_id },
+            include: [{
+                model: AdminUsers,
+                as: 'manager',
+                attributes: ['adminusers_email']
+            }]
+        });
+        const toEmail = vendorRec?.manager?.adminusers_email || 'Aniruddha_chaturvedi@techjockey.com';
 
         await EmailQueue.create({
             to: toEmail,
@@ -1741,7 +1777,6 @@ export const unlockLeadInsights = async (vendor_id, data) => {
 
         return { status: true, message: 'Thank you for your interest! Our team will contact you shortly.' };
     } catch (err) {
-        console.error("FAILED to unlock lead insights:", err);
         throw err;
     }
 };
@@ -1828,7 +1863,7 @@ export const unlockContact = async (vendor_id, lead_id) => {
     if (!canShowContact) {
         throw new Error("You do not have permission to view this contact.");
     }
-    
+
     if (!isInternational && !isValidModel) {
         throw new Error("You do not have permission to view this contact.");
     }
@@ -1865,46 +1900,38 @@ export const unlockContact = async (vendor_id, lead_id) => {
                     });
                 }
             } catch (mongoErr) {
-                console.error("Failed to write to MongoDB tracks inside unlockContact:", mongoErr);
+                // Ignored
             }
 
             try {
-                const isExists = await sequelize.query(
-                    "SELECT COUNT(1) as count FROM tbl_leads_call_attempt WHERE lead_id = ?",
-                    { replacements: [lead_id], type: QueryTypes.SELECT }
-                );
-                const countVal = isExists && isExists[0] ? (isExists[0].count !== undefined ? isExists[0].count : isExists[0].COUNT) : 0;
+                const countVal = await LeadsCallAttempt.count({
+                    where: { lead_id: lead_id }
+                });
                 if (countVal === 0) {
                     const lead_avg_time = getAvgTimeMinute(leadInfo.created_at, new Date());
 
-                    await sequelize.query(
-                        "INSERT INTO tbl_leads_call_attempt (lead_id, vendor_id, attempt_time, lead_date, lead_attempt_date) VALUES (?, ?, ?, ?, ?)",
-                        {
-                            replacements: [
-                                leadInfo.id,
-                                leadInfo.vendor_id,
-                                lead_avg_time,
-                                leadInfo.created_at,
-                                new Date()
-                            ],
-                            type: QueryTypes.INSERT
-                        }
-                    );
+                    await LeadsCallAttempt.create({
+                        lead_id: leadInfo.id,
+                        vendor_id: leadInfo.vendor_id,
+                        attempt_time: lead_avg_time,
+                        lead_date: leadInfo.created_at,
+                        lead_attempt_date: new Date()
+                    });
 
                     const lead_date = new Date(leadInfo.created_at).toISOString().split('T')[0];
                     const today = new Date().toISOString().split('T')[0];
                     if (today > lead_date) {
-                        await sequelize.query(
-                            "UPDATE vendor_analytics SET total_attempt_lead = total_attempt_lead + 1, total_attempt_time = total_attempt_time + ?, utilised_leads = utilised_leads + 1 WHERE vendor_id = ? AND logic_date = ?",
-                            {
-                                replacements: [lead_avg_time, leadInfo.vendor_id, lead_date],
-                                type: QueryTypes.UPDATE
-                            }
-                        );
+                        await VendorAnalytics.increment({
+                            total_attempt_lead: 1,
+                            total_attempt_time: lead_avg_time,
+                            utilised_leads: 1
+                        }, {
+                            where: { vendor_id: leadInfo.vendor_id, logic_date: lead_date }
+                        });
                     }
                 }
             } catch (sqlErr) {
-                console.error("Failed to save average attempt time in SQL:", sqlErr);
+                // Ignored
             }
         }
     }
@@ -2052,169 +2079,162 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
         });
         if (!lead) return null;
 
-        if(lead.customer_id) {
+        if (lead.customer_id) {
             const db = mongoose.connection?.db;
             if (!db) {
-                console.warn("MongoDB connection not established for Lead Insights");
                 return result;
             }
             let customerRelatedData = await getCustomerRelatedGuuids(lead.customer_id);
             let guuids = customerRelatedData.map(item => item.guuid);
             const activityQuery = [
-              {
-                $match: {
-                  $or: [
-                    { "feeds.guuid": { $in: guuids } },
-                  ],
+                {
+                    $match: {
+                        $or: [
+                            { "feeds.guuid": { $in: guuids } },
+                        ],
+                    },
                 },
-              },
 
-              {
-                $unwind: "$feeds",
-              },
-
-              // filter category + exclude current/lead product
-              {
-                $match: {
-                  "feeds.page_info.category_id": String(lead.category_id),
-
-                  "feeds.page_info.product_id": {
-                    $exists: true,
-                    $ne: null,
-                    $nin: [
-                      String(lead.product_id), // external lead/current product id
-                      Number(lead.product_id),
-                    ],
-                  },
+                {
+                    $unwind: "$feeds",
                 },
-              },
 
-              // group by product
-              {
-                $group: {
-                  _id: "$feeds.page_info.product_id",
+                // filter category + exclude current/lead product
+                {
+                    $match: {
+                        "feeds.page_info.category_id": String(lead.category_id),
 
-                  product_id: {
-                    $first: "$feeds.page_info.product_id",
-                  },
-
-                  product_name: {
-                    $first: "$feeds.page_info.product_name",
-                  },
-
-                  visits: {
-                    $sum: 1,
-                  },
+                        "feeds.page_info.product_id": {
+                            $exists: true,
+                            $ne: null,
+                            $nin: [
+                                String(lead.product_id), // external lead/current product id
+                                Number(lead.product_id),
+                            ],
+                        },
+                    },
                 },
-              },
 
-              // sort by most visited
-              {
-                $sort: {
-                  visits: -1,
+                // group by product
+                {
+                    $group: {
+                        _id: "$feeds.page_info.product_id",
+
+                        product_id: {
+                            $first: "$feeds.page_info.product_id",
+                        },
+
+                        product_name: {
+                            $first: "$feeds.page_info.product_name",
+                        },
+
+                        visits: {
+                            $sum: 1,
+                        },
+                    },
                 },
-              },
 
-              {
-                $project: {
-                  _id: 0,
-                  product_id: 1,
-                  product_name: 1,
-                  visits: 1,
+                // sort by most visited
+                {
+                    $sort: {
+                        visits: -1,
+                    },
                 },
-              },
 
-              {
-                $limit: 20,
-              },
+                {
+                    $project: {
+                        _id: 0,
+                        product_id: 1,
+                        product_name: 1,
+                        visits: 1,
+                    },
+                },
+
+                {
+                    $limit: 20,
+                },
             ];
-            const mongoCompassQuery = `db.tracks.aggregate(${JSON.stringify(activityQuery, null, 2)})`; 
+            const mongoCompassQuery = `db.tracks.aggregate(${JSON.stringify(activityQuery, null, 2)})`;
             const tracksCollection = db.collection('tracks');
             const relatedProducts = await tracksCollection.aggregate(activityQuery).toArray();
-            return relatedProducts;   
+            return relatedProducts;
         }
     } catch (error) {
-        console.error("Error while fetching getLeadCompetiterInsights. Error:", error);
         throw error;
     }
 }
 
 
 export const getCustomerRelatedGuuids = async (customerId) => {
-  try {
-    const db = mongoose.connection?.db;
-    if (!db) {
-      console.warn("MongoDB connection not established");
-      return [];
+    try {
+        const db = mongoose.connection?.db;
+        if (!db) {
+            return [];
+        }
+
+        const tracksCollection = db.collection("tracks");
+
+        const runAggregation = async (customerIdValue) => {
+            return await tracksCollection
+                .aggregate(
+                    [
+                        {
+                            $unwind: "$feeds",
+                        },
+                        {
+                            $match: {
+                                "feeds.customer_id": customerIdValue,
+                                "feeds.guuid": {
+                                    $exists: true,
+                                    $ne: null,
+                                },
+                            },
+                        },
+                        {
+                            $sort: {
+                                "feeds.created_at": -1,
+                            },
+                        },
+                        {
+                            $group: {
+                                _id: "$feeds.guuid",
+                                guuid: {
+                                    $first: "$feeds.guuid",
+                                },
+                            },
+                        },
+                        {
+                            $limit: 10,
+                        },
+                        {
+                            $project: {
+                                _id: 0,
+                                guuid: 1,
+                            },
+                        },
+                    ],
+                    {
+                        batchSize: 10,
+                    }
+                )
+                .toArray();
+        };
+
+        // First try string customer_id
+        let customerRelatedGuuids = await runAggregation(
+            String(customerId)
+        );
+
+        // Retry with number customer_id if empty
+        if (!customerRelatedGuuids.length) {
+            customerRelatedGuuids = await runAggregation(
+                Number(customerId)
+            );
+        }
+
+        return customerRelatedGuuids;
+    } catch (error) {
+
+        return [];
     }
-
-    const tracksCollection = db.collection("tracks");
-
-    const runAggregation = async (customerIdValue) => {
-      return await tracksCollection
-        .aggregate(
-          [
-            {
-              $unwind: "$feeds",
-            },
-            {
-              $match: {
-                "feeds.customer_id": customerIdValue,
-                "feeds.guuid": {
-                  $exists: true,
-                  $ne: null,
-                },
-              },
-            },
-            {
-              $sort: {
-                "feeds.created_at": -1,
-              },
-            },
-            {
-              $group: {
-                _id: "$feeds.guuid",
-                guuid: {
-                  $first: "$feeds.guuid",
-                },
-              },
-            },
-            {
-              $limit: 10,
-            },
-            {
-              $project: {
-                _id: 0,
-                guuid: 1,
-              },
-            },
-          ],
-          {
-            batchSize: 10,
-          }
-        )
-        .toArray();
-    };
-
-    // First try string customer_id
-    let customerRelatedGuuids = await runAggregation(
-      String(customerId)
-    );
-
-    // Retry with number customer_id if empty
-    if (!customerRelatedGuuids.length) {
-      customerRelatedGuuids = await runAggregation(
-        Number(customerId)
-      );
-    }
-
-    return customerRelatedGuuids;
-  } catch (error) {
-    console.error(
-      "Error fetching customer related guuids:",
-      error
-    );
-
-    return [];
-  }
 };
