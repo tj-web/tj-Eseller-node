@@ -23,10 +23,10 @@ export const getBrands = async (req, res) => {
   try {
     const { orderby, order, srch_brand_name = "", srch_status = "", limit, pagenumber } = req.query;
 
-    const vendor_id = req.user.vendor_id; // fixed !!
+    const vendor_id = req.user.vendor_id;
 
     const result = await getVendorBrandsService({
-      vendor_id: vendor_id || 1, // Fallback to 1 if not provided, as requested
+      vendor_id: vendor_id,
       orderby,
       order,
       srch_brand_name,
@@ -38,7 +38,6 @@ export const getBrands = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Brands Fetched Successfully.", result));
   } catch (error) {
-    console.error("Error in fetching vendor brands:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error in vendor brands"));
@@ -63,7 +62,6 @@ export const getBrandsCount = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Brands Count Fetched Successfully.", counts));
   } catch (error) {
-    console.error("Error fetching brand counts:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error in brand counts"));
@@ -79,7 +77,6 @@ export const checkBrand = async (req, res) => {
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(!result)); // true if NOT blocked
   } catch (error) {
-    console.error("Error checking brand name:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error"));
@@ -95,7 +92,7 @@ export const addBrand = async (req, res) => {
     };
 
     const vendor_id = req.user.vendor_id;
-    const profileId = req.body.profile_id || 0;
+    const profileId = req.user.profile_id;
     const result = await addBrandService(brandData, vendor_id, profileId);
 
     if (req.file) {
@@ -201,7 +198,7 @@ export const updateBrand = async (req, res) => {
 
     
     if (brandDiff && Object.keys(brandDiff).length > 0) {
-      const profileId = req.body.profile_id || 0;
+      const profileId = req.user.profile_id;
       const flatLogArr = Object.entries(brandDiff).map(([col, values]) => {
         const isCore = col === "brand_name" || col === "image";
         return {
@@ -230,7 +227,6 @@ export const updateBrand = async (req, res) => {
     res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Brand updated successfully"));
   } catch (error) {
     if (transaction) await transaction.rollback();
-    console.error("Error in updateBrandController:", error);
     res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -267,7 +263,6 @@ export const view_brand = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Brand details Fetched Succesfully", brandDetails));
   } catch (error) {
-    console.error("Error viewing brand data via ORM interface:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal server crash"));
@@ -297,7 +292,6 @@ export const requestBrand = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Brand requested successfully!"));
   } catch (error) {
-    console.error("Error requesting brand:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error in requesting brand"));
@@ -322,7 +316,6 @@ export const searchBrandsForRequest = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Available Brands Fetched Successfully.", brands));
   } catch (error) {
-    console.error("Error searching brands for request:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError("Internal Server Error"));
