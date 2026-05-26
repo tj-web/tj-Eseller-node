@@ -10,46 +10,33 @@ const OmsPiProduct = sequelize.define(
       primaryKey: true,
       allowNull: false,
     },
+
     pi_id: {
       type: DataTypes.INTEGER(11),
-      allowNull: true,
+      allowNull: false,
     },
+
     product_id: {
       type: DataTypes.INTEGER(11),
-      allowNull: true,
+      allowNull: false,
     },
+
     product_name: {
       type: DataTypes.STRING(255),
-      allowNull: true,
+      allowNull: false,
     },
-    brand_id: {
+
+    category_id: {
       type: DataTypes.INTEGER(11),
       allowNull: true,
+      defaultValue: null,
     },
-    brand_name: {
+
+    category_name: {
       type: DataTypes.STRING(255),
       allowNull: true,
+      defaultValue: null,
     },
-    quantity: {
-      type: DataTypes.INTEGER(11),
-      allowNull: true,
-    },
-    amount: {
-      type: DataTypes.DOUBLE(16, 2),
-      allowNull: true,
-    },
-    created_at: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
-    updated_at: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
-    deleted_at: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    }
   },
   {
     tableName: "oms_pi_products",

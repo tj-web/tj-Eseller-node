@@ -1954,19 +1954,6 @@ export const unlockContact = async (vendor_id, lead_id) => {
 
     if (!leadInfo) throw new Error("Lead not found");
 
-    const isInternational = leadInfo.dial_code !== '91';
-    let canShowContact = isInternational || leadInfo.is_show_contact === 1;
-
-    const leadModelType = leadInfo.product ? leadInfo.product.lead_model_type : 2;
-    const isValidModel = [1, 3, 4, 7].includes(leadModelType);
-
-    if (!canShowContact) {
-        throw new Error("You do not have permission to view this contact.");
-    }
-
-    if (!isInternational && !isValidModel) {
-        throw new Error("You do not have permission to view this contact.");
-    }
 
     if (leadInfo.is_contact_viewed === 0) {
         await TblLeads.update(
