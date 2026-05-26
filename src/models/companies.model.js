@@ -17,7 +17,7 @@ const Companies = sequelize.define(
       defaultValue: null,
     },
 
-    employee_size: {
+    employees_size: {
       type: DataTypes.TEXT,
       allowNull: true,
       defaultValue: null,
