@@ -12,6 +12,7 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import OmsPiProduct from "../../models/omsPiProduct.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import StateMaster from "../../models/stateMaster.model.js";
 import CityMaster from "../../models/cityMaster.model.js";
@@ -39,9 +40,30 @@ const getVendorInsightPermission = async (vendor_id) => {
         return { allowed: false, productIds: [] };
     }
 
+    const activePlan = await OmsPiDetail.findOne({
+        attributes: ['id', 'pi_status'],
+        where: {
+            vendor_id: vendor_id,
+            plan_type: 'leadinsight'
+        },
+        order: [['id', 'DESC']]
+    });
+
+    if (!activePlan || activePlan.pi_status !== 3) {
+        return { allowed: false, productIds: [] };
+    }
+
+    const piProducts = await OmsPiProduct.findAll({
+        attributes: ['product_id'],
+        where: { pi_id: activePlan.id }
+    });
+
+    const productIds = piProducts.map(p => p.product_id);
+
     return {
         allowed: true,
-        isFeatureEnabled: true
+        isFeatureEnabled: true,
+        productIds: productIds
     };
 };
 
@@ -214,6 +236,15 @@ export const getLeads = async (vendor_id, post) => {
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
 
+    const leadInsightPlan = await OmsPiDetail.findOne({
+        where: {
+            vendor_id: vendor_id,
+            plan_type: 'leadinsight'
+        },
+        order: [['id', 'DESC']]
+    });
+    const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
+
     const enrichedLeads = await Promise.all(rows.map(async (lead) => {
         const leadJson = lead.toJSON();
 
@@ -273,7 +304,20 @@ export const getLeads = async (vendor_id, post) => {
         leadJson.is_call_allowed = isCallAllowed ? 1 : 0;
         leadJson.call_disable_msg = callDisableMsg;
 
-        leadJson.is_lead_insight_allowed = insightPermission.allowed ? 1 : 0;
+        let is_lead_insight_allowed = 0;
+        if (insightPermission.allowed && pi_id && leadJson.product_id) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
+            `, {
+                replacements: { pi_id, product_id: leadJson.product_id },
+                type: QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+        }
+        leadJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
         return leadJson;
     }));
@@ -362,6 +406,15 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
 
+    const leadInsightPlan = await OmsPiDetail.findOne({
+        where: {
+            vendor_id: vendor_id,
+            plan_type: 'leadinsight'
+        },
+        order: [['id', 'DESC']]
+    });
+    const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
+
     const enrichedDemos = await Promise.all(rows.map(async (demo) => {
         const demoJson = demo.toJSON();
         const lead = demoJson.lead;
@@ -389,7 +442,20 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
         demoJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
         demoJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
-        demoJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(lead.product_id)) ? 1 : 0;
+        let is_lead_insight_allowed = 0;
+        if (insightPermission.allowed && pi_id && lead.product_id) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
+            `, {
+                replacements: { pi_id, product_id: lead.product_id },
+                type: QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+        }
+        demoJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
         return demoJson;
     }));
@@ -578,7 +644,31 @@ export const getLeadDetails = async (vendor_id, leadId) => {
     leadJson.lead_actions = await getLeadActions(leadJson);
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
-    leadJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(leadJson.product_id)) ? 1 : 0;
+    let is_lead_insight_allowed = 0;
+    if (insightPermission.allowed && leadJson.product_id) {
+        const leadInsightPlan = await OmsPiDetail.findOne({
+            where: {
+                vendor_id: vendor_id,
+                plan_type: 'leadinsight'
+            },
+            order: [['id', 'DESC']]
+        });
+        const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
+
+        if (pi_id) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
+            `, {
+                replacements: { pi_id, product_id: leadJson.product_id },
+                type: QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+        }
+    }
+    leadJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
     return leadJson;
 };
@@ -1363,6 +1453,13 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             return null;
         }
 
+        await verifyLeadOwnership(vendor_id, lead_id);
+
+        let lead = await TblLeads.findByPk(lead_id, {
+            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state', 'is_contact_viewed']
+        });
+        if (!lead) return null;
+
         const planDetails = await getLeadInsightPlanDetails(vendor_id);
         let plan_name = 'No Plan';
         let plan_id = '';
@@ -1375,10 +1472,6 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate) {
                 plan_id = planDetails.lead_plan_id;
                 plan_name = planDetails.plan_name || 'Paid Access';
-
-                if (plan_id == full_access_plan_id) {
-                    await fetchLeadInsightsData(lead_id, vendor_id);
-                }
             } else {
                 plan_id = limited_access_plan_id;
                 plan_name = planDetails.plan_name || 'Full Free Access (Limited)';
@@ -1388,12 +1481,14 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             plan_name = 'Free Access (Limited)';
         }
 
-        await verifyLeadOwnership(vendor_id, lead_id);
-
-        const lead = await TblLeads.findByPk(lead_id, {
-            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state']
-        });
-        if (!lead) return null;
+        if (plan_id == full_access_plan_id || lead.is_contact_viewed === 1) {
+            await fetchLeadInsightsData(lead_id, vendor_id);
+            // Re-fetch lead since fetchLeadInsightsData might have updated company_id and leadinsight
+            lead = await TblLeads.findByPk(lead_id, {
+                attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state', 'is_contact_viewed']
+            });
+            if (!lead) return null;
+        }
 
         const totalCredits = lead?.oms_pi_id ? await OmsPiDetail.sum('total_lead', {
             where: { id: lead.oms_pi_id }
@@ -1453,7 +1548,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 raw: true
             });
 
-            if (company && plan_id === limited_access_plan_id) {
+            if (company && plan_id === limited_access_plan_id && lead.is_contact_viewed !== 1) {
                 company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
                 company.website = company.website ? "********" : null;
                 company.linkedin = company.linkedin ? "********" : null;
@@ -1486,7 +1581,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 });
             }
 
-            if (keyPeople && plan_id === limited_access_plan_id) {
+            if (keyPeople && plan_id === limited_access_plan_id && lead.is_contact_viewed !== 1) {
                 keyPeople = keyPeople.map(person => ({
                     ...person,
                     emp_name: person.emp_name ? person.emp_name.substring(0, 3) + "********" : "********",
@@ -1663,7 +1758,11 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 }
 
                 activityTimeline.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                result.activity = activityTimeline.slice(0, 10);
+                if (plan_id === limited_access_plan_id && lead.is_contact_viewed !== 1) {
+                    result.activity = activityTimeline.slice(0, 2);
+                } else {
+                    result.activity = activityTimeline.slice(0, 10);
+                }
             } catch (mongoError) {
                 // Ignored
             }
@@ -1855,19 +1954,6 @@ export const unlockContact = async (vendor_id, lead_id) => {
 
     if (!leadInfo) throw new Error("Lead not found");
 
-    const isInternational = leadInfo.dial_code !== '91';
-    let canShowContact = isInternational || leadInfo.is_show_contact === 1;
-
-    const leadModelType = leadInfo.product ? leadInfo.product.lead_model_type : 2;
-    const isValidModel = [1, 3, 4, 7].includes(leadModelType);
-
-    if (!canShowContact) {
-        throw new Error("You do not have permission to view this contact.");
-    }
-
-    if (!isInternational && !isValidModel) {
-        throw new Error("You do not have permission to view this contact.");
-    }
 
     if (leadInfo.is_contact_viewed === 0) {
         await TblLeads.update(
