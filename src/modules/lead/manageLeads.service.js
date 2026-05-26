@@ -12,6 +12,7 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import OmsPiProduct from "../../models/omsPiProduct.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import StateMaster from "../../models/stateMaster.model.js";
 import CityMaster from "../../models/cityMaster.model.js";
@@ -39,9 +40,30 @@ const getVendorInsightPermission = async (vendor_id) => {
         return { allowed: false, productIds: [] };
     }
 
+    const activePlan = await OmsPiDetail.findOne({
+        attributes: ['id', 'pi_status'],
+        where: {
+            vendor_id: vendor_id,
+            plan_type: 'leadinsight'
+        },
+        order: [['id', 'DESC']]
+    });
+
+    if (!activePlan || activePlan.pi_status !== 3) {
+        return { allowed: false, productIds: [] };
+    }
+
+    const piProducts = await OmsPiProduct.findAll({
+        attributes: ['product_id'],
+        where: { pi_id: activePlan.id }
+    });
+
+    const productIds = piProducts.map(p => p.product_id);
+
     return {
         allowed: true,
-        isFeatureEnabled: true
+        isFeatureEnabled: true,
+        productIds: productIds
     };
 };
 
