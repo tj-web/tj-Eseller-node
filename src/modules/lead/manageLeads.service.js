@@ -2068,39 +2068,55 @@ export const getLeadActions = async (lead) => {
 export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
     try {
         const vendor = await Vendor.findByPk(vendor_id, {
-            attributes: ['lead_insight_display']
+            attributes: ['lead_insight_display'],
+            raw: true
         });
 
-        if (!vendor || vendor.lead_insight_display != 1) {
-            return null;
+        if (!vendor || Number(vendor.lead_insight_display) !== 1) {
+            return [];
         }
 
         const lead = await TblLeads.findByPk(lead_id, {
-            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state']
+            attributes: ['id', 'customer_id', 'category_id', 'product_id', 'product_name', 'original_parent_id'],
+            raw: true
         });
-        if (!lead) return null;
 
-        if (lead.customer_id) {
-            const db = mongoose.connection?.db;
-            if (!db) {
-                return result;
-            }
-            let customerRelatedData = await getCustomerRelatedGuuids(lead.customer_id);
-            let guuids = customerRelatedData.map(item => item.guuid);
+        if (!lead || !lead.customer_id) {
+            return [];
+        }
+
+        const db = mongoose.connection?.db;
+
+        if (!db) {
+            console.warn("MongoDB connection not established for Lead Insights");
+            return [];
+        }
+
+        const customerRelatedData = await getCustomerRelatedGuuids(
+            lead.customer_id
+        );
+
+        const guuids = customerRelatedData
+            ?.map(item => item.guuid)
+            ?.filter(Boolean);
+
+        let relatedProducts = [];
+
+        if (guuids?.length) {
+
             const activityQuery = [
                 {
                     $match: {
-                        $or: [
-                            { "feeds.guuid": { $in: guuids } },
-                        ],
-                    },
+                        "feeds.guuid": {
+                            $in: guuids
+                        }
+                    }
                 },
 
                 {
-                    $unwind: "$feeds",
+                    $unwind: "$feeds"
                 },
 
-                // filter category + exclude current/lead product
                 {
                     $match: {
                         "feeds.page_info.category_id": String(lead.category_id),
@@ -2109,37 +2125,29 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                             $exists: true,
                             $ne: null,
                             $nin: [
-                                String(lead.product_id), // external lead/current product id
-                                Number(lead.product_id),
-                            ],
-                        },
-                    },
+                                String(lead.product_id),
+                                Number(lead.product_id)
+                            ]
+                        }
+                    }
                 },
 
-                // group by product
                 {
                     $group: {
                         _id: "$feeds.page_info.product_id",
 
                         product_id: {
-                            $first: "$feeds.page_info.product_id",
+                            $first: "$feeds.page_info.product_id"
                         },
 
                         product_name: {
-                            $first: "$feeds.page_info.product_name",
+                            $first: "$feeds.page_info.product_name"
                         },
 
                         visits: {
-                            $sum: 1,
-                        },
-                    },
-                },
-
-                // sort by most visited
-                {
-                    $sort: {
-                        visits: -1,
-                    },
+                            $sum: 1
+                        }
+                    }
                 },
 
                 {
@@ -2147,23 +2155,83 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                         _id: 0,
                         product_id: 1,
                         product_name: 1,
-                        visits: 1,
-                    },
+                        visits: 1
+                    }
                 },
 
                 {
-                    $limit: 20,
+                    $sort: {
+                        visits: -1
+                    }
                 },
+
+                {
+                    $limit: 20
+                }
             ];
-            const mongoCompassQuery = `db.tracks.aggregate(${JSON.stringify(activityQuery, null, 2)})`;
-            const tracksCollection = db.collection('tracks');
-            const relatedProducts = await tracksCollection.aggregate(activityQuery).toArray();
-            return relatedProducts;
+
+            relatedProducts = await db
+                .collection('tracks')
+                .aggregate(activityQuery)
+                .toArray();
         }
+
+        if (
+            (!relatedProducts || relatedProducts.length === 0)
+        ) {
+
+            const fallbackProducts = await TblLeads.findAll({
+                attributes: ['product_id', 'product_name'],
+                where: {
+                    original_parent_id: lead.id
+                },
+                raw: true
+            });
+
+            if (fallbackProducts?.length) {
+
+                // Remove duplicates using product_id + product_name
+                const uniqueProductsMap = new Map();
+
+                fallbackProducts.forEach(item => {
+
+                    const productId = item.product_id;
+                    const productName = item.product_name?.trim();
+
+                    if (
+                        productId &&
+                        productName &&
+                        String(productId) !== String(lead.product_id)
+                    ) {
+
+                        // Avoid duplicate product_id
+                        if (!uniqueProductsMap.has(String(productId))) {
+
+                            uniqueProductsMap.set(String(productId), {
+                                product_id: productId,
+                                product_name: productName,
+                                visits: 0
+                            });
+                        }
+                    }
+                });
+
+                relatedProducts = Array.from(uniqueProductsMap.values());
+            }
+        }
+
+        return relatedProducts || [];
+
     } catch (error) {
-        throw error;
+
+        console.error(
+            "Error while fetching getLeadCompetiterInsights:",
+            error
+        );
+
+        return [];
     }
-}
+};
 
 
 export const getCustomerRelatedGuuids = async (customerId) => {
