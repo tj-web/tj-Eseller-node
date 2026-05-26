@@ -12,6 +12,7 @@ import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import OmsPiProduct from "../../models/omsPiProduct.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import CountriesMaster from "../../models/countriesMaster.model.js";
 import KnowlarityAcdStatus from "../../models/knowlarityAcdStatus.model.js";
@@ -38,9 +39,30 @@ const getVendorInsightPermission = async (vendor_id) => {
         return { allowed: false, productIds: [] };
     }
 
+    const activePlan = await OmsPiDetail.findOne({
+        attributes: ['id', 'pi_status'],
+        where: {
+            vendor_id: vendor_id,
+            plan_type: 'leadinsight'
+        },
+        order: [['id', 'DESC']]
+    });
+
+    if (!activePlan || activePlan.pi_status !== 3) {
+        return { allowed: false, productIds: [] };
+    }
+
+    const piProducts = await OmsPiProduct.findAll({
+        attributes: ['product_id'],
+        where: { pi_id: activePlan.id }
+    });
+
+    const productIds = piProducts.map(p => p.product_id);
+
     return {
         allowed: true,
-        isFeatureEnabled: true
+        isFeatureEnabled: true,
+        productIds: productIds
     };
 };
 
@@ -272,7 +294,8 @@ export const getLeads = async (vendor_id, post) => {
         leadJson.is_call_allowed = isCallAllowed ? 1 : 0;
         leadJson.call_disable_msg = callDisableMsg;
 
-        leadJson.is_lead_insight_allowed = insightPermission.allowed ? 1 : 0;
+        const isContactAccessible = contactViewed || showContact;
+        leadJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(leadJson.product_id) && isContactAccessible) ? 1 : 0;
 
         return leadJson;
     }));
@@ -388,7 +411,8 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
         demoJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
         demoJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
-        demoJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(lead.product_id)) ? 1 : 0;
+        const isContactAccessible = contactViewed || showContact || isInternational;
+        demoJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(lead.product_id) && isContactAccessible) ? 1 : 0;
 
         return demoJson;
     }));
