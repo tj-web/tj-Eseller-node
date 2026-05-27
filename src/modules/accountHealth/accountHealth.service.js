@@ -426,6 +426,23 @@ export const saveReviewReplyService = async (vendor_id, profile_id, data) => {
   try {
     const { review_id, reply_text, reply_id } = data;
 
+    // --- SECURITY FIX: Verify Review Ownership ---
+    const targetReview = await Review.findOne({
+      where: { review_id },
+      attributes: ["product_id"],
+    });
+
+    if (!targetReview) {
+      throw new AppError("Review not found", 404);
+    }
+
+    const vendorProductIds = await getVendorProductIds(vendor_id);
+
+    if (!vendorProductIds.includes(targetReview.product_id)) {
+      throw new AppError("You are not authorized to reply to this review", 403);
+    }
+    // ---------------------------------------------
+
     const replyData = {
       review_id,
       reply_text,
