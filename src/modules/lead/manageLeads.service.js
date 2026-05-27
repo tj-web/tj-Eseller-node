@@ -1333,9 +1333,17 @@ const getEmployeeEmails = async (apollo_people_ids) => {
 
         if (data.matches && data.matches.length > 0) {
             for (const empData of data.matches) {
+                const updatePayload = {};
                 if (empData.email) {
+                    updatePayload.emp_email = empData.email;
+                }
+                if (empData.linkedin_url) {
+                    updatePayload.linkedin_id = empData.linkedin_url;
+                }
+                
+                if (Object.keys(updatePayload).length > 0) {
                     await CompaniesEmployees.update(
-                        { emp_email: empData.email },
+                        updatePayload,
                         { where: { apollo_people_id: empData.id } }
                     );
                 }
@@ -1659,23 +1667,24 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                                     model: VendorBrandRelation,
                                     as: 'vendorBrandRelations',
                                     attributes: ['vendor_id'],
-                                    required: true
+                                    where: { status: 1, vendor_id: vendor_id },
+                                    required: false // We use false so we still get the product name even if this vendor doesn't sell it
                                 }]
                             });
-                            const productDetails = productDetailsResult ? {
-                                vendor_id: productDetailsResult.vendorBrandRelations[0]?.vendor_id,
-                                product_name: productDetailsResult.product_name
-                            } : null;
-                            if (productDetails) {
-                                productVendorId = productDetails.vendor_id;
-                                if (!productName) productName = productDetails.product_name;
+                            
+                            if (productDetailsResult) {
+                                // If the relation exists, it means the current vendor sells it actively (status: 1)
+                                if (productDetailsResult.vendorBrandRelations && productDetailsResult.vendorBrandRelations.length > 0) {
+                                    productVendorId = productDetailsResult.vendorBrandRelations[0].vendor_id;
+                                }
+                                if (!productName) productName = productDetailsResult.product_name;
                             }
                         } catch (err) {
                             // Ignored
                         }
                     }
-
-                    if (productName && (!productVendorId || String(productVendorId) === String(vendor_id))) {
+                    
+                    if (productName && productVendorId && String(productVendorId) === String(vendor_id)) {
                         assetName = (plan_id === limited_access_plan_id) ? (productName.substring(0, 5) + "********") : productName;
                         assetType = 'Product';
                     } else if (categoryName) {
@@ -1957,7 +1966,7 @@ export const unlockContact = async (vendor_id, lead_id) => {
 
     if (leadInfo.is_contact_viewed === 0) {
         await TblLeads.update(
-            { is_contact_viewed: 1 },
+            { is_contact_viewed: 1, is_show_contact: 1 },
             { where: { id: lead_id } }
         );
 
@@ -2033,7 +2042,7 @@ export const unlockContact = async (vendor_id, lead_id) => {
         message: 'Contact unlocked successfully',
         email: updatedLead ? updatedLead.email : null,
         phone: updatedLead ? updatedLead.phone : null,
-        is_show_contact: canShowContact ? 1 : 0
+        is_show_contact: 1
     };
 };
 
