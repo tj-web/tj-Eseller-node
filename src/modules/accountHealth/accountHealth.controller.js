@@ -95,9 +95,10 @@ export const saveReviewReply = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success(result.message, result));
   } catch (error) {
+    const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
     return res
-      .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError(error.message));
+      .status(statusCode)
+      .json(SystemResponse.getErrorResponse(error.message, error, statusCode));
   }
 };
 

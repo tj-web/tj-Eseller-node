@@ -9,6 +9,8 @@ import TblLeads from "../../models/leads.model.js";
 import sequelize from "../../db/connection.js";
 import { AppError } from "../../utilis/appError.js";
 import { Op } from "sequelize";
+import { findDifferences } from "../../General_Function/general_helper.js";
+import { uploadfile2 } from "../../utilis/s3Uploader.js";
 
 VendorBrandRelation.belongsTo(Brand, {
   foreignKey: "tbl_brand_id",
@@ -52,7 +54,7 @@ export const checkBrandNameService = async (brand_name, exclude_brand_id = null)
 /* =========================================
    ADD BRAND CORE LOGIC
 ========================================= */
-export const addBrandService = async (data, vendorId, profileId) => {
+export const addBrandService = async (data, file, vendorId, profileId) => {
   const { brand_name, image, location, founded_on, founders, company_size, information, industry } =
     data;
 
@@ -216,6 +218,41 @@ export const addBrandService = async (data, vendorId, profileId) => {
           { transaction }
         );
       }
+    }
+
+    if (file) {
+      // Sanitize and build S3 filename that includes brand_id
+      const originalName = file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${brandId}_${originalName}`;
+
+      // Prepare upload object: ensure we pass the file buffer and proper originalname + key
+      const fileobj = {
+        ...file,
+        originalname: fileName,
+        key: `web/assets/images/techjockey/brands/${fileName}`,
+      };
+      await uploadfile2(fileobj);
+
+      // Persist image name in tbl_brand
+      await Brand.update({ image: fileName }, { where: { brand_id: brandId }, transaction });
+
+      // Insert vendor log entry for the image
+      await VendorLog.create({
+        item_id: brandId,
+        module: "brand",
+        action_performed: "insert",
+        action_by: profileId,
+        table_name: "tbl_brand",
+        column_name: "image",
+        p_key: "brand_id",
+        updated_column_value: fileName,
+        linked_attribute: "",
+        item_updated_id: 0,
+        reject_reason: "",
+        status: 1,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }, { transaction });
     }
 
     // 6. Complete Transaction Context
@@ -382,7 +419,7 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
     include: [
       {
         model: VendorBrandRelation,
-        required: false, // Strict requirement ensuring permissions organically
+        required: true, // Strict requirement ensuring permissions organically
         where: { vendor_id: vendor_id },
         attributes: ["status"],
       },
@@ -483,31 +520,73 @@ export const getBrandLocationService = async (brand_id) => {
   }));
 };
 
-/* =========================================
-   UPDATE BRAND LOGIC
-========================================= */
-export const updateBrandService = async (brand_id, updateData, transaction) => {
-  await Brand.update(
-    {
-      brand_name: updateData.brand_name,
-      ...(updateData.image !== null && { image: updateData.image }),
-    },
-    { where: { brand_id: brand_id }, transaction }
-  );
+export const updateBrandService = async (brand_id, body, file, vendor_id, profile_id) => {
+  const transaction = await sequelize.transaction();
 
-  await BrandInfo.update(
-    {
-      location: updateData.location,
-      information: updateData.information,
-      founded_on: updateData.founded_on,
-      founders: updateData.founders,
-      company_size: updateData.company_size,
-      industry: updateData.industry,
-    },
-    { where: { tbl_brand_id: brand_id }, transaction }
-  );
+  try {
+    const brandDetails = await getBrandByIdService(vendor_id, brand_id);
 
-  return true;
+    if (!brandDetails) {
+      throw new AppError("Brand not found", 404);
+    }
+
+    const { brand_name, information, location, industry, founded_on, founders, company_size } = body;
+
+    let imageName = null;
+    if (file) {
+      // Sanitize and build S3 filename that includes brand_id
+      const originalName = file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${brand_id}_${originalName}`;
+      const fileobj = {
+        ...file,
+        originalname: fileName,
+        key: `web/assets/images/techjockey/brands/${fileName}`,
+      };
+      await uploadfile2(fileobj);
+      imageName = fileName;
+    }
+
+    const brandSave = {
+      brand_name,
+      location,
+      information,
+      industry,
+      founded_on,
+      founders,
+      company_size,
+      ...(imageName !== null && { image: imageName }),
+    };
+
+    const brandDiff = findDifferences(brandDetails, brandSave);
+
+    if (brandDiff && Object.keys(brandDiff).length > 0) {
+      const flatLogArr = Object.entries(brandDiff).map(([col, values]) => {
+        const isCore = col === "brand_name" || col === "image";
+        return {
+          item_id: brand_id,
+          module: "brand",
+          action_performed: "updated",
+          action_by: profile_id,
+          table_name: isCore ? "tbl_brand" : "tbl_brand_info",
+          column_name: col,
+          p_key: isCore ? "brand_id" : "id",
+          updated_column_value: values.new !== null && values.new !== undefined ? values.new.toString() : "",
+          linked_attribute: "",
+          item_updated_id: brand_id,
+          reject_reason: "",
+          status: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+      });
+      await VendorLog.bulkCreate(flatLogArr, { transaction });
+    }
+
+    await transaction.commit();
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    throw error;
+  }
 };
 
 /* =========================================

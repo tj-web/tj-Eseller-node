@@ -32,7 +32,7 @@ const getOmsPiData = async (vendor_id) => {
 // Get analytics data (raw SQL placeholder)
 const getAnalyticsData = async (filter) => {
   try {
-    const query = `
+    let query = `
   SELECT 
     SUM(total_leads) AS total_leads,
     SUM(impression) AS impression,
