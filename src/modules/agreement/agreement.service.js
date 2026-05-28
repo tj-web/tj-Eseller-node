@@ -9,6 +9,7 @@ import Product from "../../models/product.model.js";
 import Plan from "../../models/plan.model.js";
 import TblPlanSpec from "../../models/planSpec.model.js";
 import Vendor from "../../models/vendor.model.js";
+import { AppError } from "../../utilis/appError.js";
 
 VendorBrandRelation.belongsTo(Brand, { foreignKey: "tbl_brand_id", targetKey: "brand_id" });
 Product.hasMany(Plan, { foreignKey: "product_id", sourceKey: "product_id" });
@@ -32,7 +33,7 @@ export const getDesignation = async () => {
 
 export const getVendorById = async (profile_id) => {
   if (!profile_id) {
-    throw new Error("profile_id is required");
+    throw new AppError("profile_id is required", 400);
   }
   try {
     const result = await VendorAuth.findOne({
@@ -42,7 +43,6 @@ export const getVendorById = async (profile_id) => {
     });
     return result || null;
   } catch (error) {
-    console.error("Error fetching vendor by ID:", error);
     throw error;
   }
 };

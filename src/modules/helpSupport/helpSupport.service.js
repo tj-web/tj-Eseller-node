@@ -1,6 +1,10 @@
 import VendorReqQuery from "../../models/helpSupport.model.js";
+import Vendor from "../../models/vendor.model.js";
+import AdminUsers from "../../models/adminUser.model.js";
 import sequelize from "../../db/connection.js";
 import { queueEmail } from "../common/service/emailService.js";
+import { AppError } from "../../utilis/appError.js";
+import StatusCodes from "../../utilis/statusCodes.js";
 
 export const insertVendorHelpQuery = async (helpData) => {
     try {
@@ -12,21 +16,22 @@ export const insertVendorHelpQuery = async (helpData) => {
             created_at: new Date(),
         });
 
-        // Fetch Manager Email
-        const [managerData] = await sequelize.query(
-            `
-            SELECT au.adminusers_email AS email
-            FROM vendors v
-            LEFT JOIN tbl_adminusers au ON au.adminusers_id = v.acc_manager_id
-            WHERE v.id = :vendor_id
-            `,
-            {
-                replacements: { vendor_id: Number(helpData.vendor_id) },
-                type: sequelize.QueryTypes.SELECT,
-            }
-        );
+        // Fetch Manager Email using Sequelize ORM
+        const vendor = await Vendor.findOne({
+            where: { id: Number(helpData.vendor_id) },
+            attributes: ["acc_manager_id"],
+        });
 
-        const managerEmail = managerData?.email || "support@techjockey.com";
+        let managerEmail = "support@techjockey.com";
+        if (vendor && vendor.acc_manager_id) {
+            const manager = await AdminUsers.findOne({
+                where: { adminusers_id: vendor.acc_manager_id },
+                attributes: ["adminusers_email"],
+            });
+            if (manager && manager.adminusers_email) {
+                managerEmail = manager.adminusers_email;
+            }
+        }
 
         // Send Email to Manager
         const emailBody = `
@@ -49,7 +54,6 @@ export const insertVendorHelpQuery = async (helpData) => {
 
         return result.id;
     } catch (error) {
-        console.error("Error in insertVendorHelpQuery:", error);
-        throw error;
+        throw new AppError(error.message, StatusCodes.INTERNAL_SERVER_ERROR);
     }
 };

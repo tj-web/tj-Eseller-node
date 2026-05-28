@@ -4,18 +4,10 @@ import { dashboardStats } from "./dashboard.service.js";
 import sequelize from "../../db/connection.js";
 export const totalLeadsCountInfo = async (req, res) => {
   try {
-    const {
-      // filter_start_date,
-      // filter_end_date,
-      vendor_id,
-      // show_current_plan_data,
-    } = req.query;
-   
+    const vendor_id = req.user.vendor_id;
+
     const result = await oemTotalLeadsCountInfo({
-      // filter_start_date,
-      // filter_end_date,
       vendor_id,
-      // show_current_plan_data,
     });
     return res.status(200).json(result);
   } catch (error) {
@@ -27,7 +19,7 @@ export const totalLeadsCountInfo = async (req, res) => {
 // complete profile overview with the manager data
 export const getVendorOverview = async (req, res) => {
   try {
-    const { vendor_id } = req.query;
+    const vendor_id = req.user.vendor_id;
 
     if (!vendor_id) {
       return res.status(400).json({ message: "vendor_id is required" });
@@ -109,7 +101,7 @@ export const analyticsCount = async (req, res) => {
 export const getDashboardStats = async (req, res) => {
   try {
     const filter = {
-      vendor_id: req.query.vendor_id, 
+      vendor_id: req.user.vendor_id,
     };
 
     const result = await dashboardStats(filter);

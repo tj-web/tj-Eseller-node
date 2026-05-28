@@ -13,10 +13,10 @@ services:
       - .:/app
       # Prevents local node_modules from overwriting the container's node_modules
       - /app/node_modules
-
+ 
     networks:
       - tj-net
-
+ 
 networks:
   tj-net:
     name: tj-net

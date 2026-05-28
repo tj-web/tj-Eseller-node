@@ -1,39 +1,6 @@
-import VendorWebhookAuth from "../../models/vendorWebhookAuth.model.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
-import axios from "axios";
 import { handleCreateWebhook, handleverifyWebhook } from "./apiintegration.service.js";
-
-const mapCredentialsToColumns = (auth_type, credentials = {}) => {
-  switch (auth_type) {
-    case "Basic Auth":
-      return {
-        client_id: credentials.username || "",
-        client_secret: credentials.password || "",
-        send_basic_auth: 1,
-      };
-    case "API Key":
-      return {
-        client_id: "api_key",
-        client_secret: credentials.api_key || "",
-        send_basic_auth: 0,
-      };
-    case "Bearer Token":
-      return {
-        client_id: "bearer",
-        client_secret: credentials.bearer_token || "",
-        send_basic_auth: 0,
-      };
-    case "OAuth 2.0":
-      return {
-        client_id: credentials.client_id || "",
-        client_secret: credentials.client_secret || "",
-        send_basic_auth: 0,
-      };
-    default:
-      return { client_id: "", client_secret: "", send_basic_auth: 0 };
-  }
-};
 
 // export const createWebhook = async (req, res) => {
 //   try {

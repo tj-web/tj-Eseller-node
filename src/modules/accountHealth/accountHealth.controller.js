@@ -19,7 +19,6 @@ export const getHealthScore = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Account health score fetched successfully", result));
   } catch (error) {
-    console.error("Error in getHealthScore controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -35,7 +34,6 @@ export const getReviews = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Reviews fetched successfully", result));
   } catch (error) {
-    console.error("Error in getReviews controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -51,7 +49,6 @@ export const getProfileCompletion = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Profile completion data fetched successfully", result));
   } catch (error) {
-    console.error("Error in getProfileCompletion controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -82,7 +79,6 @@ export const getAccountStatus = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Account status fetched successfully", result));
   } catch (error) {
-    console.error("Error in getAccountStatus controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -99,10 +95,10 @@ export const saveReviewReply = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success(result.message, result));
   } catch (error) {
-    console.error("Error in saveReviewReply controller:", error);
+    const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
     return res
-      .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError(error.message));
+      .status(statusCode)
+      .json(SystemResponse.getErrorResponse(error.message, error, statusCode));
   }
 };
 
@@ -115,7 +111,6 @@ export const sendReviewEmail = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success(result.message, result));
   } catch (error) {
-    console.error("Error in sendReviewEmail controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
