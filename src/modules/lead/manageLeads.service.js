@@ -1340,7 +1340,7 @@ const getEmployeeEmails = async (apollo_people_ids) => {
                 if (empData.linkedin_url) {
                     updatePayload.linkedin_id = empData.linkedin_url;
                 }
-                
+
                 if (Object.keys(updatePayload).length > 0) {
                     await CompaniesEmployees.update(
                         updatePayload,
@@ -1400,50 +1400,7 @@ export const hasRecentSubmission = async (vendor_id) => {
     });
     return count > 0;
 };
-const getActivityText = (asset_type, asset_name, activity_name, activity_count) => {
-    const countText = activity_count > 1 ? ` **${activity_count} times**` : "";
-    const boldAssetName = asset_name ? `**${asset_name}**` : "";
 
-    if (asset_type === 'searched_keyword' && activity_name === 'form_submit') {
-        return `Customer searched for ${boldAssetName}${countText}`;
-    } else if (asset_type === 'visited_home_page' && activity_name === 'page_view') {
-        return `Customer visited **Home Page**${countText}`;
-    } else {
-        switch (activity_name) {
-            case 'lead_created':
-                return `Requested Demo for ${boldAssetName}${countText}`;
-            case 'page_view':
-                return `Frequently revisited the ${boldAssetName} page${countText}`;
-            case 'form_submit':
-                return `Initiated call request for ${boldAssetName}${countText}`;
-            case 'checked_price':
-                return `Checked pricing options for ${boldAssetName} ${asset_type}${countText}`;
-            case 'add_to_cart':
-                return `${asset_type} ${boldAssetName} has been added to the cart${countText}`;
-            case 'add_to_wishlist':
-                return `${asset_type} ${boldAssetName} has been added to wishlist${countText}`;
-            case 'read_reviews':
-                return `Read multiple product reviews for ${boldAssetName} ${asset_type}${countText}`;
-            default:
-                return `Customer expressed interest in ${boldAssetName} ${asset_type}${countText}`;
-        }
-    }
-};
-
-const timeAgo = (date) => {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    let interval = seconds / 31536000;
-    if (interval > 1) return Math.floor(interval) + " years ago";
-    interval = seconds / 2592000;
-    if (interval > 1) return Math.floor(interval) + " months ago";
-    interval = seconds / 86400;
-    if (interval > 1) return Math.floor(interval) + " days ago";
-    interval = seconds / 3600;
-    if (interval > 1) return Math.floor(interval) + " hours ago";
-    interval = seconds / 60;
-    if (interval > 1) return Math.floor(interval) + " minutes ago";
-    return Math.floor(seconds) + " seconds ago";
-};
 
 /**
  * Get lead insights with ownership verification.
@@ -1489,7 +1446,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             plan_name = 'Free Access (Limited)';
         }
 
-        if (plan_id == full_access_plan_id || lead.is_contact_viewed === 1) {
+        if (plan_id == full_access_plan_id) {
             await fetchLeadInsightsData(lead_id, vendor_id);
             // Re-fetch lead since fetchLeadInsightsData might have updated company_id and leadinsight
             lead = await TblLeads.findByPk(lead_id, {
@@ -1556,7 +1513,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 raw: true
             });
 
-            if (company && plan_id === limited_access_plan_id && lead.is_contact_viewed !== 1) {
+            if (company && plan_id === limited_access_plan_id) {
                 company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
                 company.website = company.website ? "********" : null;
                 company.linkedin = company.linkedin ? "********" : null;
@@ -1578,9 +1535,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     limit: 5,
                     raw: true
                 });
-            }
-
-            if ((!keyPeople || keyPeople.length === 0) && lead.company_id) {
+            } else if (lead.company_id) {
                 keyPeople = await CompaniesEmployees.findAll({
                     attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
                     where: { company_id: lead.company_id },
@@ -1589,14 +1544,8 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 });
             }
 
-            if (keyPeople && plan_id === limited_access_plan_id && lead.is_contact_viewed !== 1) {
-                keyPeople = keyPeople.map(person => ({
-                    ...person,
-                    emp_name: person.emp_name ? person.emp_name.substring(0, 3) + "********" : "********",
-                    emp_email: "********",
-                    linkedin_id: person.linkedin_id ? "********" : null,
-                    photo: null
-                }));
+            if (keyPeople && plan_id === limited_access_plan_id) {
+                keyPeople = [];
             }
 
             result.top_five_key_people = keyPeople || [];
@@ -1611,37 +1560,57 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 }
                 const tracksCollection = db.collection('tracks');
 
-                const guuids = await tracksCollection.distinct('feeds.guuid', {
-                    'feeds.customer_id': String(lead.customer_id)
-                });
-                const activityQuery = [
-                    {
-                        $match: {
-                            $or: [
-                                { 'feeds.guuid': { $in: guuids } },
-                                { 'feeds.lead_id': Number(lead_id) },
-                                { 'feeds.lead_id': String(lead_id) }
-                            ]
+                let guuids = [];
+                const fetchGuuids = async (customerIdType) => {
+                    const guuidPipeline = [
+                        { $match: { 'feeds.customer_id': { $in: [customerIdType] } } },
+                        { $project: { 'feeds.guuid': 1, 'feeds.created_at': 1, 'feeds.customer_id': 1 } },
+                        { $unwind: '$feeds' },
+                        { $match: { 'feeds.customer_id': { $in: [customerIdType] }, 'feeds.guuid': { $ne: null, $exists: true } } },
+                        { $sort: { 'feeds.created_at': -1 } },
+                        { $group: { _id: '$feeds.guuid', guuid: { $first: '$feeds.guuid' } } },
+                        { $limit: 10 }
+                    ];
+                    const results = await tracksCollection.aggregate(guuidPipeline).toArray();
+                    return results.map(r => r.guuid);
+                };
+
+                guuids = await fetchGuuids(String(lead.customer_id));
+                if (guuids.length === 0 && !isNaN(Number(lead.customer_id))) {
+                    guuids = await fetchGuuids(Number(lead.customer_id));
+                }
+
+                let activities = [];
+                if (guuids.length > 0) {
+                    const activityQuery = [
+                        {
+                            $match: {
+                                $or: [
+                                    { 'feeds.guuid': { $in: guuids } },
+                                    { 'feeds.lead_id': Number(lead_id) },
+                                    { 'feeds.lead_id': String(lead_id) }
+                                ]
+                            }
+                        },
+                        { $unwind: '$feeds' },
+                        { $sort: { created_at: -1 } },
+                        { $limit: 40 },
+                        {
+                            $project: {
+                                _id: 0,
+                                guuid: '$feeds.guuid',
+                                page_url: '$feeds.page_url',
+                                feed_action: '$feeds.feed_action',
+                                page_info: '$feeds.page_info',
+                                formdata: '$feeds.formdata',
+                                product_info: '$feeds.product_info',
+                                lead_details: '$feeds.changes',
+                                created_at: '$created_at'
+                            }
                         }
-                    },
-                    { $unwind: '$feeds' },
-                    { $sort: { created_at: -1 } },
-                    { $limit: 40 },
-                    {
-                        $project: {
-                            _id: 0,
-                            guuid: '$feeds.guuid',
-                            page_url: '$feeds.page_url',
-                            feed_action: '$feeds.feed_action',
-                            page_info: '$feeds.page_info',
-                            formdata: '$feeds.formdata',
-                            product_info: '$feeds.product_info',
-                            lead_details: '$feeds.changes',
-                            created_at: '$created_at'
-                        }
-                    }
-                ];
-                const activities = await tracksCollection.aggregate(activityQuery).toArray();
+                    ];
+                    activities = await tracksCollection.aggregate(activityQuery).toArray();
+                }
                 // Process activities to match timeline format
                 const finalActivityMap = {};
                 for (const activity of activities) {
@@ -1671,7 +1640,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                                     required: false // We use false so we still get the product name even if this vendor doesn't sell it
                                 }]
                             });
-                            
+
                             if (productDetailsResult) {
                                 // If the relation exists, it means the current vendor sells it actively (status: 1)
                                 if (productDetailsResult.vendorBrandRelations && productDetailsResult.vendorBrandRelations.length > 0) {
@@ -1683,12 +1652,12 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                             // Ignored
                         }
                     }
-                    
+
                     if (productName && productVendorId && String(productVendorId) === String(vendor_id)) {
-                        assetName = (plan_id === limited_access_plan_id) ? (productName.substring(0, 5) + "********") : productName;
+                        assetName = productName;
                         assetType = 'Product';
                     } else if (categoryName) {
-                        assetName = (plan_id === limited_access_plan_id) ? (categoryName.substring(0, 5) + "********") : categoryName;
+                        assetName = categoryName;
                         assetType = 'Category';
                     } else if (activity.page_url?.includes('techjockey.com') && feedAction === 'page_view') {
                         assetName = 'visited_home_page';
@@ -1707,7 +1676,6 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                         finalActivityMap[assetType][assetName][feedAction].count++;
                     }
                 }
-                result.customer_activity_details = finalActivityMap;
 
                 /**
                  * Formats activity text cleanly for React timeline.
@@ -1750,28 +1718,51 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     return activity;
                 };
 
-                const activityTimeline = [];
+                const allActivities = [];
                 for (const assetType of Object.keys(finalActivityMap)) {
                     for (const assetName of Object.keys(finalActivityMap[assetType])) {
                         for (const feedAction of Object.keys(finalActivityMap[assetType][assetName])) {
                             const details = finalActivityMap[assetType][assetName][feedAction];
                             const text = getActivityByFeedAction(assetType, assetName, feedAction, details.count);
                             if (text) {
-                                activityTimeline.push({
+                                allActivities.push({
+                                    assetType,
+                                    assetName,
+                                    feedAction,
                                     action: text,
-                                    created_at: details.created_at
+                                    created_at: details.created_at,
+                                    count: details.count
                                 });
                             }
                         }
                     }
                 }
 
-                activityTimeline.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                if (plan_id === limited_access_plan_id && lead.is_contact_viewed !== 1) {
-                    result.activity = activityTimeline.slice(0, 2);
-                } else {
-                    result.activity = activityTimeline.slice(0, 10);
+                allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                
+                const isLimited = (plan_id === limited_access_plan_id);
+                const slicedActivities = allActivities.slice(0, isLimited ? 2 : 10);
+
+                const truncatedActivityMap = {};
+                const activityTimeline = [];
+
+                for (const item of slicedActivities) {
+                    if (!truncatedActivityMap[item.assetType]) truncatedActivityMap[item.assetType] = {};
+                    if (!truncatedActivityMap[item.assetType][item.assetName]) truncatedActivityMap[item.assetType][item.assetName] = {};
+                    
+                    truncatedActivityMap[item.assetType][item.assetName][item.feedAction] = {
+                        count: item.count,
+                        created_at: item.created_at
+                    };
+
+                    activityTimeline.push({
+                        action: item.action,
+                        created_at: item.created_at
+                    });
                 }
+
+                result.customer_activity_details = truncatedActivityMap;
+                result.activity = activityTimeline;
             } catch (mongoError) {
                 // Ignored
             }
