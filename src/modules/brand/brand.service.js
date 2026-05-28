@@ -278,6 +278,7 @@ export const getVendorBrandsService = async (params) => {
     order,
     srch_brand_name,
     srch_status,
+    brand_status,
     limit = 10,
     pagenumber = 1,
   } = params;
@@ -295,11 +296,16 @@ export const getVendorBrandsService = async (params) => {
     whereCondition.status = srch_status;
   }
 
+
   const brandWhere = {};
   if (srch_brand_name) {
     brandWhere.brand_name = {
       [sequelize.Sequelize.Op.like]: `%${srch_brand_name}%`,
     };
+  }
+  if (brand_status !== undefined && brand_status !== "") {
+    // Apply brand_status filter on the Brand include (tbl_brand.status)
+    brandWhere.status = parseInt(brand_status, 10);
   }
 
   let orderLogic = [["id", order && order.toUpperCase() === "ASC" ? "ASC" : "DESC"]]; // Default mapped
@@ -312,7 +318,7 @@ export const getVendorBrandsService = async (params) => {
     include: [
       {
         model: Brand,
-        required: !!srch_brand_name, // Validates INNER if filtering, LEFT if just listing
+        required: !!(srch_brand_name || brand_status), // INNER JOIN when searching by name or filtering by brand_status
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
         attributes: ["brand_name", "description", "image", "status", "target_industry"],
       },
@@ -367,7 +373,7 @@ export const getVendorBrandsService = async (params) => {
 /* =========================================
    GET VENDOR BRANDS COUNT
 ========================================= */
-export const getVendorBrandsCountService = async (vendor_id, srch_brand_name = "") => {
+export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", brand_status = undefined) => {
   const whereCondition = {
     vendor_id: vendor_id,
     tbl_brand_id: { [Op.ne]: 0 },
@@ -379,8 +385,13 @@ export const getVendorBrandsCountService = async (vendor_id, srch_brand_name = "
       [Op.like]: `%${srch_brand_name}%`,
     };
   }
+  // Apply brand_status filter on Brand (tbl_brand.status) when provided
+  if (brand_status !== undefined && brand_status !== "") {
+    brandWhere.status = parseInt(brand_status, 10);
+  }
 
-  const rows = await VendorBrandRelation.findAll({
+  // 1) Relation counts (pending/approved/declined) filtered by Brand.status when brand_status provided
+  const relationRows = await VendorBrandRelation.findAll({
     attributes: [
       "status",
       [sequelize.fn("COUNT", sequelize.col("VendorBrandRelation.id")), "count"],
@@ -389,24 +400,71 @@ export const getVendorBrandsCountService = async (vendor_id, srch_brand_name = "
     include: [
       {
         model: Brand,
-        required: !!srch_brand_name,
+        required: !!(srch_brand_name || brand_status),
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
         attributes: [],
       },
     ],
     group: ["VendorBrandRelation.status"],
+    raw: true,
   });
 
-  const counts = { all: 0, pending: 0, approved: 0, declined: 0 };
-  for (const row of rows) {
-    const rawData = row.get({ plain: true });
+  const relationCounts = { all: 0, pending: 0, approved: 0, declined: 0 };
+  for (const rawData of relationRows) {
     const n = Number(rawData.count) || 0;
-    counts.all += n;
-    if (rawData.status === 0) counts.pending += n;
-    else if (rawData.status === 1) counts.approved += n;
-    else if (rawData.status === 2) counts.declined += n;
+    relationCounts.all += n;
+    if (rawData.status === 0) relationCounts.pending += n;
+    else if (rawData.status === 1) relationCounts.approved += n;
+    else if (rawData.status === 2) relationCounts.declined += n;
   }
-  return counts;
+
+  // 2) Brand-status counts (active/inactive/all) among brands related to this vendor (and matching search)
+  // Fetch brand ids for this vendor (apply srch_brand_name and brand_status if provided)
+  const relationFilter = {
+    vendor_id: vendor_id,
+    tbl_brand_id: { [Op.ne]: 0 },
+  };
+
+  const vendorRows = await VendorBrandRelation.findAll({
+    attributes: ["tbl_brand_id"],
+    where: relationFilter,
+    include: [
+      {
+        model: Brand,
+        required: !!(srch_brand_name || brand_status),
+        where: Object.keys(brandWhere).length ? brandWhere : undefined,
+        attributes: ["brand_id"],
+      },
+    ],
+    raw: true,
+  });
+
+  const brandIds = Array.from(new Set(vendorRows.map(r => r.tbl_brand_id).filter(Boolean)));
+
+  const brandStatusCounts = { all: 0, active: 0, inactive: 0 };
+  if (brandIds.length > 0) {
+    const brandRows = await Brand.findAll({
+      attributes: ["status", [sequelize.fn("COUNT", sequelize.col("brand_id")), "count"]],
+      where: {
+        brand_id: { [Op.in]: brandIds },
+      },
+      group: ["status"],
+      raw: true,
+    });
+
+    for (const b of brandRows) {
+      const n = Number(b.count) || 0;
+      brandStatusCounts.all += n;
+      if (b.status === 1) brandStatusCounts.active += n;
+      else brandStatusCounts.inactive += n;
+    }
+  }
+
+  // Return both counts so frontend can use relationCounts or brandStatusCounts as needed
+  return {
+    relationCounts,
+    brandStatusCounts,
+  };
 };
 
 /* =========================================
@@ -459,6 +517,7 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
     description: plainBrand.description,
     image: plainBrand.image,
     status: plainBrand.status,
+    brand_status: plainBrand.status,
     tbl_info_id: info.id || null,
     information: info.information,
     founded_on: info.founded_on,
