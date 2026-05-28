@@ -1,7 +1,7 @@
 import { findDifferences, getCurrentDateTime } from "../../General_Function/general_helper.js";
 import {
   getVendorBrandsService,
-  getVendorBrandsCountService,
+  getVendorBrandsCount,
   checkBrandNameService,
   addBrandService,
   getBrandByIdService,
@@ -21,7 +21,7 @@ import SystemResponse from "../../utilis/systemResponse.js";
 
 export const getBrands = async (req, res) => {
   try {
-    const { orderby, order, srch_brand_name = "", srch_status = "", limit, pagenumber } = req.query;
+    const { orderby, order, srch_brand_name = "", srch_status = "", brand_status, limit, pagenumber } = req.query;
 
     const vendor_id = req.user.vendor_id; // fixed !!
 
@@ -31,6 +31,7 @@ export const getBrands = async (req, res) => {
       order,
       srch_brand_name,
       srch_status,
+      brand_status,
       limit: limit || 10,
       pagenumber: pagenumber || 1,
     });
@@ -49,7 +50,7 @@ export const getBrands = async (req, res) => {
 
 export const getBrandsCount = async (req, res) => {
   try {
-    const { srch_brand_name = "" } = req.query;
+    const { srch_brand_name = "", brand_status } = req.query;
     const vendor_id = req.user.vendor_id;
 
     if (!vendor_id) {
@@ -58,7 +59,7 @@ export const getBrandsCount = async (req, res) => {
         .json(SystemResponse.badRequestError("vendor_id is required"));
     }
 
-    const counts = await getVendorBrandsCountService(vendor_id, srch_brand_name);
+    const counts = await getVendorBrandsCount(vendor_id, srch_brand_name, brand_status);
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Brands Count Fetched Successfully.", counts));
