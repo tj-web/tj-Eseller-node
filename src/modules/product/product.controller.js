@@ -80,7 +80,7 @@ export const getProductsCount = async (req, res) => {
     }
 
     const brand_arr = await productService.getVendorBrands(vendor_id);
-    const counts = await productService.getVendorProductsCountService(brand_arr, srch_product_name);
+    const counts = await productService.getVendorProductsCount(brand_arr, srch_product_name);
 
     return res
       .status(StatusCodes.SUCCESS)

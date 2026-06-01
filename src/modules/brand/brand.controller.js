@@ -1,14 +1,14 @@
 import {
-  getVendorBrandsService,
+  getVendorBrands,
   getVendorBrandsCount,
-  checkBrandNameService,
-  addBrandService,
-  getBrandByIdService,
-  updateBrandService,
-  viewBrandService,
-  getBrandLocationService,
-  requestBrandService,
-  searchBrandsForRequestService,
+  checkBrandName,
+  handleAddBrand,
+  getBrandById,
+  handleUpdateBrand,
+  handleViewBrand,
+  getBrandLocation,
+  handleRequestBrand,
+  handleSearchBrandsForRequest,
 } from "./brand.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
@@ -21,7 +21,7 @@ export const getBrands = async (req, res) => {
 
     const vendor_id = req.user.vendor_id;
 
-    const result = await getVendorBrandsService({
+    const result = await getVendorBrands({
       vendor_id: vendor_id,
       orderby,
       order,
@@ -70,7 +70,7 @@ export const checkBrand = async (req, res) => {
   try {
     const { brand_id, brand_name } = req.body;
 
-    const result = await checkBrandNameService(brand_name, brand_id);
+    const result = await checkBrandName(brand_name, brand_id);
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(!result)); // true if NOT blocked
   } catch (error) {
@@ -90,7 +90,7 @@ export const addBrand = async (req, res) => {
 
     const vendor_id = req.user.vendor_id;
     const profileId = req.user.profile_id;
-    const result = await addBrandService(brandData, req.file, vendor_id, profileId);
+    const result = await handleAddBrand(brandData, req.file, vendor_id, profileId);
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
   } catch (error) {
@@ -119,7 +119,7 @@ export const updateBrand = async (req, res) => {
         .json(SystemResponse.badRequestError("INVALID BRAND ID"));
     }
 
-    await updateBrandService(brand_id, req.body, req.file, vendor_id, profileId);
+    await handleUpdateBrand(brand_id, req.body, req.file, vendor_id, profileId);
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Brand updated successfully"));
   } catch (error) {
@@ -143,11 +143,11 @@ export const viewBrand = async (req, res) => {
     let brandDetails;
 
     if (action === "edit") {
-      brandDetails = await getBrandByIdService(vendor_id, brand_id);
+      brandDetails = await getBrandById(vendor_id, brand_id);
     } else {
-      const details = await viewBrandService(brand_id, vendor_id);
+      const details = await handleViewBrand(brand_id, vendor_id);
       if (details) {
-        const location = await getBrandLocationService(brand_id);
+        const location = await getBrandLocation(brand_id);
         brandDetails = { ...details, brand_location: location };
       } else {
         brandDetails = null;
@@ -187,7 +187,7 @@ export const requestBrand = async (req, res) => {
         .json(SystemResponse.badRequestError("Vendor session ID is missing."));
     }
 
-    await requestBrandService(brand, vendor_id);
+    await handleRequestBrand(brand, vendor_id);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -211,7 +211,7 @@ export const searchBrandsForRequest = async (req, res) => {
         .json(SystemResponse.badRequestError("vendor_id is required"));
     }
 
-    const brands = await searchBrandsForRequestService(vendor_id, srch_brand_name);
+    const brands = await handleSearchBrandsForRequest(vendor_id, srch_brand_name);
 
     return res
       .status(StatusCodes.SUCCESS)

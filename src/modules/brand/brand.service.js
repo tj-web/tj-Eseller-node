@@ -36,7 +36,7 @@ BrandLocation.belongsTo(BrandCity, {
 /* =========================================
    CHECK BRAND NAME AVAILABILITY
 ========================================= */
-export const checkBrandNameService = async (brand_name, exclude_brand_id = null) => {
+export const checkBrandName = async (brand_name, exclude_brand_id = null) => {
   const whereClause = {
     brand_name: brand_name,
     is_deleted: 0,
@@ -54,7 +54,7 @@ export const checkBrandNameService = async (brand_name, exclude_brand_id = null)
 /* =========================================
    ADD BRAND CORE LOGIC
 ========================================= */
-export const addBrandService = async (data, file, vendorId, profileId) => {
+export const handleAddBrand = async (data, file, vendorId, profileId) => {
   const { brand_name, image, location, founded_on, founders, company_size, information, industry } =
     data;
 
@@ -62,7 +62,7 @@ export const addBrandService = async (data, file, vendorId, profileId) => {
 
   try {
     // 1. Validate Brand Name Collision using ORM
-    const isExists = await checkBrandNameService(brand_name);
+    const isExists = await checkBrandName(brand_name);
     if (isExists) {
       throw new AppError("Brand name already exists", 300);
     }
@@ -271,7 +271,7 @@ export const addBrandService = async (data, file, vendorId, profileId) => {
 /* =========================================
    GET VENDOR BRANDS LIST
 ========================================= */
-export const getVendorBrandsService = async (params) => {
+export const getVendorBrands = async (params) => {
   const {
     vendor_id,
     orderby,
@@ -470,7 +470,7 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
 /* =========================================
    GET FULL BRAND DETAILS BY ID (FOR EDIT)
 ========================================= */
-export const getBrandByIdService = async (vendor_id, brand_id) => {
+export const getBrandById = async (vendor_id, brand_id) => {
   const brand = await Brand.findOne({
     attributes: ["brand_name", "description", "image", "status"],
     where: { brand_id: brand_id },
@@ -531,8 +531,8 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
   };
 };
 
-export const viewBrandService = async (brand_id, vendor_id) => {
-  const data = await getBrandByIdService(vendor_id, brand_id);
+export const handleViewBrand = async (brand_id, vendor_id) => {
+  const data = await getBrandById(vendor_id, brand_id);
 
   if (!data) return false;
 
@@ -554,7 +554,7 @@ export const viewBrandService = async (brand_id, vendor_id) => {
 /* =========================================
    GET BRAND LOCATION
 ========================================= */
-export const getBrandLocationService = async (brand_id) => {
+export const getBrandLocation = async (brand_id) => {
   BrandLocation.belongsTo(BrandCity, {
     foreignKey: "location_id",
     targetKey: "city_id",
@@ -579,11 +579,11 @@ export const getBrandLocationService = async (brand_id) => {
   }));
 };
 
-export const updateBrandService = async (brand_id, body, file, vendor_id, profile_id) => {
+export const handleUpdateBrand = async (brand_id, body, file, vendor_id, profile_id) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const brandDetails = await getBrandByIdService(vendor_id, brand_id);
+    const brandDetails = await getBrandById(vendor_id, brand_id);
 
     if (!brandDetails) {
       throw new AppError("Brand not found", 404);
@@ -652,7 +652,7 @@ export const updateBrandService = async (brand_id, body, file, vendor_id, profil
    REQUEST BRAND LOGIC
 ========================================= */
 
-export const requestBrandService = async (brandIdsArray, vendorId) => {
+export const handleRequestBrand = async (brandIdsArray, vendorId) => {
   try {
     const mappedInsertions = brandIdsArray.map((brandId) => ({
       vendor_id: vendorId,
@@ -673,7 +673,7 @@ export const requestBrandService = async (brandIdsArray, vendorId) => {
 /* =========================================
    SEARCH GLOBAL BRANDS FOR REQUEST
 ========================================= */
-export const searchBrandsForRequestService = async (vendorId, searchStr = "") => {
+export const handleSearchBrandsForRequest = async (vendorId, searchStr = "") => {
   try {
     // 1. Get all brand IDs already associated with this vendor
     const existingRelations = await VendorBrandRelation.findAll({
