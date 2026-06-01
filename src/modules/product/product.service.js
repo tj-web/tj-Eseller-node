@@ -153,7 +153,8 @@ export const getProductList = async (
   order_by = "tp.product_id",
   order = "desc",
   limit,
-  pageNumber
+  pageNumber,
+  vendor_id = null
 ) => {
   const limitNum = limit ? parseInt(limit, 10) : null;
   const pageNum = pageNumber ? parseInt(pageNumber, 10) : 1;
@@ -243,9 +244,22 @@ export const getProductList = async (
   try {
     const productIds = flattenedResults.map(r => r.product_id).filter(Boolean);
     if (productIds.length > 0) {
+      // Count leads with visibility/trashed constraints and optional vendor filter
+      const leadsWhere = {
+        product_id: { [Op.in]: productIds },
+        [Op.or]: [
+          { lead_visibility: 1 },
+          { [Op.and]: [{ lead_visibility: 0 }, { is_trashed: 1 }] }
+        ]
+      };
+
+      if (vendor_id) {
+        leadsWhere.vendor_id = vendor_id;
+      }
+
       const leads = await TblLeads.findAll({
         attributes: ['product_id', [sequelize.fn('COUNT', sequelize.col('id')), 'leads_count']],
-        where: { product_id: { [Op.in]: productIds } },
+        where: leadsWhere,
         group: ['product_id'],
         raw: true,
       });
@@ -2533,7 +2547,8 @@ export const getVendorProductList = async (vendor_id, options = {}) => {
     options.order_by || "s_id",
     options.order || "desc",
     options.limit,
-    options.pageNumber
+    options.pageNumber,
+    vendor_id
   );
 
   return products;
