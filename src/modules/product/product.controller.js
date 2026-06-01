@@ -48,6 +48,7 @@ export const fetchVendorProducts = async (req, res) => {
       order,
       limit,
       pageNumber,
+      vendor_id,
     );
     // console.log("Fetched products:", products); // Debug log
 
