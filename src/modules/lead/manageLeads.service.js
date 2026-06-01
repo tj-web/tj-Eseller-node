@@ -189,10 +189,22 @@ export const getLeads = async (vendor_id, post) => {
     }
 
     if (filters.srch_by && filters.srch_value) {
-        if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
-            whereClause.is_contact_viewed = { [Op.gt]: 0 };
+        if (filters.srch_by === 'all') {
+            whereClause[Op.and] = [
+                ...(whereClause[Op.and] || []),
+                {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${filters.srch_value}%` } },
+                        { product_name: { [Op.like]: `%${filters.srch_value}%` } }
+                    ]
+                }
+            ];
+        } else {
+            if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
+                whereClause.is_contact_viewed = { [Op.gt]: 0 };
+            }
+            whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
         }
-        whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
     }
 
     if (filters.is_trashed) {
@@ -244,6 +256,8 @@ export const getLeads = async (vendor_id, post) => {
         order: [['id', 'DESC']]
     });
     const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
+
+    const has_recent_submission = await hasRecentSubmission(vendor_id);
 
     const enrichedLeads = await Promise.all(rows.map(async (lead) => {
         const leadJson = lead.toJSON();
@@ -317,6 +331,9 @@ export const getLeads = async (vendor_id, post) => {
             });
             is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
         }
+        if (is_lead_insight_allowed === 0 && has_recent_submission) {
+            is_lead_insight_allowed = 2;
+        }
         leadJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
         return leadJson;
@@ -375,6 +392,25 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
         }
     }
 
+    if (filters.srch_by && filters.srch_value) {
+        if (filters.srch_by === 'all') {
+            whereClause[Op.and] = [
+                ...(whereClause[Op.and] || []),
+                {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${filters.srch_value}%` } },
+                        { product_name: { [Op.like]: `%${filters.srch_value}%` } }
+                    ]
+                }
+            ];
+        } else {
+            if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
+                whereClause.is_contact_viewed = { [Op.gt]: 0 };
+            }
+            whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
+        }
+    }
+
     const { count, rows } = await TblRequestCallbacks.findAndCountAll({
         where: callbackWhere,
         include: [
@@ -415,6 +451,8 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
     });
     const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
 
+    const has_recent_submission = await hasRecentSubmission(vendor_id);
+
     const enrichedDemos = await Promise.all(rows.map(async (demo) => {
         const demoJson = demo.toJSON();
         const lead = demoJson.lead;
@@ -454,6 +492,9 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
                 type: QueryTypes.SELECT
             });
             is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+        }
+        if (is_lead_insight_allowed === 0 && has_recent_submission) {
+            is_lead_insight_allowed = 2;
         }
         demoJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
@@ -644,6 +685,7 @@ export const getLeadDetails = async (vendor_id, leadId) => {
     leadJson.lead_actions = await getLeadActions(leadJson);
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
+    const has_recent_submission = await hasRecentSubmission(vendor_id);
     let is_lead_insight_allowed = 0;
     if (insightPermission.allowed && leadJson.product_id) {
         const leadInsightPlan = await OmsPiDetail.findOne({
@@ -667,6 +709,9 @@ export const getLeadDetails = async (vendor_id, leadId) => {
             });
             is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
         }
+    }
+    if (is_lead_insight_allowed === 0 && has_recent_submission) {
+        is_lead_insight_allowed = 2;
     }
     leadJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
