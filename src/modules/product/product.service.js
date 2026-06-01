@@ -208,7 +208,7 @@ export const getProductList = async (
         attributes: ['image'],
         where: { default: 1 },
         required: false // LEFT JOIN
-      }
+      }, 
     ],
     order: [[sortColumn, order]],
     limit: limitNum,
@@ -223,7 +223,7 @@ export const getProductList = async (
   });
 
   // Flatten the result to match raw SQL output
-  const flattenedResults = results.rows.map(row => ({
+  let flattenedResults = results.rows.map(row => ({
     product_id: row.product_id,
     product_name: row.product_name,
     slug: row.slug,
@@ -239,6 +239,25 @@ export const getProductList = async (
     return row;
   });
 
+  // Attach leads_count for each product by querying TblLeads grouped by product_id
+  try {
+    const productIds = flattenedResults.map(r => r.product_id).filter(Boolean);
+    if (productIds.length > 0) {
+      const leads = await TblLeads.findAll({
+        attributes: ['product_id', [sequelize.fn('COUNT', sequelize.col('id')), 'leads_count']],
+        where: { product_id: { [Op.in]: productIds } },
+        group: ['product_id'],
+        raw: true,
+      });
+
+      const leadMap = new Map(leads.map(l => [l.product_id, Number(l.leads_count) || 0]));
+      flattenedResults = flattenedResults.map(r => ({ ...r, leads_count: leadMap.get(r.product_id) || 0 }));
+    }
+  } catch (err) {
+    console.error('Error fetching leads counts for products:', err);
+    // Do not fail the whole request — return products without leads_count if query fails
+  }
+
   // Return both count and data for pagination
   return {
     count: results.count,
@@ -246,7 +265,7 @@ export const getProductList = async (
   };
 };
 
-export const getVendorProductsCountService = async (brand_arr, srch_product_name = "") => {
+export const getVendorProductsCount = async (brand_arr, srch_product_name = "") => {
   if (!brand_arr || brand_arr.length === 0) {
     return { all: 0, active: 0, inactive: 0 };
   }
