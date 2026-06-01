@@ -1704,7 +1704,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     } else if (categoryName) {
                         assetName = categoryName;
                         assetType = 'Category';
-                    } else if (activity.page_url?.includes('techjockey.com') && feedAction === 'page_view') {
+                    } else if (activity.page_info?.page_type === 'home' && feedAction === 'page_view' && /techjockey\.com\/$/.test(activity.page_url)) {
                         assetName = 'visited_home_page';
                         assetType = 'visited_home_page';
                     } else if (activity.formdata?.form_name === 'searchForm' && feedAction === 'form_submit') {
