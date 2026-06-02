@@ -28,6 +28,47 @@ import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 
+const ACD_START_TIME = "08:00 AM";
+const ACD_END_TIME = "10:00 PM";
+const CALL_CONN_MAX_DAYS = 45;
+const CALL_MISS_MAX_DAYS = 10;
+
+const getWorkingHoursStatus = () => {
+    const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const timeValue = hours + minutes / 60;
+    if (timeValue >= 8 && timeValue <= 22) {
+        return true;
+    }
+    return false;
+};
+
+const checkAnyConnected = async (lead_id) => {
+    const connectedCall = await TblRequestCallbacks.findOne({
+        where: { lead_id: lead_id, call_status: 2 }
+    });
+    return !!connectedCall;
+};
+
+const addDaysToDate = (dateStr, days) => {
+    const d = new Date(dateStr || new Date());
+    d.setDate(d.getDate() + days);
+    return d;
+};
+
+const addWeekdaysToDate = (dateStr, days) => {
+    let d = new Date(dateStr || new Date());
+    let added = 0;
+    while (added < days) {
+        d.setDate(d.getDate() + 1);
+        if (d.getDay() !== 0 && d.getDay() !== 6) {
+            added++;
+        }
+    }
+    return d;
+};
+
 /**
  * Retrieves vendor lead insight permissions and allowed products.
  */
@@ -313,6 +354,34 @@ export const getLeads = async (vendor_id, post) => {
         } else if (leadJson.is_show_contact === 0) {
             isCallAllowed = false;
             callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
+        } else if (leadJson.acd_uuid) {
+            const isWorkingHours = getWorkingHoursStatus();
+            const currTime = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+            
+            const isAnyConnected = await checkAnyConnected(leadJson.id);
+            if (isAnyConnected) {
+                const maxTime = addDaysToDate(leadJson.start_date, CALL_CONN_MAX_DAYS);
+                if (currTime > maxTime && isWorkingHours) {
+                    callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
+                    isCallAllowed = false;
+                } else if (!isWorkingHours) {
+                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                    isCallAllowed = false;
+                }
+            } else {
+                const maxTime = addWeekdaysToDate(leadJson.start_date, CALL_MISS_MAX_DAYS);
+                const callTime = new Date(leadJson.start_date || new Date());
+                if (currTime > maxTime && leadJson.call_status !== 5 && isWorkingHours) {
+                    callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
+                    isCallAllowed = false;
+                } else if ((leadJson.call_status === 0 || leadJson.call_status === 5) && isWorkingHours && currTime < callTime) {
+                    callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
+                    isCallAllowed = false;
+                } else if (!isWorkingHours) {
+                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                    isCallAllowed = false;
+                }
+            }
         }
 
         leadJson.is_call_allowed = isCallAllowed ? 1 : 0;
@@ -882,6 +951,11 @@ const triggerACD = async (data) => {
  */
 export const scheduleCallback = async (vendor_id, data) => {
     const { lead_id, date, hour, minute, action, agent_number } = data;
+
+    const isWorkingHours = getWorkingHoursStatus();
+    if (!isWorkingHours) {
+        throw new AppError(`We are unable to process your request. Our working hours are from ${ACD_START_TIME} to ${ACD_END_TIME}`, StatusCodes.BAD_REQUEST);
+    }
 
     const lead = await TblLeads.findOne({
         where: { id: lead_id, vendor_id: vendor_id }
