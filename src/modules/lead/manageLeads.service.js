@@ -351,7 +351,8 @@ export const getLeads = async (vendor_id, post) => {
 
         if (leadModelType === 9) {
             isCallAllowed = true;
-        } else if (leadJson.is_show_contact === 0) {
+        } else if (leadJson.is_lead_cta === 0) {
+            
             isCallAllowed = false;
             callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
         } else if (leadJson.acd_uuid) {
@@ -371,10 +372,12 @@ export const getLeads = async (vendor_id, post) => {
             } else {
                 const maxTime = addWeekdaysToDate(leadJson.start_date, CALL_MISS_MAX_DAYS);
                 const callTime = new Date(leadJson.start_date || new Date());
-                if (currTime > maxTime && leadJson.call_status !== 5 && isWorkingHours) {
+                const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
+                
+                if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
                     callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
                     isCallAllowed = false;
-                } else if ((leadJson.call_status === 0 || leadJson.call_status === 5) && isWorkingHours && currTime < callTime) {
+                } else if ((callStatus == 0 || callStatus == 5) && isWorkingHours && currTime < callTime) {
                     callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
                     isCallAllowed = false;
                 } else if (!isWorkingHours) {
