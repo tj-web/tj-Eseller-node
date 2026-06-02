@@ -361,7 +361,7 @@ export const getLeads = async (vendor_id, post) => {
             
             const isAnyConnected = await checkAnyConnected(leadJson.id);
             if (isAnyConnected) {
-                const maxTime = addDaysToDate(leadJson.start_date, CALL_CONN_MAX_DAYS);
+                const maxTime = addDaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_CONN_MAX_DAYS);
                 if (currTime > maxTime && isWorkingHours) {
                     callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
                     isCallAllowed = false;
@@ -370,8 +370,8 @@ export const getLeads = async (vendor_id, post) => {
                     isCallAllowed = false;
                 }
             } else {
-                const maxTime = addWeekdaysToDate(leadJson.start_date, CALL_MISS_MAX_DAYS);
-                const callTime = new Date(leadJson.start_date || new Date());
+                const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
+                const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
                 const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
                 
                 if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
