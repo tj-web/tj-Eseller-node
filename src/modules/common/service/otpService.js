@@ -48,7 +48,6 @@ export const sendOtpService = async (phone_number, dial_code = "91") => {
   });
 
   const result = await response.json();
-  console.log("TJ API Response:", result);
 
   if (!result.status) {
     throw new AppError(result.msg || "Failed to send OTP", 400);

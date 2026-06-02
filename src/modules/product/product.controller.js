@@ -39,7 +39,6 @@ export const fetchVendorProducts = async (req, res) => {
     const pageNumber = req.query.pageNumber;
 
     const brand_arr = await productService.getVendorBrands(vendor_id);
-    // console.log("Vendor brands:", brand_arr); // Debug log
 
     const products = await productService.getProductList(
       brand_arr,
@@ -50,7 +49,6 @@ export const fetchVendorProducts = async (req, res) => {
       pageNumber,
       vendor_id,
     );
-    // console.log("Fetched products:", products); // Debug log
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -127,7 +125,6 @@ export const searchCategories = async (req, res) => {
       limit,
       offset,
     );
-    // console.log("Fetched categories:", categories); // Debug log
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Categories fetched successfully", categories));
   } catch (error) {
@@ -638,14 +635,12 @@ export const enrichment = async (req, res) => {
   try {
     const { product_id } = req.body;
     const vendor_id = req.user?.vendor_id;
-    console.log('rrrrrrrr', product_id, vendor_id);
     const { result, enrichmentToProcess } = await productService.updateProductEnrichment(
       product_id,
       vendor_id,
       req.body,
       req.files
     );
-    console.log('enrichment result', result, enrichmentToProcess);
     if (result.action === "none") {
       return res
         .status(StatusCodes.SUCCESS)

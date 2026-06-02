@@ -2280,14 +2280,12 @@ export const logProductEnrichmentRequest = async ({
     for (const data of enrichmentData) {
       let { id, type, image_width, image_height, image } = data;
       const groupLinkedAttr = Date.now().toString() + (loopIndex++);
-      console.log(data, "enrichment data for logging with id:", id);
       // Ensure id is treated as null if it's "0" or invalid
       if (id === "0" || id === 0 || id === "") id = null;
 
       if (id) {
         // UPDATE case: Compare with existing row
         const existing = existingImages.find(img => String(img.id) === String(id));
-        console.log(existing, "existing for enrichment id:", id);
         if (existing) {
           // Compare image
           if (image && String(image) !== String(existing.image || "")) {

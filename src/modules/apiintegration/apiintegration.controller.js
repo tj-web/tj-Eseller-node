@@ -111,7 +111,6 @@ export const createWebhook = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Webhook saved successfully", data));
   } catch (error) {
-    console.log(error);
     return res
       .status(StatusCodes.BAD_REQUEST)
       .json(SystemResponse.internalServerError(error.message || "Failed to create webhook"));
