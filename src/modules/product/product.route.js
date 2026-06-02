@@ -66,13 +66,7 @@ router.get("/checkvendorproduct", validateVendorOwnership, productController.che
 
 // --- 3. PRODUCT BASIC DETAILS (CREATE / UPDATE) ---
 router.post(
-  "/adddetail",
-  productBasicUpload,
-  validateBasicDetails,
-  productController.basicDetails
-);
-router.post(
-  "/adddetail/:product_id",
+  ["/adddetail", "/adddetail/:product_id"],
   productBasicUpload,
   validateBasicDetails,
   productController.basicDetails

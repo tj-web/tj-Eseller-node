@@ -1,7 +1,7 @@
 import sequelize from "../../db/connection.js";
 import { uploadfile2 } from "../../utilis/s3Uploader.js";
 import sizeOf from "image-size";
-import { Op, QueryTypes } from "sequelize";
+import { Op } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import Brand from "../../models/brand.model.js";
 import TblLeads from "../../models/leads.model.js";
@@ -10,10 +10,7 @@ import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
 import ProductSpecification from "../../models/productSpecification.model.js";
 import VendorLog from "../../models/vendorLog.model.js";
-import Setting from "../../models/websiteSetting.model.js"
 import Language from "../../models/languages.model.js";
-import fs from "fs";
-import path from "path";
 import ProductFeature from "../../models/productFeature.model.js";
 import Feature from "../../models/features.model.js";
 import ProductDescription from "../../models/productDescription.model.js";
@@ -209,7 +206,7 @@ export const getProductList = async (
         attributes: ['image'],
         where: { default: 1 },
         required: false // LEFT JOIN
-      }, 
+      },
     ],
     order: [[sortColumn, order]],
     limit: limitNum,
@@ -2479,7 +2476,7 @@ export const logProductVideoRequest = async ({
 };
 
 export const updateProductVideo = async (productId, vendorId, body) => {
-  const { 
+  const {
     video_id, 'video_id[]': videoIdArr,
     video_url, 'video_url[]': videoUrlArr,
     video_title, 'video_title[]': videoTitleArr
@@ -2514,7 +2511,7 @@ export const updateProductVideo = async (productId, vendorId, body) => {
   const existingVideos = await getProductVideos(productId);
   const existingCount = Array.isArray(existingVideos) ? existingVideos.length : 0;
   const newItemsCount = videoData.filter(v => !v.id || String(v.id) === "0").length;
-  
+
   if (existingCount + newItemsCount > 10) {
     const error = new Error(`Maximum 10 videos are allowed per product. Current: ${existingCount}, Attempting to add: ${newItemsCount}`);
     error.status = 400;
@@ -2559,13 +2556,13 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
     enrichment_hidden: hidden_enrichments, 'enrichment_hidden[]': hidden_enrichments_arr,
     enrichment_index: enrichment_indices, 'enrichment_index[]': enrichment_indices_arr
   } = body;
-  
+
   const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
   const idList = toArray(ids || idsArr);
   const typeList = toArray(types || typesArr);
   const hiddenList = toArray(hidden_enrichments || hidden_enrichments_arr);
   const indexList = toArray(enrichment_indices || enrichment_indices_arr);
-  
+
   if (typeList.length === 0) {
     const error = new Error("type[] is required");
     error.status = 400;
@@ -2578,7 +2575,7 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
   }, {});
 
   files = files || [];
-  
+
   if ((typeCounts[1] || 0) < 4 || (typeCounts[2] || 0) < 4) {
     const error = new Error("Please add 4 enrichment images for desktop and mobile view");
     error.status = 400;
@@ -2590,12 +2587,12 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
     const hasFile = indexList.some(idx => String(idx) === String(i));
     const existingImg = hiddenList[i];
     const hasExistingImage = existingImg && existingImg !== "null" && existingImg !== "undefined" && existingImg !== "";
-    
+
     if (hasFile || hasExistingImage) {
       validSlots++;
     }
   }
-  
+
   if (validSlots < 8) {
     const error = new Error("Please add 4 enrichment images for desktop and mobile view");
     error.status = 400;
@@ -2624,13 +2621,13 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
 
     let fileToUpload = null;
     let fileOriginalName = null;
-    
+
     const filePos = indexList.findIndex(idx => String(idx) === String(i));
     if (filePos !== -1 && files && files[filePos]) {
       fileToUpload = files[filePos];
       fileOriginalName = fileToUpload.originalname || `enrichment_${i}`;
     }
-    
+
     if (!fileToUpload && hiddenList[i]) {
       const hiddenItem = hiddenList[i];
       if (Buffer.isBuffer(hiddenItem) || (hiddenItem && typeof hiddenItem === 'object' && (hiddenItem.buffer || hiddenItem.data))) {
@@ -2649,7 +2646,7 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
         } else if (fileToUpload.data) {
           buffer = fileToUpload.data;
         }
-        
+
         const dimensions = sizeOf(buffer);
         newImageWidth = dimensions.width;
         newImageHeight = dimensions.height;
@@ -2687,21 +2684,21 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
         const sanitizedName = cleanFileName(fileOriginalName);
         const dbImageName = `${productId}_${sanitizedName}`;
         const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
-        
-        await uploadfile2({ 
-          ...fileToUpload, 
-          originalname: dbImageName, 
+
+        await uploadfile2({
+          ...fileToUpload,
+          originalname: dbImageName,
           key,
           buffer: buffer
         });
-        
+
         currentImage = dbImageName;
       } catch (uploadError) {
         console.error(`[Slot ${i}] File upload failed:`, uploadError);
         throw uploadError;
       }
     }
-    
+
     if (currentImage) {
       enrichmentToProcess.push({
         id: currentId,
@@ -2713,7 +2710,7 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
       });
     }
   }
-  
+
   const result = await logProductEnrichmentRequest({
     productId,
     vendor_id: vendorId,
