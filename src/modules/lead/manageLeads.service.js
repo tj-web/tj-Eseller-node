@@ -309,6 +309,17 @@ export const getLeads = async (vendor_id, post) => {
 
         const showContact = (isInternational || leadJson.is_show_contact > 0);
         leadJson.is_show_contact = showContact ? 1 : 0;
+        
+        let isShowContactAllowed = true;
+        let showContactDisableMsg = '';
+        
+        if (leadJson.is_show_contact === 0) {
+            isShowContactAllowed = false;
+            showContactDisableMsg = 'Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.';
+        }
+        
+        leadJson.is_show_contact_allowed = isShowContactAllowed;
+        leadJson.show_contact_disable_msg = showContactDisableMsg;
 
         if (!contactViewed && !isInternational) {
             leadJson.email = maskString(leadJson.email, 'email');
@@ -359,30 +370,41 @@ export const getLeads = async (vendor_id, post) => {
             const isWorkingHours = getWorkingHoursStatus();
             const currTime = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
             
-            const isAnyConnected = await checkAnyConnected(leadJson.id);
-            if (isAnyConnected) {
-                const maxTime = addDaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_CONN_MAX_DAYS);
+            if (leadJson.lead_type === 'DEMO') {
+                const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), 10);
                 if (currTime > maxTime && isWorkingHours) {
-                    callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
+                    callDisableMsg = `Your call back period of 10 days is over. Please contact support for more details.`;
                     isCallAllowed = false;
                 } else if (!isWorkingHours) {
                     callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
                     isCallAllowed = false;
                 }
             } else {
-                const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
-                const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
-                const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
-                
-                if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
-                    callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
-                    isCallAllowed = false;
-                } else if ((callStatus == 0 || callStatus == 5) && isWorkingHours && currTime < callTime) {
-                    callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
-                    isCallAllowed = false;
-                } else if (!isWorkingHours) {
-                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
-                    isCallAllowed = false;
+                const isAnyConnected = await checkAnyConnected(leadJson.id);
+                if (isAnyConnected) {
+                    const maxTime = addDaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_CONN_MAX_DAYS);
+                    if (currTime > maxTime && isWorkingHours) {
+                        callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
+                        isCallAllowed = false;
+                    } else if (!isWorkingHours) {
+                        callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                        isCallAllowed = false;
+                    }
+                } else {
+                    const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
+                    const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
+                    const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
+                    
+                    if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
+                        callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
+                        isCallAllowed = false;
+                    } else if ((callStatus == 0 || callStatus == 5) && isWorkingHours && currTime < callTime) {
+                        callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
+                        isCallAllowed = false;
+                    } else if (!isWorkingHours) {
+                        callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                        isCallAllowed = false;
+                    }
                 }
             }
         }
