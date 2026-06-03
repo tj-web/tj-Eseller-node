@@ -7,7 +7,11 @@ import VendorAuth from "../../models/vendorAuth.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import VendorTeams from "../../models/vendorTeams.model.js";
 import VendorUserTeam from "../../models/vendorUserTeam.model.js";
-import { QueryTypes, fn, col, literal } from "sequelize";
+import OmsPiDetail from "../../models/omsPiDetail.model.js";
+import LeadsPlan from "../../models/leadsPlan.model.js";
+import LeadsCounter from "../../models/leadsCounter.js";
+import Product from "../../models/product.model.js";
+import { fn, col, literal } from "sequelize";
 import { AppError } from "../../utilis/appError.js";
 
 // Define Associations
@@ -24,11 +28,15 @@ VendorsLeads.hasOne(VendorLeadsTeam, {
 VendorUserTeam.belongsTo(VendorTeams, { foreignKey: "team_id" });
 VendorUserTeam.hasMany(VendorLeadsTeam, { foreignKey: "adSales_AM", sourceKey: "user_id" });
 
+OmsPiDetail.belongsTo(LeadsPlan, { foreignKey: "lead_plan_id", targetKey: "id" });
+OmsPiDetail.hasOne(LeadsCounter, { foreignKey: "order_id", sourceKey: "id" });
+LeadsCounter.belongsTo(Product, { foreignKey: "product_id", targetKey: "product_id" });
+
 /* =========================================
    PLAN SUBSCRIBE REQUEST CORE LOGIC (Boost Sales)
 ========================================= */
 
-export const planSubscribeRequestService = async (authData, postData) => {
+export const handlePlanSubscribeRequest = async (authData, postData) => {
   const transaction = await sequelize.transaction();
   try {
     const { profile_id, vendor_id } = authData;
@@ -53,7 +61,7 @@ export const planSubscribeRequestService = async (authData, postData) => {
 
     const reminder_datetime = `${reminder_date} ${hour}:${minute}:00`;
     const actual_plan_name = plan_name || "Upgrade Now";
-    
+
     const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Selected Date and Time by User: ${reminder_datetime}`;
 
     // 2. Determine Account Manager (adSales_AM)
@@ -182,26 +190,59 @@ export const planSubscribeRequestService = async (authData, postData) => {
    OEM PLANS CORE LOGIC
 ========================================= */
 
-export const getOemPlansWithRawSQL = async (vendor_id) => {
-  const query = `
-    SELECT 
-      opd.id, opd.brand_id, opd.vendor_id, opd.lead_plan_id, 
-      opd.total_lead AS total_credits, opd.used_lead AS credits_used,
-      opd.start_date, opd.end_date,
-      tlp.plan_name, tlp.plan_type, tlp.show_credits,
-      tlc.product_id, tp.product_name
-    FROM oms_pi_details opd
-    LEFT JOIN tbl_leads_plan tlp ON tlp.id = opd.lead_plan_id
-    LEFT JOIN tbl_leads_counter tlc ON tlc.order_id = opd.id
-    LEFT JOIN tbl_product tp ON tp.product_id = tlc.product_id
-    WHERE opd.vendor_id = :vendor_id AND opd.pi_status = 3
-    ORDER BY opd.id DESC
-  `;
-
-  const results = await sequelize.query(query, {
-    replacements: { vendor_id },
-    type: QueryTypes.SELECT,
+export const getOemPlans = async (vendor_id) => {
+  const results = await OmsPiDetail.findAll({
+    attributes: [
+      "id",
+      "brand_id",
+      "vendor_id",
+      "lead_plan_id",
+      ["total_lead", "total_credits"],
+      ["used_lead", "credits_used"],
+      "start_date",
+      "end_date",
+    ],
+    where: {
+      vendor_id: vendor_id,
+      pi_status: 3,
+    },
+    include: [
+      {
+        model: LeadsPlan,
+        attributes: ["plan_name", "plan_type", "show_credits"],
+        required: false,
+      },
+      {
+        model: LeadsCounter,
+        attributes: ["product_id"],
+        required: false,
+        include: [
+          {
+            model: Product,
+            attributes: ["product_name"],
+            required: false,
+          },
+        ],
+      },
+    ],
+    order: [["id", "DESC"]],
+    raw: true,
+    nest: true,
   });
 
-  return results;
+  return results.map((row) => ({
+    id: row.id,
+    brand_id: row.brand_id,
+    vendor_id: row.vendor_id,
+    lead_plan_id: row.lead_plan_id,
+    total_credits: row.total_credits,
+    credits_used: row.credits_used,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    plan_name: row.LeadsPlan?.plan_name || null,
+    plan_type: row.LeadsPlan?.plan_type || null,
+    show_credits: row.LeadsPlan?.show_credits ?? null,
+    product_id: row.LeadsCounter?.product_id || null,
+    product_name: row.LeadsCounter?.Product?.product_name || null,
+  }));
 };

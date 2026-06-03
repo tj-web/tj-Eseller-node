@@ -1,8 +1,4 @@
 import * as productService from "./product.service.js";
-import { uploadfile2 } from "../../utilis/s3Uploader.js";
-import fs from "fs";
-import path from "path";
-import sizeOf from "image-size";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 

@@ -1,4 +1,4 @@
-import { planSubscribeRequestService, getOemPlansWithRawSQL } from "./sales.service.js";
+import { handlePlanSubscribeRequest, getOemPlans } from "./sales.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 import { prepareOemPlansData } from "../../helpers/oemHelper.js";
@@ -16,7 +16,7 @@ export const planSubscribeRequest = async (req, res) => {
         .json(SystemResponse.badRequestError("Missing required fields."));
     }
 
-    const result = await planSubscribeRequestService(
+    const result = await handlePlanSubscribeRequest(
       { profile_id, vendor_id },
       { plan_name, reminder_date, hour, minute }
     );
@@ -38,7 +38,7 @@ export const fetchPlansInfo = async (req, res) => {
     const vendor_id = req.user.vendor_id;
 
     if (fetch_plans_info == 1) {
-      const rawPlans = await getOemPlansWithRawSQL(vendor_id);
+      const rawPlans = await getOemPlans(vendor_id);
       const preparedPlans = prepareOemPlansData(rawPlans);
       return res.status(StatusCodes.SUCCESS).json({ plans: preparedPlans });
     }
