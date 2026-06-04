@@ -8,6 +8,7 @@ import LeadHistory from "../../models/leadHistory.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import EmailQueue from "../../models/emailQueue.model.js";
 import sequelize from "../../db/connection.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
 import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
@@ -34,7 +35,7 @@ const CALL_CONN_MAX_DAYS = 45;
 const CALL_MISS_MAX_DAYS = 10;
 
 const getWorkingHoursStatus = () => {
-    const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     const hours = now.getHours();
     const minutes = now.getMinutes();
     const timeValue = hours + minutes / 60;
@@ -309,15 +310,15 @@ export const getLeads = async (vendor_id, post) => {
 
         const showContact = (isInternational || leadJson.is_show_contact > 0);
         leadJson.is_show_contact = showContact ? 1 : 0;
-        
+
         let isShowContactAllowed = true;
         let showContactDisableMsg = '';
-        
+
         if (leadJson.is_show_contact === 0) {
             isShowContactAllowed = false;
             showContactDisableMsg = 'Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.';
         }
-        
+
         leadJson.is_show_contact_allowed = isShowContactAllowed;
         leadJson.show_contact_disable_msg = showContactDisableMsg;
 
@@ -363,13 +364,13 @@ export const getLeads = async (vendor_id, post) => {
         if (leadModelType === 9) {
             isCallAllowed = true;
         } else if (leadJson.is_lead_cta === 0) {
-            
+
             isCallAllowed = false;
             callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
         } else if (leadJson.acd_uuid) {
             const isWorkingHours = getWorkingHoursStatus();
-            const currTime = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
-            
+            const currTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+
             if (leadJson.lead_type === 'DEMO') {
                 const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), 10);
                 if (currTime > maxTime && isWorkingHours) {
@@ -394,7 +395,7 @@ export const getLeads = async (vendor_id, post) => {
                     const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
                     const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
                     const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
-                    
+
                     if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
                         callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
                         isCallAllowed = false;
@@ -1054,7 +1055,7 @@ export const scheduleCallback = async (vendor_id, data) => {
 /**
  * Get lead locations (States/Cities) for search filters.
  */
-export const getLeadLocationsService = async (search_by, context_id) => {
+export const getLeadLocations = async (search_by, context_id) => {
     try {
         if (search_by === "state") {
             return await StateMaster.findAll({
@@ -1883,7 +1884,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 }
 
                 allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                
+
                 const isLimited = (plan_id === limited_access_plan_id);
                 const slicedActivities = allActivities.slice(0, isLimited ? 2 : 10);
 
@@ -1893,7 +1894,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 for (const item of slicedActivities) {
                     if (!truncatedActivityMap[item.assetType]) truncatedActivityMap[item.assetType] = {};
                     if (!truncatedActivityMap[item.assetType][item.assetName]) truncatedActivityMap[item.assetType][item.assetName] = {};
-                    
+
                     truncatedActivityMap[item.assetType][item.assetName][item.feedAction] = {
                         count: item.count,
                         created_at: item.created_at
@@ -1962,37 +1963,15 @@ export const unlockLeadInsights = async (vendor_id, data) => {
         });
 
         const timeArr = Array.isArray(time) ? time : JSON.parse(time || '[]');
-        const emailBody = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Lead Insight Interest Notification</title>
-  <style>
-    body { font-family: Arial, sans-serif; background-color: #f6f8fa; padding: 20px; }
-    .container { max-width: 600px; margin: auto; background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; }
-    h2 { color: #2c3e50; }
-    .info { margin-top: 20px; padding: 10px; background-color: #f0f4f8; border-left: 4px solid #2c7be5; }
-    .info p { margin: 5px 0; }
-    .footer { margin-top: 30px; font-size: 12px; color: #7f8c8d; text-align: center; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2>New Interest in "Unlock Lead Insights"</h2>
-    <p>A vendor has shown interest in unlocking lead insights. Please review their details below and connect accordingly.</p>
-    <div class="info">
-      <p><strong>Vendor Id:</strong> ${vendor_id}</p>
-      <p><strong>Company:</strong> ${company || 'N/A'}</p>
-      <p><strong>Email :</strong> ${email || 'N/A'}</p>
-      <p><strong>Preferred Call Time:</strong> ${date || ''} ${timeArr[0] || ''}:${timeArr[1] || ''}</p>
-      <p><strong>Additional Notes:</strong> ${remark || ''}</p>
-    </div>
-    <p><strong>Action Required:</strong><br>Reach out to the vendor to schedule a call and walk them through the Lead Insights feature and benefits.</p>
-    <div class="footer">Techjockey Internal Notification • Powered by VendorCRM</div>
-  </div>
-</body>
-</html>`;
+        const emailBody = await renderTemplate("lead-insight-interest", {
+            vendor_id: vendor_id,
+            company: company || 'N/A',
+            email: email || 'N/A',
+            date: date || '',
+            time_hour: timeArr[0] || '',
+            time_minute: timeArr[1] || '',
+            remark: remark || ''
+        });
 
         if (!Vendor.associations.manager) {
             Vendor.belongsTo(AdminUsers, { foreignKey: 'acc_manager_id', targetKey: 'adminusers_id', as: 'manager' });

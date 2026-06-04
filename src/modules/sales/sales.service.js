@@ -13,6 +13,7 @@ import LeadsCounter from "../../models/leadsCounter.js";
 import Product from "../../models/product.model.js";
 import { fn, col, literal } from "sequelize";
 import { AppError } from "../../utilis/appError.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
 
 // Define Associations
 VendorAuth.hasOne(VendorDetails, {
@@ -152,14 +153,13 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
     );
 
     // 6. Queue Email Notification natively
-    const emailBody = `
-      <h3>New Paid Plan Request</h3>
-      <p><strong>Name:</strong> ${vendorData.first_name} ${vendorData.last_name}</p>
-      <p><strong>Email:</strong> ${vendorData.email}</p>
-      <p><strong>Contact:</strong> ${vendorData.phone}</p>
-      <p><strong>Plan Name:</strong> ${actual_plan_name}</p>
-      <p><strong>Preferred Callback Time:</strong> ${reminder_date} ${hour}:${minute}</p>
-    `;
+    const emailBody = await renderTemplate("plan-subscribe-request", {
+      callback_name: `${vendorData.first_name} ${vendorData.last_name}`,
+      plan_name: actual_plan_name,
+      callback_email: vendorData.email,
+      callback_contact: vendorData.phone,
+      reminder_datetime: `${reminder_date} ${hour}:${minute}`,
+    });
 
     await EmailQueue.create(
       {

@@ -4,30 +4,109 @@ import sequelize from "../db/connection.js";
 const EmailQueue = sequelize.define(
   "EmailQueue",
   {
-    to: DataTypes.TEXT,
-    cc: DataTypes.TEXT,
-    bcc: DataTypes.TEXT,
-    subject: DataTypes.STRING,
-    body: DataTypes.TEXT,
-    attachment_path: DataTypes.TEXT,
-
-    from_name: DataTypes.STRING,
-    from_email: DataTypes.STRING,
-
-    type: DataTypes.STRING,
-    app: DataTypes.STRING,
-
-    priority: DataTypes.INTEGER,
-
-    delivered_at: DataTypes.DATE,
-    status: DataTypes.INTEGER,
-    attempts: DataTypes.INTEGER,
-    response: DataTypes.TEXT,
-
-    table_column: DataTypes.STRING,
-    column_value: DataTypes.STRING,
-    created_at: DataTypes.DATE,
-    updated_at: DataTypes.DATE
+    id: {
+      type: DataTypes.INTEGER(10).UNSIGNED,
+      primaryKey: true,
+      autoIncrement: true,
+      allowNull: false,
+    },
+    email_uuid: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    to: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    cc: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    bcc: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    subject: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    body: {
+      type: DataTypes.TEXT('long'),
+      allowNull: true,
+    },
+    attachment_path: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    from_name: {
+      type: DataTypes.STRING(191),
+      allowNull: false,
+      defaultValue: "Techjockey",
+    },
+    from_email: {
+      type: DataTypes.STRING(191),
+      allowNull: false,
+      defaultValue: "noreply@techjockey.com",
+    },
+    reply_to_name: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    reply_to: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    type: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    app: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    priority: {
+      type: DataTypes.TINYINT(4),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    delivered_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    status: {
+      type: DataTypes.TINYINT(4),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    response: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    attempts: {
+      type: DataTypes.TINYINT(4),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    table_column: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    column_value: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    file_name: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    }
   },
   {
     tableName: "email_queue",

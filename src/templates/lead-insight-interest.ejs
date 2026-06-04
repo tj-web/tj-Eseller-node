@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Lead Insight Interest Notification</title>
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #f6f8fa; padding: 20px; }
+    .container { max-width: 600px; margin: auto; background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; }
+    h2 { color: #2c3e50; }
+    .info { margin-top: 20px; padding: 10px; background-color: #f0f4f8; border-left: 4px solid #2c7be5; }
+    .info p { margin: 5px 0; }
+    .footer { margin-top: 30px; font-size: 12px; color: #7f8c8d; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>New Interest in "Unlock Lead Insights"</h2>
+    <p>A vendor has shown interest in unlocking lead insights. Please review their details below and connect accordingly.</p>
+    <div class="info">
+      <p><strong>Vendor Id:</strong> <%= vendor_id %></p>
+      <p><strong>Company:</strong> <%= company %></p>
+      <p><strong>Email :</strong> <%= email %></p>
+      <p><strong>Preferred Call Time:</strong> <%= date %> <%= time_hour %>:<%= time_minute %></p>
+      <p><strong>Additional Notes:</strong> <%= remark %></p>
+    </div>
+    <p><strong>Action Required:</strong><br>Reach out to the vendor to schedule a call and walk them through the Lead Insights feature and benefits.</p>
+    <div class="footer">Techjockey Internal Notification • Powered by VendorCRM</div>
+  </div>
+</body>
+</html>
