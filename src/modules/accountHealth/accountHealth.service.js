@@ -63,7 +63,7 @@ const getVendorProductIds = async (vendor_id) => {
    ACCOUNT HEALTH CORE SERVICES
 ========================================= */
 
-export const getHealthScoreService = async (vendor_id) => {
+export const handleGetHealthScore = async (vendor_id) => {
   try {
     const productIds = await getVendorProductIds(vendor_id);
 
@@ -221,7 +221,7 @@ export const getHealthScoreService = async (vendor_id) => {
   }
 };
 
-export const getReviewsDataService = async (vendor_id, query) => {
+export const getReviewsData = async (vendor_id, query) => {
   try {
     const { page = 1, limit = 10, sort_by = "latest_first", productName, rating, date } = query;
     const productIds = await getVendorProductIds(vendor_id);
@@ -374,7 +374,7 @@ export const getReviewsDataService = async (vendor_id, query) => {
   }
 };
 
-export const getProfileCompletionService = async (vendor_id) => {
+export const handleGetProfileCompletion = async (vendor_id) => {
   try {
     const matrix = await VendorParticularMatrix.findAll({
       where: { vendor_id, status: 1 },
@@ -411,7 +411,7 @@ export const getProfileCompletionService = async (vendor_id) => {
   }
 };
 
-export const getAccountStatusService = async (vendor_id) => {
+export const handleGetAccountStatus = async (vendor_id) => {
   try {
     const vendor = await Vendors.findOne({
       where: { id: vendor_id },
@@ -423,7 +423,7 @@ export const getAccountStatusService = async (vendor_id) => {
   }
 };
 
-export const saveReviewReplyService = async (vendor_id, profile_id, data) => {
+export const handleSaveReviewReply = async (vendor_id, profile_id, data) => {
   try {
     const { review_id, reply_text, reply_id } = data;
 
@@ -472,7 +472,7 @@ export const saveReviewReplyService = async (vendor_id, profile_id, data) => {
   }
 };
 
-export const getTrustedSellerService = async (vendor_id) => {
+export const handleGetTrustedSeller = async (vendor_id) => {
   try {
     const productIds = await getVendorProductIds(vendor_id);
 
@@ -597,7 +597,7 @@ export const getTrustedSellerService = async (vendor_id) => {
   }
 };
 
-export const sendReviewEmailService = async (vendor_id, data) => {
+export const handleSendReviewEmail = async (vendor_id, data) => {
   try {
     const { to_emails, product_name, product_slug, subject } = data;
 

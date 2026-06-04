@@ -703,6 +703,7 @@ export const handleSearchBrandsForRequest = async (vendorId, searchStr = "") => 
           },
         }),
       },
+      limit: 100,
       raw: true,
     });
 
