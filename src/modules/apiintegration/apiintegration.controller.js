@@ -1,6 +1,8 @@
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
-import { handleCreateWebhook, handleverifyWebhook } from "./apiintegration.service.js";
+import { handleCreateWebhook, handleverifyWebhook, planSubscribeRequestService } from "./apiintegration.service.js";
+import sequelize from "../../db/connection.js";
+import { QueryTypes } from "sequelize";
 
 // export const createWebhook = async (req, res) => {
 //   try {
@@ -119,12 +121,36 @@ export const createWebhook = async (req, res) => {
 
 export const verifyWebhook = async (req, res) => {
   try {
-    const result = await handleverifyWebhook(req.body.webhook_url);
+    const { vendor_id } = req.user;
+    
+    const result = await handleverifyWebhook({
+      vendor_id,
+      ...req.body
+    });
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message, result));
   } catch (error) {
     return res
       .status(StatusCodes.BAD_REQUEST)
-      .json(SystemResponse.badRequest(error.message || "Verification failed"));
+      .json(SystemResponse.badRequestError(error.message || "Verification failed"));
+  }
+};
+
+export const apiIntegrationPlanRequest = async (req, res) => {
+  try {
+    const { vendor_id , profile_id } = req.user;
+
+    const result = await planSubscribeRequestService(
+      { profile_id, vendor_id },
+      req.body
+    );
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success(result.message, result));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to submit plan request"));
   }
 };
