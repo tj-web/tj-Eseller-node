@@ -10,7 +10,7 @@ import sequelize from "../../db/connection.js";
 import { AppError } from "../../utilis/appError.js";
 import { Op } from "sequelize";
 import { findDifferences } from "../../General_Function/general_helper.js";
-import { uploadfile2 } from "../../utilis/s3Uploader.js";
+import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
 
 VendorBrandRelation.belongsTo(Brand, {
   foreignKey: "tbl_brand_id",
@@ -231,7 +231,7 @@ export const handleAddBrand = async (data, file, vendorId, profileId) => {
         originalname: fileName,
         key: `web/assets/images/techjockey/brands/${fileName}`,
       };
-      await uploadfile2(fileobj);
+      await uploadFileToS3(fileobj);
 
       // Persist image name in tbl_brand
       await Brand.update({ image: fileName }, { where: { brand_id: brandId }, transaction });
@@ -601,7 +601,7 @@ export const handleUpdateBrand = async (brand_id, body, file, vendor_id, profile
         originalname: fileName,
         key: `web/assets/images/techjockey/brands/${fileName}`,
       };
-      await uploadfile2(fileobj);
+      await uploadFileToS3(fileobj);
       imageName = fileName;
     }
 
@@ -703,7 +703,6 @@ export const handleSearchBrandsForRequest = async (vendorId, searchStr = "") => 
           },
         }),
       },
-      limit: 100,
       raw: true,
     });
 

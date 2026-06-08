@@ -1,5 +1,5 @@
 import sequelize from "../../db/connection.js";
-import { uploadfile2 } from "../../utilis/s3Uploader.js";
+import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
 import sizeOf from "image-size";
 import { Op } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
@@ -428,7 +428,7 @@ export const saveProductImage = async (productId, imageFiles, externalTransactio
 
       // Upload to S3
       const sanitizedImg = { ...img, originalname: originalName, key };
-      const imageUrl = await uploadfile2(sanitizedImg);
+      const imageUrl = await uploadFileToS3(sanitizedImg);
 
       // Derive human-readable name (strip productId_ prefix and extension)
       const fileExt = fileName.substring(fileName.lastIndexOf("."));
@@ -475,7 +475,7 @@ export const savePricingDocument = async (productId, documentFiles, externalTran
 
       // Upload to S3
       const sanitizedDoc = { ...doc, originalname: originalName, key };
-      const docUrl = await uploadfile2(sanitizedDoc);
+      const docUrl = await uploadFileToS3(sanitizedDoc);
 
       savedDocs.push({
         id: null,
@@ -513,7 +513,7 @@ export const uploadProductImageOnly = async (productId, imageFiles) => {
     const key = `web/assets/images/techjockey/products/${fileName}`;
 
     const sanitizedImg = { ...img, originalname: originalName, key };
-    const imageUrl = await uploadfile2(sanitizedImg);
+    const imageUrl = await uploadFileToS3(sanitizedImg);
 
     savedImages.push({ fileName, s3Key: key, url: imageUrl });
   }
@@ -532,7 +532,7 @@ export const uploadPricingDocumentOnly = async (productId, documentFiles) => {
     const key = `web/assets/images/techjockey/products/pricing/${fileName}`;
 
     const sanitizedDoc = { ...doc, originalname: originalName, key };
-    const docUrl = await uploadfile2(sanitizedDoc);
+    const docUrl = await uploadFileToS3(sanitizedDoc);
 
     savedDocs.push({ fileName, s3Key: key, url: docUrl });
   }
@@ -1884,7 +1884,7 @@ export const updateProductScreenshots = async (productId, vendorId, body, files)
       const dbImageName = `${productId}_${sanitizedOriginalName}`;
       const key = `web/assets/images/techjockey/products/screenshots/${dbImageName}`;
 
-      await uploadfile2({ ...file, originalname: dbImageName, key });
+      await uploadFileToS3({ ...file, originalname: dbImageName, key });
       currentImage = dbImageName;
     }
 
@@ -1957,7 +1957,7 @@ export const updateProductGallery = async (productId, vendorId, body, files) => 
       const dbImageName = `${productId}_${sanitizedOriginalName}`;
       const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
 
-      await uploadfile2({ ...file, originalname: dbImageName, key });
+      await uploadFileToS3({ ...file, originalname: dbImageName, key });
       currentImage = dbImageName;
 
       if (indexList.length === 0) fileCounter++;
@@ -2685,7 +2685,7 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
         const dbImageName = `${productId}_${sanitizedName}`;
         const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
 
-        await uploadfile2({
+        await uploadFileToS3({
           ...fileToUpload,
           originalname: dbImageName,
           key,

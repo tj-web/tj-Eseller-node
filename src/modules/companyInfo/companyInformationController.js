@@ -7,7 +7,7 @@ import {
   updateVendorDetails,
   getSearchedLocations,
 } from "./companyInformation.service.js";
-import { uploadfile2 } from "../../utilis/s3Uploader.js";
+import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 
@@ -91,7 +91,7 @@ export const saveAccountInfo = async (req, res) => {
           ...file,
           key: `eseller/assets/img/vendor_doc/${fileName}`,
         };
-        await uploadfile2(fileobj);
+        await uploadFileToS3(fileobj);
         formData.gst_document = fileName;
       }
 
@@ -102,7 +102,7 @@ export const saveAccountInfo = async (req, res) => {
           ...file,
           key: `eseller/assets/img/vendor_doc/${fileName}`,
         };
-        await uploadfile2(fileobj);
+        await uploadFileToS3(fileobj);
         formData.pan_document = fileName;
       }
     }

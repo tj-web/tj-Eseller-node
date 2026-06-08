@@ -166,7 +166,6 @@ export const getLeads = async (vendor_id, post) => {
     const filters = {
         order_by: post.order_by || 'id',
         order: post.order || 'DESC',
-        search: post.search || "",
         date_from: post.date_from || "",
         date_to: post.date_to || "",
         status: post.lead_status !== undefined ? post.lead_status : "",
@@ -177,7 +176,6 @@ export const getLeads = async (vendor_id, post) => {
         is_trashed: post.is_trashed || 0,
         limit: parseInt(post.limit) || 10,
         page: parseInt(post.page) || 0,
-        srch_country: post.srch_country || '',
         srch_state: post.srch_state || '',
         srch_city: post.srch_city || ''
     };
