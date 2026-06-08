@@ -1,11 +1,11 @@
 import {
-  getVendorDataService,
-  getDesignationService,
-  getBillingCountryStateCityService,
-  getVendorCountryStateCityService,
-  updateVendorAuthService,
-  updateVendorDetailsService,
-  getSearchedLocationsService,
+  getVendorData,
+  getDesignation,
+  getBillingCountryStateCity,
+  getVendorCountryStateCity,
+  updateVendorAuth,
+  updateVendorDetails,
+  getSearchedLocations,
 } from "./companyInformation.service.js";
 import { uploadfile2 } from "../../utilis/s3Uploader.js";
 import StatusCodes from "../../utilis/statusCodes.js";
@@ -21,16 +21,16 @@ export const getCompanyInfo = async (req, res) => {
         .json(SystemResponse.badRequestError("Profile ID is required"));
     }
 
-    let v_info = await getVendorDataService({ profile_id });
+    let v_info = await getVendorData({ profile_id });
     if (!v_info) {
       return res
         .status(StatusCodes.NOT_FOUND)
         .json(SystemResponse.notFoundError("Vendor not found"));
     }
 
-    let arr_designation = await getDesignationService();
+    let arr_designation = await getDesignation();
 
-    const billing_address = await getBillingCountryStateCityService({
+    const billing_address = await getBillingCountryStateCity({
       billing_country: v_info.billing_country,
       billing_state: v_info.billing_state,
       billing_city: v_info.billing_city,
@@ -40,7 +40,7 @@ export const getCompanyInfo = async (req, res) => {
     v_info.billing_state_name = billing_address.billing_state_name;
     v_info.billing_city_name = billing_address.billing_city_name;
 
-    const oem_address = await getVendorCountryStateCityService({
+    const oem_address = await getVendorCountryStateCity({
       country: v_info.country,
       state: v_info.state,
       city: v_info.city,
@@ -109,15 +109,15 @@ export const saveAccountInfo = async (req, res) => {
 
     if (form_type === "company_detail_from") {
       if (formData.first_name !== undefined || formData.last_name !== undefined) {
-        await updateVendorAuthService(profile_id, {
+        await updateVendorAuth(profile_id, {
           first_name: formData.first_name,
           last_name: formData.last_name,
         });
       }
 
-      await updateVendorDetailsService(vendor_id, formData);
+      await updateVendorDetails(vendor_id, formData);
     } else if (form_type === "billng_info_from" || form_type === "bank_detail_from") {
-      await updateVendorDetailsService(vendor_id, formData);
+      await updateVendorDetails(vendor_id, formData);
     }
 
     return res
@@ -135,7 +135,7 @@ export const saveAccountInfo = async (req, res) => {
 export const searchLocation = async (req, res) => {
   try {
     const { search, search_by, context_id } = req.query;
-    const results = await getSearchedLocationsService(search, search_by, context_id);
+    const results = await getSearchedLocations(search, search_by, context_id);
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Locations Searched Successfully.", results));

@@ -1,11 +1,11 @@
 import {
-  getHealthScoreService,
-  getReviewsDataService,
-  getProfileCompletionService,
-  getTrustedSellerService,
-  getAccountStatusService,
-  saveReviewReplyService,
-  sendReviewEmailService,
+  handleGetHealthScore,
+  getReviewsData,
+  handleGetProfileCompletion,
+  handleGetTrustedSeller,
+  handleGetAccountStatus,
+  handleSaveReviewReply,
+  handleSendReviewEmail,
 } from "./accountHealth.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
@@ -13,7 +13,7 @@ import SystemResponse from "../../utilis/systemResponse.js";
 export const getHealthScore = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getHealthScoreService(vendorId);
+    const result = await handleGetHealthScore(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -28,7 +28,7 @@ export const getHealthScore = async (req, res) => {
 export const getReviews = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getReviewsDataService(vendorId, req.query);
+    const result = await getReviewsData(vendorId, req.query);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -43,7 +43,7 @@ export const getReviews = async (req, res) => {
 export const getProfileCompletion = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getProfileCompletionService(vendorId);
+    const result = await handleGetProfileCompletion(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -58,7 +58,7 @@ export const getProfileCompletion = async (req, res) => {
 export const getTrustedSeller = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getTrustedSellerService(vendorId);
+    const result = await handleGetTrustedSeller(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -73,7 +73,7 @@ export const getTrustedSeller = async (req, res) => {
 export const getAccountStatus = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getAccountStatusService(vendorId);
+    const result = await handleGetAccountStatus(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -89,7 +89,7 @@ export const saveReviewReply = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
     const profileId = req.user.profile_id;
-    const result = await saveReviewReplyService(vendorId, profileId, req.body);
+    const result = await handleSaveReviewReply(vendorId, profileId, req.body);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -105,7 +105,7 @@ export const saveReviewReply = async (req, res) => {
 export const sendReviewEmail = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await sendReviewEmailService(vendorId, req.body);
+    const result = await handleSendReviewEmail(vendorId, req.body);
 
     return res
       .status(StatusCodes.SUCCESS)
