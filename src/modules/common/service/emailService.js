@@ -13,7 +13,7 @@ export const sendVerificationEmail = async (
   vendorId,
   transaction,
 ) => {
-  const link = `${process.env.BACKEND_URL}/V6/auth/verify-email?token=${token}`;
+  const link = `${process.env.HTTP_SCHEME}://${process.env.APP_URL}/V6/auth/verify-email?token=${token}`;
 
   const mainsiteUrl = process.env.MAINSITE_URL || "https://www.techjockey.com/";
   const assetUrl = `${mainsiteUrl}assets/images/`;
