@@ -1614,6 +1614,57 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             attributes: ['designation']
         });
 
+        const questionnaireQuery = `
+            SELECT alqa.lead_id, lqs.id as tag_id, lqs.tag_name, lqs.tag_value, aq.id as question_id, aq.question, 
+            (CASE 
+                WHEN alqa.custom_ans IS NOT NULL THEN alqa.custom_ans
+                WHEN aqo.is_user_defined=0 THEN aqo.option 
+                WHEN aqo.is_user_defined=1 && aqo.option != 'NA' THEN CONCAT(aqo.option, ' - ', alqa.user_defined_ans) 
+                ELSE alqa.user_defined_ans
+            END) as answer 
+            FROM acd_leads_ques_ans alqa 
+            LEFT JOIN acd_questions_options aqo on alqa.ans_id = aqo.id 
+            LEFT JOIN acd_questions aq on alqa.ques_id = aq.id 
+            LEFT JOIN leads_questions_tags lqs on aq.tag_id = lqs.id
+            WHERE alqa.lead_id = :lead_id
+            ORDER BY alqa.lead_id DESC, aq.id ASC
+        `;
+
+        const questionnaireData = await sequelize.query(questionnaireQuery, {
+            replacements: { lead_id },
+            type: sequelize.QueryTypes.SELECT
+        });
+
+        let qDesignation = null;
+        let qIndustry = null;
+        let qCompanySize = null;
+        let additionalInfo = [];
+
+        if (questionnaireData && questionnaireData.length > 0) {
+            let qId = 0;
+            questionnaireData.forEach(q => {
+                if (q.answer) {
+                    if (q.question_id !== qId) {
+                        additionalInfo.push({ ...q });
+                    } else {
+                        additionalInfo[additionalInfo.length - 1].answer += '  |  ' + q.answer;
+                    }
+                    qId = q.question_id;
+                }
+            });
+
+            // Extract the specific fields for convenience, just like before, using the aggregated answers
+            additionalInfo.forEach(q => {
+                if (q.tag_value === 'persona') {
+                    qDesignation = q.answer;
+                } else if (q.tag_value === 'industry') {
+                    qIndustry = q.answer;
+                } else if (q.tag_value === 'company_size') {
+                    qCompanySize = q.answer;
+                }
+            });
+        }
+
 
         const vendorData = await Vendor.findByPk(vendor_id, {
             attributes: ['id', 'first_name', 'last_name', 'email', 'phone', 'dial_code']
@@ -1640,7 +1691,10 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             buying_stage: (lead.status === 2 || lead.status === 12) ? 'Decision' : (lead.status === 1 ? 'Evaluation' : 'Awareness'),
             city: lead.city,
             state: lead.state,
-            designation: latestCallback ? latestCallback.designation : null
+            designation: qDesignation || (latestCallback ? latestCallback.designation : null),
+            industry: qIndustry,
+            company_size: qCompanySize,
+            additional_info: additionalInfo
         };
 
         if (lead.company_id) {
@@ -1695,6 +1749,9 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
 
             result.top_five_key_people = keyPeople || [];
         }
+
+        if (qIndustry) result.industry = qIndustry;
+        if (qCompanySize) result.team_size = qCompanySize;
 
         // 3. Fetch Buyer Activity Timeline from MongoDB
         if (lead.customer_id) {
