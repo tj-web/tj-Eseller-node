@@ -1,10 +1,10 @@
 import VendorReqQuery from "../../models/helpSupport.model.js";
 import Vendor from "../../models/vendor.model.js";
 import AdminUsers from "../../models/adminUser.model.js";
-import sequelize from "../../db/connection.js";
 import { queueEmail } from "../common/service/emailService.js";
 import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
 
 export const insertVendorHelpQuery = async (helpData) => {
     try {
@@ -34,17 +34,16 @@ export const insertVendorHelpQuery = async (helpData) => {
         }
 
         // Send Email to Manager
-        const emailBody = `
-            <h3>New Help Support Query</h3>
-            <p><strong>Vendor ID:</strong> ${helpData.vendor_id}</p>
-            <p><strong>Vendor Name:</strong> ${helpData.name}</p>
-            <p><strong>Vendor Email:</strong> ${helpData.email}</p>
-            <p><strong>Query:</strong></p>
-            <p>${helpData.query}</p>
-        `;
+        const emailBody = await renderTemplate("contact-us", {
+            vendor_id: helpData.vendor_id,
+            callback_name: helpData.name,
+            callback_email: helpData.email,
+            help_query: helpData.query,
+        });
 
         await queueEmail({
             to: managerEmail,
+            cc: "support@techjockey.com",
             subject: `New Help Query from ${helpData.name}`,
             body: emailBody,
             type: "help_query",

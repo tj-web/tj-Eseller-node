@@ -1,4 +1,3 @@
-import VendorAuth from "../../models/vendorAuth.model.js";
 import {
   getCurrentDateNoHIs,
   insertRecordWithoutId,
@@ -70,7 +69,7 @@ export const getAgreements = async (req, res) => {
   }
 };
 
-export const agreementFormController = async (req, res) => {
+export const agreementForm = async (req, res) => {
   try {
     const vendor_id = req.user?.vendor_id;
     const { type } = req.body;
