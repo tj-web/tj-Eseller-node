@@ -6,7 +6,7 @@ const s3 = new AWS.S3({
   region: process.env.AWS_REGION,
 });
 
-export const uploadfile2 = async function (fileObj) {
+export const uploadFileToS3 = async function (fileObj) {
   if (!fileObj.key) {
     throw new Error("S3 key is required");
   }
