@@ -320,7 +320,7 @@ export const getVendorBrands = async (params) => {
         model: Brand,
         required: !!(srch_brand_name || brand_status), // INNER JOIN when searching by name or filtering by brand_status
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
-        attributes: ["brand_name", "description", "image", "status", "target_industry"],
+        attributes: ["brand_name", "description", "image", "status", "slug", "target_industry"],
       },
       {
         model: BrandInfo,
