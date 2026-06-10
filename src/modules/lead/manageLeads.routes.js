@@ -16,12 +16,14 @@ import {
     unlockLeadInsights,
     unlockContact,
     getLeadLocations,
-    getCompetiterInsights
+    getCompetiterInsights,
+    getPendingLeadsCount
 } from "./manageLeads.controller.js";
 
 const router = express.Router();
 
 router.get("/get-leads", getLeads);
+router.get("/pending-count", getPendingLeadsCount);
 router.get("/get-lead-locations", getLeadLocations);
 router.get("/get-demos", getDemos);
 router.get("/get-lead-history", getLeadHistory);

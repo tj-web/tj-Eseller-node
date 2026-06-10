@@ -12,6 +12,16 @@ export const getLeads = async (req, res, next) => {
     }
 };
 
+export const getPendingLeadsCount = async (req, res, next) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const result = await leadActions.getPendingLeadsCount(vendor_id);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Pending leads count fetched successfully", result));
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const getDemos = async (req, res, next) => {
     try {
         const vendor_id = req.user.vendor_id;

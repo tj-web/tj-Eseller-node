@@ -160,6 +160,38 @@ const maskString = (str, type = 'phone') => {
 };
 
 /**
+ * Get count of pending leads for a vendor
+ */
+export const getPendingLeadsCount = async (vendor_id) => {
+    try {
+        const date48HoursAgo = new Date();
+        date48HoursAgo.setHours(date48HoursAgo.getHours() - 48);
+
+        const pendingCount = await TblLeads.count({
+            where: {
+                vendor_id: vendor_id,
+                created_at: {
+                    [Op.lte]: date48HoursAgo
+                },
+                lead_action: {
+                    [Op.in]: [1, 2, 4]
+                },
+                phone: { [Op.ne]: '' },
+                email: { [Op.ne]: '' },
+                [Op.or]: [
+                    { lead_visibility: 1 },
+                    { lead_visibility: 0, is_trashed: 1 }
+                ]
+            }
+        });
+
+        return { pending_leads_count: pendingCount };
+    } catch (error) {
+        throw new AppError(error.message, StatusCodes.INTERNAL_SERVER_ERROR);
+    }
+};
+
+/**
  * Get all leads for a vendor with filtering and pagination.
  */
 export const getLeads = async (vendor_id, post) => {
@@ -194,7 +226,7 @@ export const getLeads = async (vendor_id, post) => {
     ];
 
     if (filters.status === 'action_required' || filters.status == -2) {
-        filters.status = [0];
+        filters.status = "";
         filters.hour_upto = '48';
         filters.action = [1, 2, 4];
         filters.date_to = new Date().toISOString().split('T')[0];
