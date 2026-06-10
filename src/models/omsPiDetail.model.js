@@ -266,6 +266,14 @@ const OmsPiDetail = sequelize.define(
       type: DataTypes.INTEGER(11),
       allowNull: true,
     },
+    impressions: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    clicks: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: true,

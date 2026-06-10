@@ -201,6 +201,8 @@ export const getOemPlans = async (vendor_id) => {
       ["used_lead", "credits_used"],
       "start_date",
       "end_date",
+      "impressions",
+      "clicks"
     ],
     where: {
       vendor_id: vendor_id,
@@ -209,7 +211,7 @@ export const getOemPlans = async (vendor_id) => {
     include: [
       {
         model: LeadsPlan,
-        attributes: ["plan_name", "plan_type", "show_credits"],
+        attributes: ["plan_name", "plan_type", "show_credits", "deliverables"],
         required: false,
       },
       {
@@ -239,9 +241,12 @@ export const getOemPlans = async (vendor_id) => {
     credits_used: row.credits_used,
     start_date: row.start_date,
     end_date: row.end_date,
+    impressions: row.impressions,
+    clicks: row.clicks,
     plan_name: row.LeadsPlan?.plan_name || null,
     plan_type: row.LeadsPlan?.plan_type || null,
     show_credits: row.LeadsPlan?.show_credits ?? null,
+    deliverables: row.LeadsPlan?.deliverables || null,
     product_id: row.LeadsCounter?.product_id || null,
     product_name: row.LeadsCounter?.Product?.product_name || null,
   }));
