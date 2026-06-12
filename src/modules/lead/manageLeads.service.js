@@ -166,6 +166,8 @@ export const getPendingLeadsCount = async (vendor_id) => {
     try {
         const date48HoursAgo = new Date();
         date48HoursAgo.setHours(date48HoursAgo.getHours() - 48);
+        // Adjust for IST (+5:30) because DB DATETIME is in IST and Sequelize sends as UTC
+        date48HoursAgo.setMinutes(date48HoursAgo.getMinutes() + 330);
 
         const pendingCount = await TblLeads.count({
             where: {
@@ -253,6 +255,8 @@ export const getLeads = async (vendor_id, post) => {
         const toDate = new Date(filters.date_to);
         if (filters.date_to === new Date().toISOString().split('T')[0] && filters.hour_upto === '48') {
             const hourUpto = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            // Adjust for IST (+5:30)
+            hourUpto.setMinutes(hourUpto.getMinutes() + 330);
             whereClause.created_at = { ...whereClause.created_at, [Op.lte]: hourUpto };
         } else {
             toDate.setHours(23, 59, 59, 999);
@@ -1621,7 +1625,25 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             plan_name = 'Free Access (Limited)';
         }
 
-        if (plan_id == full_access_plan_id) {
+        let is_lead_insight_allowed = 0;
+        if (planDetails && planDetails.dataValues && planDetails.dataValues.pi_id && lead.product_name) {
+            // Need product_id from TblProduct since lead only has product_name or we can join
+            const product = await TblProduct.findOne({ where: { product_name: lead.product_name }, attributes: ['product_id']});
+            if (product) {
+                const resultCount = await sequelize.query(`
+                    SELECT COUNT(1) as count 
+                    FROM oms_pi_details opd
+                    INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                    WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
+                `, {
+                    replacements: { pi_id: planDetails.dataValues.pi_id, product_id: product.product_id },
+                    type: sequelize.QueryTypes.SELECT
+                });
+                is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+            }
+        }
+
+        if (is_lead_insight_allowed === 1) {
             await fetchLeadInsightsData(lead_id, vendor_id);
             // Re-fetch lead since fetchLeadInsightsData might have updated company_id and leadinsight
             lead = await TblLeads.findByPk(lead_id, {
@@ -1742,7 +1764,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 raw: true
             });
 
-            if (company && plan_id === limited_access_plan_id) {
+            if (company && (plan_id != full_access_plan_id || is_lead_insight_allowed !== 1)) {
                 company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
                 company.website = company.website ? "********" : null;
                 company.linkedin = company.linkedin ? "********" : null;
@@ -1773,7 +1795,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 });
             }
 
-            if (keyPeople && plan_id === limited_access_plan_id) {
+            if (keyPeople && (plan_id != full_access_plan_id || is_lead_insight_allowed !== 1)) {
                 keyPeople = [];
             }
 
@@ -1972,8 +1994,8 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
 
                 allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-                const isLimited = (plan_id === limited_access_plan_id);
-                const slicedActivities = allActivities.slice(0, isLimited ? 2 : 10);
+                const isMasked = (plan_id != full_access_plan_id || is_lead_insight_allowed !== 1);
+                const slicedActivities = allActivities.slice(0, isMasked ? 2 : 10);
 
                 const truncatedActivityMap = {};
                 const activityTimeline = [];
