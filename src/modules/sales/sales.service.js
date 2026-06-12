@@ -197,8 +197,8 @@ export const getOemPlans = async (vendor_id) => {
       "brand_id",
       "vendor_id",
       "lead_plan_id",
-      ["total_lead", "total_credits"],
-      ["used_lead", "credits_used"],
+      "total_lead",
+      "used_lead",
       "start_date",
       "end_date",
       "impressions",
@@ -211,7 +211,7 @@ export const getOemPlans = async (vendor_id) => {
     include: [
       {
         model: LeadsPlan,
-        attributes: ["plan_name", "plan_type", "show_credits", "deliverables"],
+        attributes: ["plan_name", "plan_type", "show_credits", "deliverables", "total_lead"],
         required: false,
       },
       {
@@ -237,8 +237,8 @@ export const getOemPlans = async (vendor_id) => {
     brand_id: row.brand_id,
     vendor_id: row.vendor_id,
     lead_plan_id: row.lead_plan_id,
-    total_credits: row.total_credits,
-    credits_used: row.credits_used,
+    total_lead: row.LeadsPlan?.total_lead || 0,
+    used_lead: row.used_lead,
     start_date: row.start_date,
     end_date: row.end_date,
     impressions: row.impressions,
