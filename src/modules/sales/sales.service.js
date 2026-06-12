@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import sequelize from "../../db/connection.js";
 import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorLeadsTeam from "../../models/vendorLeadsTeam.model.js";
@@ -41,7 +42,7 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
   const transaction = await sequelize.transaction();
   try {
     const { profile_id, vendor_id } = authData;
-    const { plan_name, reminder_date, hour, minute } = postData;
+    const { plan_name, reminder_date, hour, minute, page_name, module_name } = postData;
 
     // 1. Fetch Vendor Data via ORM
     const vendorData = await VendorAuth.findOne({
@@ -161,11 +162,16 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
       reminder_datetime: `${reminder_date} ${hour}:${minute}`,
     });
 
+    let emailSubject = "New Paid Plan Request";
+    if (page_name) {
+      emailSubject = `New Paid Plan Request from ${page_name}`;
+    }
+
     await EmailQueue.create(
       {
         to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
         cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
-        subject: "New Paid Plan Request",
+        subject: emailSubject,
         body: emailBody,
         type: "plan_subscribe_request",
         app: "eseller",
@@ -177,6 +183,29 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
     );
 
     await transaction.commit();
+
+    // 7. Insert to MongoDB 'tracks' collection if from dashboard/product analytics
+    if (page_name) {
+      try {
+        const db = mongoose.connection?.db;
+        if (db) {
+          await db.collection("tracks").insertOne({
+            type: "eseller_request_callback",
+            page_name: page_name,
+            module: module_name || "",
+            schedule_time: reminder_datetime,
+            profile_id: profile_id,
+            name: `${vendorData.first_name} ${vendorData.last_name}`,
+            email: vendorData.email,
+            phone_no: vendorData.phone || vendorData.dial_code + " " + vendorData.phone,
+            created_at: new Date(),
+          });
+        }
+      } catch (mongoErr) {
+        console.error("Error inserting to MongoDB tracks:", mongoErr);
+      }
+    }
+
     return {
       message: "Subscribe Request Sent Successfully",
     };
