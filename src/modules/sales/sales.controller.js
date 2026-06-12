@@ -7,7 +7,7 @@ import { prepareOemPlansData } from "../../helpers/oemHelper.js";
 
 export const planSubscribeRequest = async (req, res) => {
   try {
-    const { plan_name, reminder_date, hour, minute } = req.body;
+    const { plan_name, reminder_date, hour, minute, page_name, module_name } = req.body;
     const { profile_id, vendor_id } = req.user;
 
     if (!reminder_date || !hour || !minute) {
@@ -18,7 +18,7 @@ export const planSubscribeRequest = async (req, res) => {
 
     const result = await handlePlanSubscribeRequest(
       { profile_id, vendor_id },
-      { plan_name, reminder_date, hour, minute }
+      { plan_name, reminder_date, hour, minute, page_name, module_name }
     );
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
