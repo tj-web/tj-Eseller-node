@@ -376,8 +376,52 @@ export const getReviewsData = async (vendor_id, query) => {
 
 export const handleGetProfileCompletion = async (vendor_id) => {
   try {
+    // Dynamically define association if not already present globally
+    if (!VendorBrandRelation.associations.Brand) {
+      VendorBrandRelation.belongsTo(Brand, { foreignKey: "tbl_brand_id", targetKey: "brand_id" });
+    }
+
+    // 1. Fetch valid brands strictly matching PHP's get_brands_details logic
+    const validBrandRelations = await VendorBrandRelation.findAll({
+      where: {
+        vendor_id: vendor_id,
+        tbl_brand_id: { [Op.ne]: 0 }
+      },
+      order: [
+        ["id", "DESC"]
+      ],
+      include: [
+        {
+          model: Brand,
+          attributes: ["brand_id", "brand_name", "image", "added_by", "added_by_id"],
+          where: {
+            status: 1,
+            show_status: 1,
+            is_deleted: 0,
+          },
+          required: true,
+        }
+      ]
+    });
+
+    const validBrandIds = validBrandRelations
+      .filter(vbr => vbr.status === 1 || (vbr.Brand?.added_by === 'vendor' && vbr.Brand?.added_by_id === vendor_id))
+      .map(vbr => vbr.tbl_brand_id);
+
+    if (validBrandIds.length === 0) {
+      return []; // Return early if no valid brands
+    }
+
     const matrix = await VendorParticularMatrix.findAll({
-      where: { vendor_id, status: 1 },
+      where: { 
+        vendor_id, 
+        status: 1,
+        brand_id: { [Op.in]: validBrandIds }
+      },
+      order: [
+        ["brand_id", "DESC"],
+        ["particular_id", "ASC"],
+      ],
       include: [
         {
           model: VendorParticular,
@@ -405,7 +449,7 @@ export const handleGetProfileCompletion = async (vendor_id) => {
       ],
     });
 
-    return matrix;
+    return { brands: validBrandRelations, matrix };
   } catch (error) {
     throw error;
   }
