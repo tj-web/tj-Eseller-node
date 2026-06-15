@@ -552,7 +552,7 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
                     {
                         model: TblProduct,
                         as: 'product',
-                        attributes: ['slug', 'lead_model_type'],
+                        attributes: ['product_id', 'slug', 'lead_model_type'],
                         required: false
                     },
                     {
@@ -610,14 +610,15 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
         demoJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
         let is_lead_insight_allowed = 0;
-        if (insightPermission.allowed && pi_id && lead.product_id) {
+        const resolvedProductId = lead.product_id || (lead.product ? lead.product.product_id : null);
+        if (insightPermission.allowed && pi_id && resolvedProductId && leadInsightPlan && leadInsightPlan.lead_plan_id == 38) {
             const resultCount = await sequelize.query(`
                 SELECT COUNT(1) as count 
                 FROM oms_pi_details opd
                 INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
                 WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
             `, {
-                replacements: { pi_id, product_id: lead.product_id },
+                replacements: { pi_id, product_id: resolvedProductId },
                 type: QueryTypes.SELECT
             });
             is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
@@ -1626,9 +1627,9 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         }
 
         let is_lead_insight_allowed = 0;
-        if (planDetails && planDetails.dataValues && planDetails.dataValues.pi_id && lead.product_name) {
+        if (planDetails && planDetails.id && lead.product_name && planDetails.lead_plan_id == 38) {
             // Need product_id from TblProduct since lead only has product_name or we can join
-            const product = await TblProduct.findOne({ where: { product_name: lead.product_name }, attributes: ['product_id']});
+            const product = await TblProduct.findOne({ where: { product_name: lead.product_name }, attributes: ['product_id'] });
             if (product) {
                 const resultCount = await sequelize.query(`
                     SELECT COUNT(1) as count 
@@ -1636,7 +1637,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
                     WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
                 `, {
-                    replacements: { pi_id: planDetails.dataValues.pi_id, product_id: product.product_id },
+                    replacements: { pi_id: planDetails.id, product_id: product.product_id },
                     type: sequelize.QueryTypes.SELECT
                 });
                 is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
@@ -1764,7 +1765,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 raw: true
             });
 
-            if (company && (plan_id != full_access_plan_id || is_lead_insight_allowed !== 1)) {
+            if (company && is_lead_insight_allowed !== 1) {
                 company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
                 company.website = company.website ? "********" : null;
                 company.linkedin = company.linkedin ? "********" : null;
@@ -1795,7 +1796,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 });
             }
 
-            if (keyPeople && (plan_id != full_access_plan_id || is_lead_insight_allowed !== 1)) {
+            if (keyPeople && is_lead_insight_allowed !== 1) {
                 keyPeople = [];
             }
 
@@ -1994,7 +1995,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
 
                 allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-                const isMasked = (plan_id != full_access_plan_id || is_lead_insight_allowed !== 1);
+                const isMasked = is_lead_insight_allowed !== 1;
                 const slicedActivities = allActivities.slice(0, isMasked ? 2 : 10);
 
                 const truncatedActivityMap = {};
