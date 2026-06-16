@@ -381,7 +381,7 @@ export const handleGetProfileCompletion = async (vendor_id) => {
       VendorBrandRelation.belongsTo(Brand, { foreignKey: "tbl_brand_id", targetKey: "brand_id" });
     }
 
-    // 1. Fetch valid brands strictly matching PHP's get_brands_details logic via exact SQL translation
+    // 1. Fetch valid brands strictly matching PHP's get_brands_details logic
     const validBrandRelations = await VendorBrandRelation.findAll({
       where: {
         vendor_id: vendor_id,
