@@ -385,7 +385,14 @@ export const handleGetProfileCompletion = async (vendor_id) => {
     const validBrandRelations = await VendorBrandRelation.findAll({
       where: {
         vendor_id: vendor_id,
-        tbl_brand_id: { [Op.ne]: 0 }
+        tbl_brand_id: { [Op.ne]: 0 },
+        [Op.or]: [
+          { status: 1 },
+          {
+            "$Brand.added_by$": "vendor",
+            "$Brand.added_by_id$": vendor_id
+          }
+        ]
       },
       order: [
         ["id", "DESC"]
@@ -404,17 +411,15 @@ export const handleGetProfileCompletion = async (vendor_id) => {
       ]
     });
 
-    const validBrandIds = validBrandRelations
-      .filter(vbr => vbr.status === 1 || (vbr.Brand?.added_by === 'vendor' && vbr.Brand?.added_by_id === vendor_id))
-      .map(vbr => vbr.tbl_brand_id);
+    const validBrandIds = validBrandRelations.map(vbr => vbr.tbl_brand_id);
 
     if (validBrandIds.length === 0) {
       return []; // Return early if no valid brands
     }
 
     const matrix = await VendorParticularMatrix.findAll({
-      where: { 
-        vendor_id, 
+      where: {
+        vendor_id,
         status: 1,
         brand_id: { [Op.in]: validBrandIds }
       },
