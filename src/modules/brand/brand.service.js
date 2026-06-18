@@ -628,7 +628,7 @@ export const handleUpdateBrand = async (brand_id, body, file, vendor_id, profile
           action_by: profile_id,
           table_name: isCore ? "tbl_brand" : "tbl_brand_info",
           column_name: col,
-          p_key: isCore ? "brand_id" : "id",
+          p_key: isCore ? "brand_id" : "tbl_brand_id",
           updated_column_value: values.new !== null && values.new !== undefined ? values.new.toString() : "",
           linked_attribute: "",
           item_updated_id: brand_id,
