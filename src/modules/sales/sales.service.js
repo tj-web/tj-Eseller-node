@@ -62,9 +62,9 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
     }
 
     const reminder_datetime = `${reminder_date} ${hour}:${minute}:00`;
-    const actual_plan_name = plan_name || "Upgrade Now";
+    const actual_plan_name = plan_name || "";
 
-    const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Selected Date and Time by User: ${reminder_datetime}`;
+    const notes = `Vendor Remark: <br /> Plan name: ${actual_plan_name} <br /> Page Name: ${page_name} <br /> Module Name: ${module_name} <br />  Profile ID: ${profile_id} <br /> Name: ${vendorData.first_name} ${vendorData.last_name} <br /> Email: ${vendorData.email} <br /> Phone No.: ${vendorData.phone} <br /> Scheduled Time: ${reminder_datetime}`;
 
     // 2. Determine Account Manager (adSales_AM)
     // First, check if a lead already exists for this vendor to reuse the AM organically
@@ -184,27 +184,27 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
 
     await transaction.commit();
 
-    // 7. Insert to MongoDB 'tracks' collection if from dashboard/product analytics
-    if (page_name) {
-      try {
-        const db = mongoose.connection?.db;
-        if (db) {
-          await db.collection("tracks").insertOne({
-            type: "eseller_request_callback",
-            page_name: page_name,
-            module: module_name || "",
-            schedule_time: reminder_datetime,
-            profile_id: profile_id,
-            name: `${vendorData.first_name} ${vendorData.last_name}`,
-            email: vendorData.email,
-            phone_no: vendorData.phone || vendorData.dial_code + " " + vendorData.phone,
-            created_at: new Date(),
-          });
-        }
-      } catch (mongoErr) {
-        console.error("Error inserting to MongoDB tracks:", mongoErr);
-      }
-    }
+    //  Insert to MongoDB 'tracks' collection if from dashboard/product analytics
+    // if (page_name) {
+    //   try {
+    //     const db = mongoose.connection?.db;
+    //     if (db) {
+    //       await db.collection("tracks").insertOne({
+    //         type: "eseller_request_callback",
+    //         page_name: page_name,
+    //         module: module_name || "",
+    //         schedule_time: reminder_datetime,
+    //         profile_id: profile_id,
+    //         name: `${vendorData.first_name} ${vendorData.last_name}`,
+    //         email: vendorData.email,
+    //         phone_no: vendorData.phone || vendorData.dial_code + " " + vendorData.phone,
+    //         created_at: new Date(),
+    //       });
+    //     }
+    //   } catch (mongoErr) {
+    //     console.error("Error inserting to MongoDB tracks:", mongoErr);
+    //   }
+    // }
 
     return {
       message: "Subscribe Request Sent Successfully",
