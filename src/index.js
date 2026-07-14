@@ -2,6 +2,7 @@ import sequelize from "./db/connection.js";
 import app from "./app.js";
 import dotenv from "dotenv";
 import connectMongo from "./db/mongo.js";
+import { getChannel } from "./config/rabbitmq.config.js";
 dotenv.config({ debug: false });
 
 const connectDB = async () => {
@@ -17,6 +18,7 @@ const connectDB = async () => {
 const startServer = async () => {
   await connectDB();
   await connectMongo();
+  await getChannel();
 
   const PORT = process.env.BASE_PORT || 5002;
 

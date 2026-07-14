@@ -23,6 +23,8 @@ import VendorAuth from "../../models/vendorAuth.model.js";
 import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
+import { produceToQueue } from "../../config/rabbitmq.producer.js";
+import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "../../config/constants.js";
 
 export const handleResetPassword = async (token, newPassword) => {
   const record = await PasswordReset.findOne({
@@ -151,6 +153,25 @@ export const handleForgotPassword = async (email) => {
     created_at: new Date(),
     updated_at: new Date(),
   });
+
+  await produceToQueue(
+    EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
+    {
+      messageId: generateMessageId(),
+      source: "techjockey",
+      priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
+      rawHtml: emailBody,
+      subject: "Reset Password",
+      email_type: "forget_password",
+      recipient: { to: normalizedEmail },
+      sender: {
+        name: "Techjockey",
+        email: process.env.NOREPLY_EMAIL,
+        replyTo: process.env.NOREPLY_EMAIL,
+      },
+    },
+    EMAIL_DLQ_NAME
+  );
 
   return true;
 };

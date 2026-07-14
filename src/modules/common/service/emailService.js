@@ -5,6 +5,8 @@ import VendorAuth from "../../../models/vendorAuth.model.js";
 import sequelize from "../../../db/connection.js";
 import { AppError } from "../../../utilis/appError.js";
 import { renderTemplate } from "../../../helpers/emailHelper.js";
+import { produceToQueue } from "../../../config/rabbitmq.producer.js";
+import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "../../../config/constants.js";
 
 
 export const sendVerificationEmail = async (
@@ -41,6 +43,28 @@ export const sendVerificationEmail = async (
     },
     { transaction },
   );
+
+  await produceToQueue(
+    EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
+    {
+      messageId: generateMessageId(),
+      source: "techjockey",
+      priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
+      rawHtml: body,
+      subject: "Verify your email",
+      email_type: "email_verification",
+      recipient: {
+        to: email,
+        cc: "support@techjockey.com",
+      },
+      sender: {
+        name: "Techjockey",
+        email: process.env.NOREPLY_EMAIL,
+        replyTo: process.env.NOREPLY_EMAIL,
+      },
+    },
+    EMAIL_DLQ_NAME
+  );
 };
 
 export const sendAdminNotification = async (
@@ -73,6 +97,27 @@ export const sendAdminNotification = async (
       updated_at: new Date(),
     },
     { transaction },
+  );
+
+  await produceToQueue(
+    EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
+    {
+      messageId: generateMessageId(),
+      source: "techjockey",
+      priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
+      rawHtml: body,
+      subject: "Vendor Registration",
+      email_type: "admin_verification",
+      recipient: {
+        to: process.env.ADMIN_EMAIL,
+      },
+      sender: {
+        name: "Techjockey",
+        email: process.env.NOREPLY_EMAIL,
+        replyTo: process.env.NOREPLY_EMAIL,
+      },
+    },
+    EMAIL_DLQ_NAME
   );
 };
 
@@ -153,6 +198,29 @@ export const queueEmail = async ({
       },
       transaction ? { transaction } : {}
     );
+
+    await produceToQueue(
+      EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
+      {
+        messageId: generateMessageId(),
+        source: "techjockey",
+        priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
+        rawHtml: body,
+        subject,
+        email_type: type,
+        recipient: {
+          to,
+          cc,
+        },
+        sender: {
+          name: "Techjockey",
+          email: process.env.NOREPLY_EMAIL,
+          replyTo: process.env.NOREPLY_EMAIL,
+        },
+      },
+      EMAIL_DLQ_NAME
+    );
+    
 
     return true;
   } catch (error) {

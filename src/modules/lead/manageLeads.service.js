@@ -28,6 +28,8 @@ import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 
 import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
+import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "../../config/constants.js";
+import { produceToQueue } from "../../config/rabbitmq.producer.js";
 
 const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
@@ -2107,6 +2109,27 @@ export const unlockLeadInsights = async (vendor_id, data) => {
             created_at: createdAtStr,
             updated_at: createdAtStr
         });
+
+        await produceToQueue(
+          EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
+          {
+            messageId: generateMessageId(),
+            source: "techjockey",
+            priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
+            rawHtml: emailBody,
+            subject: `New Interest in Unlock Lead Insights from ${company}`,
+            email_type: "lead_insight_interest",
+            recipient: {
+              to: toEmail,
+            },
+            sender: {
+              name: "Techjockey",
+              email: process.env.NOREPLY_EMAIL,
+              replyTo: process.env.NOREPLY_EMAIL,
+            },
+          },
+          EMAIL_DLQ_NAME
+        );
 
         return { status: true, message: 'Thank you for your interest! Our team will contact you shortly.' };
     } catch (err) {

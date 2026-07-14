@@ -11,6 +11,8 @@ import VendorDetails from "../../models/vendorDetail.model.js";
 import VendorTeams from "../../models/vendorTeams.model.js";
 import VendorUserTeam from "../../models/vendorUserTeam.model.js";
 import { AppError } from "../../utilis/appError.js";
+import { produceToQueue } from "../../config/rabbitmq.producer.js";
+import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "../../config/constants.js";
 
 // Define Associations needed for planSubscribeRequestService
 VendorAuth.hasOne(VendorDetails, {
@@ -437,6 +439,27 @@ export const planSubscribeRequestService = async (authData, postData) => {
     );
 
     await transaction.commit();
+    await produceToQueue(
+      EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
+      {
+        messageId: generateMessageId(),
+        source: "techjockey",
+        priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
+        rawHtml: emailBody,
+        subject: "New Paid Plan Request - API Integration",
+        email_type: "plan_subscribe_request",
+        recipient: {
+          to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
+          cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
+        },
+        sender: {
+          name: "Techjockey",
+          email: process.env.NOREPLY_EMAIL,
+          replyTo: process.env.NOREPLY_EMAIL,
+        },
+      },
+      EMAIL_DLQ_NAME
+    );
     return {
       message: "API Integration Request Sent Successfully",
     };
