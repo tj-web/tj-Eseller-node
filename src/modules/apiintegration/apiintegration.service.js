@@ -178,16 +178,54 @@ export const handleCreateWebhook = async ({
   };
 };
 
+const buildAuthRequestConfig = (auth_type, credentials = {}) => {
+  const headers = { "Content-Type": "application/json" };
+  let auth;
+
+  switch (auth_type) {
+    case "Basic Auth":
+      auth = {
+        username: credentials.username || "",
+        password: credentials.password || "",
+      };
+      break;
+    case "API Key":
+      headers["x-api-key"] = credentials.api_key || "";
+      break;
+    case "Bearer Token":
+      headers["Authorization"] = `Bearer ${credentials.bearer_token || ""}`;
+      break;
+    case "OAuth 2.0":
+      auth = {
+        username: credentials.client_id || "",
+        password: credentials.client_secret || "",
+      };
+      break;
+    default:
+      break;
+  }
+
+  return { headers, auth };
+};
+
 export const handleverifyWebhook = async ({ vendor_id, webhook_url, auth_type, credentials, fields }) => {
   if (!webhook_url) {
     throw new Error("webhook_url is required");
   }
 
   try {
-    const response = await axios.get(webhook_url, {
-      timeout: 10000,
-      validateStatus: () => true,
-    });
+    const { headers, auth } = buildAuthRequestConfig(auth_type, credentials);
+
+    const response = await axios.post(
+      webhook_url,
+      { event: "test_connection", fields: Array.isArray(fields) ? fields : [] },
+      {
+        timeout: 10000,
+        validateStatus: () => true,
+        headers,
+        auth,
+      }
+    );
 
     const isOk = response.status >= 200 && response.status < 300;
 
