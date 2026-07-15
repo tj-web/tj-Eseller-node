@@ -233,6 +233,7 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
       message: "Subscribe Request Sent Successfully",
     };
   } catch (error) {
+    console.log(error);
     if (transaction) await transaction.rollback();
     throw error;
   }
