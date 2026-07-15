@@ -15,8 +15,7 @@ import Product from "../../models/product.model.js";
 import { fn, col, literal } from "sequelize";
 import { AppError } from "../../utilis/appError.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
-import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "../../config/constants.js";
-import { produceToQueue } from "../../config/rabbitmq.producer.js";
+import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
 
 // Define Associations
 VendorAuth.hasOne(VendorDetails, {
@@ -186,27 +185,13 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
 
     await transaction.commit();
 
-    await produceToQueue(
-      EMAIL_QUEUE_PRIORITY.NORMAL.routingKey,
-      {
-        messageId: generateMessageId(),
-        source: "techjockey",
-        priority: EMAIL_QUEUE_PRIORITY.NORMAL.priority,
-        rawHtml: emailBody,
-        subject: emailSubject,
-        email_type: "plan_subscribe_request",
-        recipient: {
-          to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
-          cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
-        },
-        sender: {
-          name: "Techjockey",
-          email: process.env.NOREPLY_EMAIL,
-          replyTo: process.env.NOREPLY_EMAIL,
-        },
-      },
-      EMAIL_DLQ_NAME
-    );
+    await publishEmailToQueue({
+      rawHtml: emailBody,
+      subject: emailSubject,
+      emailType: "plan_subscribe_request",
+      to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
+      cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
+    });
 
     //  Insert to MongoDB 'tracks' collection if from dashboard/product analytics
     // if (page_name) {
