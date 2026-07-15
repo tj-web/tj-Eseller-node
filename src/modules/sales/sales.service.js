@@ -16,6 +16,7 @@ import { fn, col, literal } from "sequelize";
 import { AppError } from "../../utilis/appError.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
 import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "../../config/constants.js";
+import { produceToQueue } from "../../config/rabbitmq.producer.js";
 
 // Define Associations
 VendorAuth.hasOne(VendorDetails, {
@@ -233,7 +234,6 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
       message: "Subscribe Request Sent Successfully",
     };
   } catch (error) {
-    console.log(error);
     if (transaction) await transaction.rollback();
     throw error;
   }
