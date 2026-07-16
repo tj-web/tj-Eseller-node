@@ -84,7 +84,7 @@ const getVendorInsightPermission = async (vendor_id) => {
     }
 
     const activePlan = await OmsPiDetail.findOne({
-        attributes: ['id', 'pi_status'],
+        attributes: ['id', 'pi_status', 'end_date'],
         where: {
             vendor_id: vendor_id,
             plan_type: 'leadinsight'
@@ -93,6 +93,11 @@ const getVendorInsightPermission = async (vendor_id) => {
     });
 
     if (!activePlan || activePlan.pi_status !== 3) {
+        return { allowed: false, productIds: [] };
+    }
+
+    const currentDate = new Date().toISOString().split('T')[0];
+    if (activePlan.end_date && new Date(activePlan.end_date).toISOString().split('T')[0] < currentDate) {
         return { allowed: false, productIds: [] };
     }
 
@@ -1628,7 +1633,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         }
 
         let is_lead_insight_allowed = 0;
-        if (planDetails && planDetails.id && lead.product_name && planDetails.lead_plan_id == 38) {
+        if (planDetails && planDetails.id && lead.product_name && plan_id == 38) {
             // Need product_id from TblProduct since lead only has product_name or we can join
             const product = await TblProduct.findOne({ where: { product_name: lead.product_name }, attributes: ['product_id'] });
             if (product) {
