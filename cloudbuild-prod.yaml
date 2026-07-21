@@ -27,10 +27,10 @@ steps:
       BUCKET=gs://prod-cloudbuild-artifact-bucket
 
       echo "Saving current artifact as previous version"
-      gsutil cp $$BUCKET/tj-Eseller-node/release.tar.gz $$BUCKET/tj-Eseller-node/release_previous.tar.gz || true
+      gsutil cp $$BUCKET/tj-eseller-node/release.tar.gz $$BUCKET/tj-eseller-node/release_previous.tar.gz || true
 
       echo "Uploading new release"
-      gsutil cp release.tar.gz $$BUCKET/tj-Eseller-node/release.tar.gz
+      gsutil cp release.tar.gz $$BUCKET/tj-eseller-node/release.tar.gz
 
 # 3️⃣ Deploy to VM
 - name: gcr.io/cloud-builders/gcloud
@@ -64,19 +64,19 @@ steps:
 
           echo "Deployment failed. Rolling back using previous artifact..."
           cd /home/ubuntu
-          rm -rf /home/ubuntu/tj-Eseller-node
-          mkdir -p /home/ubuntu/tj-Eseller-node
+          rm -rf /home/ubuntu/tj-eseller-node
+          mkdir -p /home/ubuntu/tj-eseller-node
 
           echo "Downloading previous release"
-          cd /home/ubuntu/tj-Eseller-node
-          gsutil cp gs://prod-cloudbuild-artifact-bucket/tj-Eseller-node/release_previous.tar.gz .
+          cd /home/ubuntu/tj-eseller-node
+          gsutil cp gs://prod-cloudbuild-artifact-bucket/tj-eseller-node/release_previous.tar.gz .
 
           echo "Extracting previous release"
-          tar -xzf release_previous.tar.gz -C /home/ubuntu/tj-Eseller-node
+          tar -xzf release_previous.tar.gz -C /home/ubuntu/tj-eseller-node
           rm -f release_previous.tar.gz
 
           echo "Restarting previous version"
-          sudo bash /home/ubuntu/tj-Eseller-node/deploy/code-deploy/app_start.sh
+          sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_start.sh
 
           echo "Rollback completed"
         }
@@ -84,28 +84,28 @@ steps:
         trap rollback ERR
 
         echo "Stopping existing containers"
-        if [ -f /home/ubuntu/tj-Eseller-node/deploy/code-deploy/app_stop.sh ]; then
-          sudo bash /home/ubuntu/tj-Eseller-node/deploy/code-deploy/app_stop.sh || true
+        if [ -f /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_stop.sh ]; then
+          sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_stop.sh || true
         fi
 
         echo "Preparing deployment directory"
-        sudo rm -rf /home/ubuntu/tj-Eseller-node
-        sudo mkdir -p /home/ubuntu/tj-Eseller-node
-        sudo chown ubuntu:ubuntu /home/ubuntu/tj-Eseller-node
-        cd /home/ubuntu/tj-Eseller-node
+        sudo rm -rf /home/ubuntu/tj-eseller-node
+        sudo mkdir -p /home/ubuntu/tj-eseller-node
+        sudo chown ubuntu:ubuntu /home/ubuntu/tj-eseller-node
+        cd /home/ubuntu/tj-eseller-node
 
         echo "Downloading new artifact"
-        gsutil cp gs://prod-cloudbuild-artifact-bucket/tj-Eseller-node/release.tar.gz .
+        gsutil cp gs://prod-cloudbuild-artifact-bucket/tj-eseller-node/release.tar.gz .
 
         echo "Extracting release"
         tar -xzf release.tar.gz
         rm -f release.tar.gz
 
         echo "Starting application"
-        sudo bash /home/ubuntu/tj-Eseller-node/deploy/code-deploy/app_start.sh
+        sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_start.sh
 
         echo "Waiting for health check to pass..."
-        sudo bash /home/ubuntu/tj-Eseller-node/deploy/code-deploy/health_status.sh
+        sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/health_status.sh
         '
       done
 

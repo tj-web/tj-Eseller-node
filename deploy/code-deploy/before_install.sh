@@ -1,4 +1,4 @@
-if [ -d /home/ubuntu/tj-Eseller-node ]; then
-    rm -rf /home/ubuntu/tj-Eseller-node
+if [ -d /home/ubuntu/tj-eseller-node ]; then
+    rm -rf /home/ubuntu/tj-eseller-node
 fi
-mkdir /home/ubuntu/tj-Eseller-node
+mkdir /home/ubuntu/tj-eseller-node

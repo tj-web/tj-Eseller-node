@@ -1,10 +1,10 @@
 services:
-  tj-Eseller-node:
+  tj-eseller-node:
     restart: always
     build:
       context: ./
       dockerfile: ./deploy/docker-config/Dockerfile
-    container_name: tj-Eseller-node
+    container_name: tj-eseller-node
     ports:
       - "5002:5002"
     environment:

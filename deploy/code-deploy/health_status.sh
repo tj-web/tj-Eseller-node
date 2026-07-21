@@ -1,6 +1,6 @@
 #!/bin/bash
 # Logic to monitor container health
-APP_CONTAINER='tj-Eseller-node'
+APP_CONTAINER='tj-eseller-node'
 MAX_RETRIES=18
 RETRY_COUNT=0
 
