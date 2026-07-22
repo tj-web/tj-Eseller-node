@@ -1,9 +1,13 @@
-import AWS from "aws-sdk";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_KEY,
-  secretAccessKey: process.env.AWS_SECRET,
-  region: process.env.AWS_REGION,
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || "auto",
+  endpoint: "https://storage.googleapis.com",
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: process.env.AWS_KEY, // GCS HMAC access ID
+    secretAccessKey: process.env.AWS_SECRET, // GCS HMAC secret
+  },
 });
 
 export const uploadFileToS3 = async function (fileObj) {
@@ -11,19 +15,27 @@ export const uploadFileToS3 = async function (fileObj) {
     throw new Error("S3 key is required");
   }
 
-  const params = {
+  const command = new PutObjectCommand({
     Bucket: process.env.AWS_BUCKET,
-
     Key: fileObj.key,
-
     Body: fileObj.buffer,
-    ContentType: fileObj.mimetype,
-    ACL: "public-read",
-  };
+    ...(fileObj.mimetype && { ContentType: fileObj.mimetype }),
+  });
 
-  const awsResponse = await s3.upload(params).promise();
+  await s3.send(command);
 
-  const fileUrl = `${process.env.AWS_PATH}${fileObj.originalname}`;
-  return awsResponse?.Location ?? "";
+  return getUrl(fileObj.key);
 };
 
+export function getUrl(key) {
+  return `${process.env.AWS_PATH}${key}`;
+}
+
+export async function download(key) {
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_BUCKET,
+    Key: key,
+  });
+
+  return await s3.send(command);
+}
