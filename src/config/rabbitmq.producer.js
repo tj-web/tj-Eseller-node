@@ -4,6 +4,8 @@ import { EMAIL_DLQ_NAME, EMAIL_QUEUE_PRIORITY, generateMessageId } from "./const
 export const produceToQueue = async (queueName, payload, dlqQueueName = "") => {
   try {
     const channel = await getChannel();
+    if (!channel) throw new Error("RabbitMQ is unavailable");
+
     let queueOptions = { durable: true };
 
     if (dlqQueueName)
