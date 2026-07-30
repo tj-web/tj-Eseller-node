@@ -196,3 +196,19 @@ export const getCompetiterInsights = async (req, res, next) => {
         next(error);
     }
 }
+
+export const getMapData = async (req, res, next) => {
+    try {
+        const vendor_id = req.user.vendor_id;
+        const { type } = req.query;
+
+        if (!type || (type !== 'state' && type !== 'city')) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError("Invalid type parameter. Must be 'state' or 'city'."));
+        }
+
+        const results = await leadActions.getMapData(vendor_id, type);
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Map data fetched successfully", results));
+    } catch (error) {
+        next(error);
+    }
+};
