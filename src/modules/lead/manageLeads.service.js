@@ -2639,3 +2639,49 @@ export const getCustomerRelatedGuuids = async (customerId) => {
         return [];
     }
 };
+
+/**
+ * Get map data (leads grouped by state or city)
+ */
+export const getMapData = async (vendor_id, type) => {
+    try {
+        let query = "";
+        
+        if (type === 'state') {
+            query = `
+                SELECT l.state as name, COUNT(*) as value
+                FROM tbl_leads l
+                JOIN tbl_state_master s ON l.state = s.state_name
+                WHERE l.vendor_id = :vendor_id
+                  AND s.countries_id = 99
+                  AND l.state IS NOT NULL
+                  AND l.state != ''
+                  AND (l.lead_visibility = 1 OR (l.lead_visibility = 0 AND l.is_trashed = 1))
+                GROUP BY l.state
+            `;
+        } else if (type === 'city') {
+            query = `
+                SELECT l.city as name, l.state as state, COUNT(*) as value
+                FROM tbl_leads l
+                JOIN tbl_state_master s ON l.state = s.state_name
+                WHERE l.vendor_id = :vendor_id
+                  AND s.countries_id = 99
+                  AND l.city IS NOT NULL
+                  AND l.city != ''
+                  AND l.state IS NOT NULL
+                  AND l.state != ''
+                  AND (l.lead_visibility = 1 OR (l.lead_visibility = 0 AND l.is_trashed = 1))
+                GROUP BY l.state, l.city
+            `;
+        }
+
+        const results = await sequelize.query(query, {
+            replacements: { vendor_id },
+            type: QueryTypes.SELECT
+        });
+
+        return results;
+    } catch (error) {
+        throw new AppError(error.message, StatusCodes.INTERNAL_SERVER_ERROR);
+    }
+};
