@@ -274,6 +274,10 @@ const OmsPiDetail = sequelize.define(
       type: DataTypes.STRING(191),
       allowNull: true,
     },
+    profile_visits: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: true,
