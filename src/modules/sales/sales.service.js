@@ -240,7 +240,8 @@ export const getOemPlans = async (vendor_id) => {
       "start_date",
       "end_date",
       "impressions",
-      "clicks"
+      "clicks",
+      "profile_visits"
     ],
     where: {
       vendor_id: vendor_id,
@@ -281,6 +282,7 @@ export const getOemPlans = async (vendor_id) => {
     end_date: row.end_date,
     impressions: row.impressions,
     clicks: row.clicks,
+    profile_visits: row.profile_visits || 0,
     plan_name: row.LeadsPlan?.plan_name || null,
     plan_type: row.LeadsPlan?.plan_type || null,
     show_credits: row.LeadsPlan?.show_credits ?? null,
