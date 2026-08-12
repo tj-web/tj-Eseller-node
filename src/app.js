@@ -58,7 +58,7 @@ app.use(`${API_PREFIX}/company-information`, authenticate, vendorModeMiddleware,
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/leads`, authenticate, vendorModeMiddleware, leadsRoutes);
 app.use(`${API_PREFIX}/sales`, authenticate, vendorModeMiddleware, salesRoutes);
-app.use(`${API_PREFIX}/apiintegration`, authenticate, vendorModeMiddleware, apiIntegrationRoutes);
+app.use(`${API_PREFIX}/apiintegration`, apiIntegrationRoutes);
 
 // Authentication is applied to specific routes within authRoutes if needed
 
