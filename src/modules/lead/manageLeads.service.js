@@ -1383,6 +1383,7 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
                 await CompaniesEmployees.create({
                     company_id: companyDetails.company_id || null,
                     emp_name: employee.emp_name || "",
+                    emp_email: employee?.emp_email || "",
                     linkedin_id: employee.linkedin_url || "",
                     twitter_id: employee.twitter_id || "",
                     photo: employee.photo || "",
