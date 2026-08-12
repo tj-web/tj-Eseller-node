@@ -9,6 +9,7 @@ import VendorAuth from "../../models/vendorAuth.model.js";
 import EmailQueue from "../../models/emailQueue.model.js";
 import sequelize from "../../db/connection.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
+import { getDeterministicBuyerActivityTimeline } from "../../helpers/buyerActivityHelper.js";
 import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
@@ -1589,6 +1590,239 @@ export const hasRecentSubmission = async (vendor_id) => {
 
 
 /**
+ * Fetches buyer activity timeline from MongoDB tracks for website leads.
+ */
+export const getWebsiteBuyerActivity = async (lead, vendor_id, lead_id, is_lead_insight_allowed) => {
+    try {
+        const db = mongoose.connection?.db;
+        if (!db) {
+            return { customer_activity_details: {}, activity: [] };
+        }
+        const tracksCollection = db.collection('tracks');
+
+        let guuids = [];
+        const fetchGuuids = async (customerIdType) => {
+            const guuidPipeline = [
+                { $match: { 'feeds.customer_id': { $in: [customerIdType] } } },
+                { $project: { 'feeds.guuid': 1, 'feeds.created_at': 1, 'feeds.customer_id': 1 } },
+                { $unwind: '$feeds' },
+                { $match: { 'feeds.customer_id': { $in: [customerIdType] }, 'feeds.guuid': { $ne: null, $exists: true } } },
+                { $sort: { 'feeds.created_at': -1 } },
+                { $group: { _id: '$feeds.guuid', guuid: { $first: '$feeds.guuid' } } },
+                { $limit: 10 }
+            ];
+            const results = await tracksCollection.aggregate(guuidPipeline).toArray();
+            return results.map(r => r.guuid);
+        };
+
+        guuids = await fetchGuuids(String(lead.customer_id));
+        if (guuids.length === 0 && !isNaN(Number(lead.customer_id))) {
+            guuids = await fetchGuuids(Number(lead.customer_id));
+        }
+
+        let activities = [];
+        if (guuids.length > 0) {
+            const activityQuery = [
+                {
+                    $match: {
+                        $or: [
+                            { 'feeds.guuid': { $in: guuids } },
+                            { 'feeds.lead_id': Number(lead_id) },
+                            { 'feeds.lead_id': String(lead_id) }
+                        ]
+                    }
+                },
+                { $unwind: '$feeds' },
+                { $sort: { created_at: -1 } },
+                { $limit: 40 },
+                {
+                    $project: {
+                        _id: 0,
+                        guuid: '$feeds.guuid',
+                        page_url: '$feeds.page_url',
+                        feed_action: '$feeds.feed_action',
+                        page_info: '$feeds.page_info',
+                        formdata: '$feeds.formdata',
+                        product_info: '$feeds.product_info',
+                        lead_details: '$feeds.changes',
+                        created_at: '$created_at'
+                    }
+                }
+            ];
+            activities = await tracksCollection.aggregate(activityQuery).toArray();
+        }
+
+        const finalActivityMap = {};
+        for (const activity of activities) {
+            let assetName = '';
+            let assetType = '';
+            const feedAction = activity.feed_action;
+
+            const productId = activity.page_info?.product_id || activity.product_info?.product_id || activity.formdata?.product_id;
+            let productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name || activity.page_info?.title;
+            const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
+
+            let productVendorId = null;
+            if (productId || productName) {
+                try {
+                    if (!TblProduct.associations.vendorBrandRelations) {
+                        TblProduct.hasMany(VendorBrandRelation, { foreignKey: 'tbl_brand_id', sourceKey: 'brand_id', as: 'vendorBrandRelations' });
+                    }
+                    const productCondition = productId ? { product_id: productId } : { product_name: productName };
+                    const productDetailsResult = await TblProduct.findOne({
+                        attributes: ['product_name'],
+                        where: productCondition,
+                        include: [{
+                            model: VendorBrandRelation,
+                            as: 'vendorBrandRelations',
+                            attributes: ['vendor_id'],
+                            where: { status: 1, vendor_id: vendor_id },
+                            required: false
+                        }]
+                    });
+
+                    if (productDetailsResult) {
+                        if (productDetailsResult.vendorBrandRelations && productDetailsResult.vendorBrandRelations.length > 0) {
+                            productVendorId = productDetailsResult.vendorBrandRelations[0].vendor_id;
+                        }
+                        if (!productName) productName = productDetailsResult.product_name;
+                    }
+                } catch (err) {
+                    // Ignored
+                }
+            }
+
+            if (productName && productVendorId && String(productVendorId) === String(vendor_id)) {
+                assetName = productName;
+                assetType = 'Product';
+            } else if (categoryName) {
+                assetName = categoryName;
+                assetType = 'Category';
+            } else if (activity.page_info?.page_type === 'home' && feedAction === 'page_view' && /techjockey\.com\/$/.test(activity.page_url)) {
+                assetName = 'visited_home_page';
+                assetType = 'visited_home_page';
+            } else if (activity.formdata?.form_name === 'searchForm' && feedAction === 'form_submit') {
+                assetName = activity.formdata.keyword ? activity.formdata.keyword.replace(/\b\w/g, l => l.toUpperCase()) : 'Search';
+                assetType = 'searched_keyword';
+            }
+
+            if (assetName && feedAction && assetType) {
+                if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
+                if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
+                if (!finalActivityMap[assetType][assetName][feedAction]) {
+                    finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
+                }
+                finalActivityMap[assetType][assetName][feedAction].count++;
+            }
+        }
+
+        const getActivityByFeedAction = (asset_type, asset_name, activity_name, activity_count) => {
+            const countText = activity_count > 1 ? ` ${activity_count} times` : "";
+            let activity = "";
+            if (asset_type === 'searched_keyword' && activity_name === 'form_submit') {
+                activity = `Customer searched for "${asset_name}"${countText}`;
+            } else if (asset_type === 'visited_home_page' && activity_name === 'page_view') {
+                activity = `Customer visited Home Page${countText}`;
+            } else {
+                switch (activity_name) {
+                    case 'lead_created':
+                        activity = `Requested Demo for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    case 'page_view':
+                        activity = `Frequently revisited the ${asset_name} page${countText}`;
+                        break;
+                    case 'form_submit':
+                        activity = `Initiated call request for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    case 'checked_price':
+                        activity = `Checked pricing options for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    case 'add_to_cart':
+                        activity = `${asset_type} ${asset_name} has been added to the cart${countText}`;
+                        break;
+                    case 'add_to_wishlist':
+                        activity = `${asset_type} ${asset_name} has been added to wishlist${countText}`;
+                        break;
+                    case 'read_reviews':
+                        activity = `Read multiple product reviews for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    default:
+                        activity = `Customer expressed interest in ${asset_name} ${asset_type}${countText}`;
+                        break;
+                }
+            }
+            return activity;
+        };
+
+        const allActivities = [];
+        for (const assetType of Object.keys(finalActivityMap)) {
+            for (const assetName of Object.keys(finalActivityMap[assetType])) {
+                for (const feedAction of Object.keys(finalActivityMap[assetType][assetName])) {
+                    const details = finalActivityMap[assetType][assetName][feedAction];
+                    const text = getActivityByFeedAction(assetType, assetName, feedAction, details.count);
+                    if (text) {
+                        allActivities.push({
+                            assetType,
+                            assetName,
+                            feedAction,
+                            action: text,
+                            created_at: details.created_at,
+                            count: details.count
+                        });
+                    }
+                }
+            }
+        }
+
+        allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        const isMasked = is_lead_insight_allowed !== 1;
+        const slicedActivities = allActivities.slice(0, isMasked ? 2 : 10);
+
+        const truncatedActivityMap = {};
+        const activityTimeline = [];
+
+        for (const item of slicedActivities) {
+            if (!truncatedActivityMap[item.assetType]) truncatedActivityMap[item.assetType] = {};
+            if (!truncatedActivityMap[item.assetType][item.assetName]) truncatedActivityMap[item.assetType][item.assetName] = {};
+
+            truncatedActivityMap[item.assetType][item.assetName][item.feedAction] = {
+                count: item.count,
+                created_at: item.created_at
+            };
+
+            activityTimeline.push({
+                action: item.action,
+                created_at: item.created_at
+            });
+        }
+
+        return {
+            customer_activity_details: truncatedActivityMap,
+            activity: activityTimeline
+        };
+    } catch (mongoError) {
+        return { customer_activity_details: {}, activity: [] };
+    }
+};
+
+/**
+ * Fetches buyer activity timeline for Non-Website leads (e.g. Calls/ACD, CRM, Manual, Campaigns).
+ */
+export const getNonWebsiteBuyerActivity = async (lead, vendor_id, lead_id, is_lead_insight_allowed) => {
+    try {
+        const activityTimeline = await getDeterministicBuyerActivityTimeline(lead);
+
+        return {
+            customer_activity_details: {},
+            activity: activityTimeline
+        };
+    } catch (error) {
+        return { customer_activity_details: {}, activity: [] };
+    }
+};
+
+/**
  * Get lead insights with ownership verification.
  */
 export const getLeadInsights = async (vendor_id, lead_id) => {
@@ -1607,7 +1841,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         await verifyLeadOwnership(vendor_id, lead_id);
 
         let lead = await TblLeads.findByPk(lead_id, {
-            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state', 'is_contact_viewed']
+            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed']
         });
         if (!lead) return null;
 
@@ -1654,7 +1888,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             await fetchLeadInsightsData(lead_id, vendor_id);
             // Re-fetch lead since fetchLeadInsightsData might have updated company_id and leadinsight
             lead = await TblLeads.findByPk(lead_id, {
-                attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'created_at', 'city', 'state', 'is_contact_viewed']
+                attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed']
             });
             if (!lead) return null;
         }
@@ -1812,222 +2046,20 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         if (qIndustry) result.industry = qIndustry;
         if (qCompanySize) result.team_size = qCompanySize;
 
-        // 3. Fetch Buyer Activity Timeline from MongoDB
-        if (lead.customer_id) {
-            try {
-                const db = mongoose.connection?.db;
-                if (!db) {
-                    return result;
-                }
-                const tracksCollection = db.collection('tracks');
+        // 3. Fetch Buyer Activity Timeline (Website vs Non-Website)
+        const isWebsiteSource = ['website', 'web'].includes(String(lead.source || '').toLowerCase().trim());
 
-                let guuids = [];
-                const fetchGuuids = async (customerIdType) => {
-                    const guuidPipeline = [
-                        { $match: { 'feeds.customer_id': { $in: [customerIdType] } } },
-                        { $project: { 'feeds.guuid': 1, 'feeds.created_at': 1, 'feeds.customer_id': 1 } },
-                        { $unwind: '$feeds' },
-                        { $match: { 'feeds.customer_id': { $in: [customerIdType] }, 'feeds.guuid': { $ne: null, $exists: true } } },
-                        { $sort: { 'feeds.created_at': -1 } },
-                        { $group: { _id: '$feeds.guuid', guuid: { $first: '$feeds.guuid' } } },
-                        { $limit: 10 }
-                    ];
-                    const results = await tracksCollection.aggregate(guuidPipeline).toArray();
-                    return results.map(r => r.guuid);
-                };
-
-                guuids = await fetchGuuids(String(lead.customer_id));
-                if (guuids.length === 0 && !isNaN(Number(lead.customer_id))) {
-                    guuids = await fetchGuuids(Number(lead.customer_id));
-                }
-
-                let activities = [];
-                if (guuids.length > 0) {
-                    const activityQuery = [
-                        {
-                            $match: {
-                                $or: [
-                                    { 'feeds.guuid': { $in: guuids } },
-                                    { 'feeds.lead_id': Number(lead_id) },
-                                    { 'feeds.lead_id': String(lead_id) }
-                                ]
-                            }
-                        },
-                        { $unwind: '$feeds' },
-                        { $sort: { created_at: -1 } },
-                        { $limit: 40 },
-                        {
-                            $project: {
-                                _id: 0,
-                                guuid: '$feeds.guuid',
-                                page_url: '$feeds.page_url',
-                                feed_action: '$feeds.feed_action',
-                                page_info: '$feeds.page_info',
-                                formdata: '$feeds.formdata',
-                                product_info: '$feeds.product_info',
-                                lead_details: '$feeds.changes',
-                                created_at: '$created_at'
-                            }
-                        }
-                    ];
-                    activities = await tracksCollection.aggregate(activityQuery).toArray();
-                }
-                // Process activities to match timeline format
-                const finalActivityMap = {};
-                for (const activity of activities) {
-                    let assetName = '';
-                    let assetType = '';
-                    const feedAction = activity.feed_action;
-
-                    const productId = activity.page_info?.product_id || activity.product_info?.product_id || activity.formdata?.product_id;
-                    let productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name || activity.page_info?.title;
-                    const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
-
-                    let productVendorId = null;
-                    if (productId || productName) {
-                        try {
-                            if (!TblProduct.associations.vendorBrandRelations) {
-                                TblProduct.hasMany(VendorBrandRelation, { foreignKey: 'tbl_brand_id', sourceKey: 'brand_id', as: 'vendorBrandRelations' });
-                            }
-                            const productCondition = productId ? { product_id: productId } : { product_name: productName };
-                            const productDetailsResult = await TblProduct.findOne({
-                                attributes: ['product_name'],
-                                where: productCondition,
-                                include: [{
-                                    model: VendorBrandRelation,
-                                    as: 'vendorBrandRelations',
-                                    attributes: ['vendor_id'],
-                                    where: { status: 1, vendor_id: vendor_id },
-                                    required: false // We use false so we still get the product name even if this vendor doesn't sell it
-                                }]
-                            });
-
-                            if (productDetailsResult) {
-                                // If the relation exists, it means the current vendor sells it actively (status: 1)
-                                if (productDetailsResult.vendorBrandRelations && productDetailsResult.vendorBrandRelations.length > 0) {
-                                    productVendorId = productDetailsResult.vendorBrandRelations[0].vendor_id;
-                                }
-                                if (!productName) productName = productDetailsResult.product_name;
-                            }
-                        } catch (err) {
-                            // Ignored
-                        }
-                    }
-
-                    if (productName && productVendorId && String(productVendorId) === String(vendor_id)) {
-                        assetName = productName;
-                        assetType = 'Product';
-                    } else if (categoryName) {
-                        assetName = categoryName;
-                        assetType = 'Category';
-                    } else if (activity.page_info?.page_type === 'home' && feedAction === 'page_view' && /techjockey\.com\/$/.test(activity.page_url)) {
-                        assetName = 'visited_home_page';
-                        assetType = 'visited_home_page';
-                    } else if (activity.formdata?.form_name === 'searchForm' && feedAction === 'form_submit') {
-                        assetName = activity.formdata.keyword ? activity.formdata.keyword.replace(/\b\w/g, l => l.toUpperCase()) : 'Search';
-                        assetType = 'searched_keyword';
-                    }
-
-                    if (assetName && feedAction && assetType) {
-                        if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
-                        if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
-                        if (!finalActivityMap[assetType][assetName][feedAction]) {
-                            finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
-                        }
-                        finalActivityMap[assetType][assetName][feedAction].count++;
-                    }
-                }
-
-                /**
-                 * Formats activity text cleanly for React timeline.
-                 */
-                const getActivityByFeedAction = (asset_type, asset_name, activity_name, activity_count) => {
-                    const countText = activity_count > 1 ? ` ${activity_count} times` : "";
-                    let activity = "";
-                    if (asset_type === 'searched_keyword' && activity_name === 'form_submit') {
-                        activity = `Customer searched for "${asset_name}"${countText}`;
-                    } else if (asset_type === 'visited_home_page' && activity_name === 'page_view') {
-                        activity = `Customer visited Home Page${countText}`;
-                    } else {
-                        switch (activity_name) {
-                            case 'lead_created':
-                                activity = `Requested Demo for ${asset_name} ${asset_type}${countText}`;
-                                break;
-                            case 'page_view':
-                                activity = `Frequently revisited the ${asset_name} page${countText}`;
-                                break;
-                            case 'form_submit':
-                                activity = `Initiated call request for ${asset_name} ${asset_type}${countText}`;
-                                break;
-                            case 'checked_price':
-                                activity = `Checked pricing options for ${asset_name} ${asset_type}${countText}`;
-                                break;
-                            case 'add_to_cart':
-                                activity = `${asset_type} ${asset_name} has been added to the cart${countText}`;
-                                break;
-                            case 'add_to_wishlist':
-                                activity = `${asset_type} ${asset_name} has been added to wishlist${countText}`;
-                                break;
-                            case 'read_reviews':
-                                activity = `Read multiple product reviews for ${asset_name} ${asset_type}${countText}`;
-                                break;
-                            default:
-                                activity = `Customer expressed interest in ${asset_name} ${asset_type}${countText}`;
-                                break;
-                        }
-                    }
-                    return activity;
-                };
-
-                const allActivities = [];
-                for (const assetType of Object.keys(finalActivityMap)) {
-                    for (const assetName of Object.keys(finalActivityMap[assetType])) {
-                        for (const feedAction of Object.keys(finalActivityMap[assetType][assetName])) {
-                            const details = finalActivityMap[assetType][assetName][feedAction];
-                            const text = getActivityByFeedAction(assetType, assetName, feedAction, details.count);
-                            if (text) {
-                                allActivities.push({
-                                    assetType,
-                                    assetName,
-                                    feedAction,
-                                    action: text,
-                                    created_at: details.created_at,
-                                    count: details.count
-                                });
-                            }
-                        }
-                    }
-                }
-
-                allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-                const isMasked = is_lead_insight_allowed !== 1;
-                const slicedActivities = allActivities.slice(0, isMasked ? 2 : 10);
-
-                const truncatedActivityMap = {};
-                const activityTimeline = [];
-
-                for (const item of slicedActivities) {
-                    if (!truncatedActivityMap[item.assetType]) truncatedActivityMap[item.assetType] = {};
-                    if (!truncatedActivityMap[item.assetType][item.assetName]) truncatedActivityMap[item.assetType][item.assetName] = {};
-
-                    truncatedActivityMap[item.assetType][item.assetName][item.feedAction] = {
-                        count: item.count,
-                        created_at: item.created_at
-                    };
-
-                    activityTimeline.push({
-                        action: item.action,
-                        created_at: item.created_at
-                    });
-                }
-
-                result.customer_activity_details = truncatedActivityMap;
-                result.activity = activityTimeline;
-            } catch (mongoError) {
-                // Ignored
+        let activityResult = { customer_activity_details: {}, activity: [] };
+        if (isWebsiteSource) {
+            if (lead.customer_id) {
+                activityResult = await getWebsiteBuyerActivity(lead, vendor_id, lead_id, is_lead_insight_allowed);
             }
+        } else {
+            activityResult = await getNonWebsiteBuyerActivity(lead, vendor_id, lead_id, is_lead_insight_allowed);
         }
+
+        result.customer_activity_details = activityResult.customer_activity_details || {};
+        result.activity = activityResult.activity || [];
 
         const twoDaysAgo = new Date();
         twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
