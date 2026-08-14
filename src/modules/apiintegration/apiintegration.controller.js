@@ -1,6 +1,6 @@
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
-import { handleCreateWebhook, handleverifyWebhook, planSubscribeRequestService, handleUpdateLeadAction, handleGetLeadActionConfig, handleAddLeadRemark } from "./apiintegration.service.js";
+import { handleCreateWebhook, handleverifyWebhook, planSubscribeRequestService, handleUpdateLeadAction, handleGetLeadActionConfig, handleGetLeadStatusGuidReference, handleAddLeadRemark } from "./apiintegration.service.js";
 import sequelize from "../../db/connection.js";
 import { QueryTypes } from "sequelize";
 
@@ -185,6 +185,19 @@ export const getLeadActionConfig = async (req, res) => {
   }
 };
 
+export const getLeadStatusGuidReference = async (req, res) => {
+  try {
+    const leadStatusData = await handleGetLeadStatusGuidReference();
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Lead status GUID reference fetched successfully", leadStatusData));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to fetch lead status GUID reference"));
+  }
+};
+
 export const addLeadRemark = async (req, res) => {
   try {
     await handleAddLeadRemark(req.headers, req.body);
@@ -201,4 +214,4 @@ export const addLeadRemark = async (req, res) => {
   }
 };
 
-
+
