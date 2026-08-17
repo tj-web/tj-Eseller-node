@@ -1,6 +1,6 @@
 import axios from "axios";
 import sequelize from "../../db/connection.js";
-import { QueryTypes, fn, col, literal } from "sequelize";
+import { QueryTypes, fn, col, literal, Op } from "sequelize";
 import VendorWebhookAuth from "../../models/vendorWebhookAuth.model.js";
 import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorLeadsTeam from "../../models/vendorLeadsTeam.model.js";
@@ -614,6 +614,27 @@ export const handleGetLeadActionConfig = async (vendor_id) => {
   return {
     is_webhook_active: true
   };
+};
+
+export const handleGetLeadStatusGuidReference = async () => {
+  return LeadStatus.findAll({
+    attributes: [
+      "id",
+      [col("status_name"), "parent_status"],
+      [
+        literal("CASE WHEN `subaction_name` IS NOT NULL THEN `subaction_name` ELSE `lead_action_name` END"),
+        "sub_status",
+      ],
+      "lead_status_guid",
+    ],
+    where: {
+      status_name: { [Op.ne]: "new" },
+      source: { [Op.in]: [1, 2] },
+      status: 1,
+    },
+    order: [["id", "ASC"]],
+    raw: true,
+  });
 };
 
 export const handleAddLeadRemark = async (headers, body) => {
