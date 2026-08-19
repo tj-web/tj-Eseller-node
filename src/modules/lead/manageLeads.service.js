@@ -35,6 +35,7 @@ const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
 const CALL_CONN_MAX_DAYS = 45;
 const CALL_MISS_MAX_DAYS = 10;
+const eligiblePlanIds = [46, 47, 48];
 
 const getWorkingHoursStatus = () => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
@@ -73,6 +74,68 @@ const addWeekdaysToDate = (dateStr, days) => {
 };
 
 /**
+ * Calculates whether calling is allowed for a lead and the reason if not.
+ */
+export const calculateLeadCallPermissions = async (leadJson) => {
+    const leadModelType = leadJson.product ? leadJson.product.lead_model_type : 2;
+    let isCallAllowed = true;
+    let callDisableMsg = "";
+
+    if (leadModelType === 9) {
+        isCallAllowed = true;
+    } else if (leadJson.is_lead_cta === 0) {
+        isCallAllowed = false;
+        callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
+    } else if (leadJson.acd_uuid) {
+        const isWorkingHours = getWorkingHoursStatus();
+        const currTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+
+        if (leadJson.lead_type === 'DEMO') {
+            const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), 10);
+            if (currTime > maxTime && isWorkingHours) {
+                callDisableMsg = `Your call back period of 10 days is over. Please contact support for more details.`;
+                isCallAllowed = false;
+            } else if (!isWorkingHours) {
+                callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                isCallAllowed = false;
+            }
+        } else {
+            const isAnyConnected = await checkAnyConnected(leadJson.id);
+            if (isAnyConnected) {
+                const maxTime = addDaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_CONN_MAX_DAYS);
+                if (currTime > maxTime && isWorkingHours) {
+                    callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
+                    isCallAllowed = false;
+                } else if (!isWorkingHours) {
+                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                    isCallAllowed = false;
+                }
+            } else {
+                const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
+                const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
+                const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
+
+                if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
+                    callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
+                    isCallAllowed = false;
+                } else if ((callStatus == 0 || callStatus == 5) && isWorkingHours && currTime < callTime) {
+                    callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
+                    isCallAllowed = false;
+                } else if (!isWorkingHours) {
+                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                    isCallAllowed = false;
+                }
+            }
+        }
+    }
+
+    return {
+        is_call_allowed: isCallAllowed ? 1 : 0,
+        call_disable_msg: callDisableMsg
+    };
+};
+
+/**
  * Retrieves vendor lead insight permissions and allowed products.
  */
 const getVendorInsightPermission = async (vendor_id) => {
@@ -84,27 +147,30 @@ const getVendorInsightPermission = async (vendor_id) => {
         return { allowed: false, productIds: [] };
     }
 
-    const activePlan = await OmsPiDetail.findOne({
-        attributes: ['id', 'pi_status', 'end_date'],
+    const currentDate = new Date().toISOString().split('T')[0];
+
+    const activePlans = await OmsPiDetail.findAll({
+        attributes: ['id', 'pi_status', 'end_date', 'lead_plan_id'],
         where: {
             vendor_id: vendor_id,
-            plan_type: 'leadinsight'
-        },
-        order: [['id', 'DESC']]
+            pi_status: 3,
+            lead_plan_id: { [Op.in]: eligiblePlanIds },
+            [Op.or]: [
+                { end_date: null },
+                { end_date: { [Op.gte]: currentDate } }
+            ]
+        }
     });
 
-    if (!activePlan || activePlan.pi_status !== 3) {
+    if (!activePlans || activePlans.length === 0) {
         return { allowed: false, productIds: [] };
     }
 
-    const currentDate = new Date().toISOString().split('T')[0];
-    if (activePlan.end_date && new Date(activePlan.end_date).toISOString().split('T')[0] < currentDate) {
-        return { allowed: false, productIds: [] };
-    }
+    const piIds = activePlans.map(p => p.id);
 
     const piProducts = await OmsPiProduct.findAll({
         attributes: ['product_id'],
-        where: { pi_id: activePlan.id }
+        where: { pi_id: { [Op.in]: piIds } }
     });
 
     const productIds = piProducts.map(p => p.product_id);
@@ -330,17 +396,8 @@ export const getLeads = async (vendor_id, post) => {
     });
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
-
-    const leadInsightPlan = await OmsPiDetail.findOne({
-        where: {
-            vendor_id: vendor_id,
-            plan_type: 'leadinsight'
-        },
-        order: [['id', 'DESC']]
-    });
-    const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
-
     const has_recent_submission = await hasRecentSubmission(vendor_id);
+    const currentDate = new Date().toISOString().split('T')[0];
 
     const enrichedLeads = await Promise.all(rows.map(async (lead) => {
         const leadJson = lead.toJSON();
@@ -399,73 +456,26 @@ export const getLeads = async (vendor_id, post) => {
 
         leadJson.lead_actions = await getLeadActions(leadJson);
 
-        let isCallAllowed = true;
-        let callDisableMsg = "";
-
-        if (leadModelType === 9) {
-            isCallAllowed = true;
-        } else if (leadJson.is_lead_cta === 0) {
-
-            isCallAllowed = false;
-            callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
-        } else if (leadJson.acd_uuid) {
-            const isWorkingHours = getWorkingHoursStatus();
-            const currTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-
-            if (leadJson.lead_type === 'DEMO') {
-                const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), 10);
-                if (currTime > maxTime && isWorkingHours) {
-                    callDisableMsg = `Your call back period of 10 days is over. Please contact support for more details.`;
-                    isCallAllowed = false;
-                } else if (!isWorkingHours) {
-                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
-                    isCallAllowed = false;
-                }
-            } else {
-                const isAnyConnected = await checkAnyConnected(leadJson.id);
-                if (isAnyConnected) {
-                    const maxTime = addDaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_CONN_MAX_DAYS);
-                    if (currTime > maxTime && isWorkingHours) {
-                        callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
-                        isCallAllowed = false;
-                    } else if (!isWorkingHours) {
-                        callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
-                        isCallAllowed = false;
-                    }
-                } else {
-                    const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
-                    const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
-                    const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
-
-                    if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
-                        callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
-                        isCallAllowed = false;
-                    } else if ((callStatus == 0 || callStatus == 5) && isWorkingHours && currTime < callTime) {
-                        callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
-                        isCallAllowed = false;
-                    } else if (!isWorkingHours) {
-                        callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
-                        isCallAllowed = false;
-                    }
-                }
-            }
-        }
-
-        leadJson.is_call_allowed = isCallAllowed ? 1 : 0;
-        leadJson.call_disable_msg = callDisableMsg;
+        const callPerms = await calculateLeadCallPermissions(leadJson);
+        leadJson.is_call_allowed = callPerms.is_call_allowed;
+        leadJson.call_disable_msg = callPerms.call_disable_msg;
 
         let is_lead_insight_allowed = 0;
-        if (insightPermission.allowed && pi_id && leadJson.product_id) {
+        if (insightPermission.allowed && leadJson.product_id) {
             const resultCount = await sequelize.query(`
                 SELECT COUNT(1) as count 
                 FROM oms_pi_details opd
                 INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
-                WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
+                WHERE opd.vendor_id = :vendor_id 
+                  AND opd.pi_status = 3 
+                  AND opd.lead_plan_id IN (:eligiblePlanIds)
+                  AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+                  AND opp.product_id = :product_id
             `, {
-                replacements: { pi_id, product_id: leadJson.product_id },
+                replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: leadJson.product_id },
                 type: QueryTypes.SELECT
             });
-            is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+            is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
         }
         if (is_lead_insight_allowed === 0 && has_recent_submission) {
             is_lead_insight_allowed = 2;
@@ -577,17 +587,8 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
     });
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
-
-    const leadInsightPlan = await OmsPiDetail.findOne({
-        where: {
-            vendor_id: vendor_id,
-            plan_type: 'leadinsight'
-        },
-        order: [['id', 'DESC']]
-    });
-    const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
-
     const has_recent_submission = await hasRecentSubmission(vendor_id);
+    const currentDate = new Date().toISOString().split('T')[0];
 
     const enrichedDemos = await Promise.all(rows.map(async (demo) => {
         const demoJson = demo.toJSON();
@@ -618,17 +619,21 @@ export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
 
         let is_lead_insight_allowed = 0;
         const resolvedProductId = lead.product_id || (lead.product ? lead.product.product_id : null);
-        if (insightPermission.allowed && pi_id && resolvedProductId && leadInsightPlan && leadInsightPlan.lead_plan_id == 38) {
+        if (insightPermission.allowed && resolvedProductId) {
             const resultCount = await sequelize.query(`
                 SELECT COUNT(1) as count 
                 FROM oms_pi_details opd
                 INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
-                WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
+                WHERE opd.vendor_id = :vendor_id 
+                  AND opd.pi_status = 3 
+                  AND opd.lead_plan_id IN (:eligiblePlanIds)
+                  AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+                  AND opp.product_id = :product_id
             `, {
-                replacements: { pi_id, product_id: resolvedProductId },
+                replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: resolvedProductId },
                 type: QueryTypes.SELECT
             });
-            is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
+            is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
         }
         if (is_lead_insight_allowed === 0 && has_recent_submission) {
             is_lead_insight_allowed = 2;
@@ -818,41 +823,65 @@ export const getLeadDetails = async (vendor_id, leadId) => {
     leadJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
     leadJson.is_international = isInternational ? '1' : '0';
 
-    leadJson.history = await getLeadHistory(vendor_id, leadId);
     leadJson.lead_actions = await getLeadActions(leadJson);
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
     const has_recent_submission = await hasRecentSubmission(vendor_id);
+    const currentDate = new Date().toISOString().split('T')[0];
     let is_lead_insight_allowed = 0;
     if (insightPermission.allowed && leadJson.product_id) {
-        const leadInsightPlan = await OmsPiDetail.findOne({
-            where: {
-                vendor_id: vendor_id,
-                plan_type: 'leadinsight'
-            },
-            order: [['id', 'DESC']]
+        const resultCount = await sequelize.query(`
+            SELECT COUNT(1) as count 
+            FROM oms_pi_details opd
+            INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+            WHERE opd.vendor_id = :vendor_id 
+              AND opd.pi_status = 3 
+              AND opd.lead_plan_id IN (:eligiblePlanIds)
+              AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+              AND opp.product_id = :product_id
+        `, {
+            replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: leadJson.product_id },
+            type: QueryTypes.SELECT
         });
-        const pi_id = leadInsightPlan ? leadInsightPlan.id : null;
-
-        if (pi_id) {
-            const resultCount = await sequelize.query(`
-                SELECT COUNT(1) as count 
-                FROM oms_pi_details opd
-                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
-                WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
-            `, {
-                replacements: { pi_id, product_id: leadJson.product_id },
-                type: QueryTypes.SELECT
-            });
-            is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
-        }
+        is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
     }
     if (is_lead_insight_allowed === 0 && has_recent_submission) {
         is_lead_insight_allowed = 2;
     }
-    leadJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
-    return leadJson;
+    const callPerms = await calculateLeadCallPermissions(leadJson);
+
+    return {
+        id: leadJson.id,
+        name: leadJson.name || "",
+        email: leadJson.email || "",
+        phone: leadJson.phone || "",
+        dial_code: leadJson.dial_code || "91",
+        product_name: leadJson.product_name || "",
+        user_intent: leadJson.user_intent || "",
+        created_at: leadJson.created_at,
+        city: leadJson.city || "",
+        state: leadJson.state || "",
+        keyword: leadJson.keyword || null,
+        status: leadJson.status,
+        lead_action: leadJson.lead_action,
+        is_trashed: leadJson.is_trashed,
+        is_contact_viewed: leadJson.is_contact_viewed,
+        is_show_contact: leadJson.is_show_contact,
+        show_contact_phone: leadJson.show_contact_phone,
+        show_contact_cta: leadJson.show_contact_cta,
+        show_upgrade_cta: leadJson.show_upgrade_cta,
+        is_international: leadJson.is_international,
+        is_lead_insight_allowed: is_lead_insight_allowed,
+        is_call_allowed: callPerms.is_call_allowed,
+        call_disable_msg: callPerms.call_disable_msg,
+        lead_actions: leadJson.lead_actions,
+        product: {
+            slug: leadJson.product?.slug || null,
+            lead_model_type: leadJson.product?.lead_model_type || 2,
+            micro_transaction_model_price: leadJson.product?.micro_transaction_model_price || null
+        }
+    };
 };
 
 /**
@@ -1025,10 +1054,46 @@ export const scheduleCallback = async (vendor_id, data) => {
         throw new AppError(`We are unable to process your request. Our working hours are from ${ACD_START_TIME} to ${ACD_END_TIME}`, StatusCodes.BAD_REQUEST);
     }
 
+    // Plan eligibility check — vendor must have an active plan (46, 47, or 48) to make calls
+    const currentDate = new Date().toISOString().split('T')[0];
+    const activePlan = await OmsPiDetail.findOne({
+        attributes: ['id'],
+        where: {
+            vendor_id: vendor_id,
+            pi_status: 3,
+            lead_plan_id: { [Op.in]: eligiblePlanIds },
+            [Op.or]: [
+                { end_date: null },
+                { end_date: { [Op.gte]: currentDate } }
+            ]
+        }
+    });
+    if (!activePlan) {
+        throw new AppError("You do not have an active plan to make calls. Please upgrade your plan to access this feature.", StatusCodes.FORBIDDEN);
+    }
+
     const lead = await TblLeads.findOne({
-        where: { id: lead_id, vendor_id: vendor_id }
+        where: { id: lead_id, vendor_id: vendor_id },
+        include: [
+            {
+                model: TblRequestCallbacks,
+                as: 'callback',
+                required: false
+            },
+            {
+                model: TblProduct,
+                as: 'product',
+                attributes: ['lead_model_type'],
+                required: false
+            }
+        ]
     });
     if (!lead) throw new AppError("Unauthorized: Lead does not belong to vendor", StatusCodes.FORBIDDEN);
+
+    const callPerms = await calculateLeadCallPermissions(lead.toJSON());
+    if (callPerms.is_call_allowed === 0) {
+        throw new AppError(callPerms.call_disable_msg || "Call is not allowed for this lead", StatusCodes.BAD_REQUEST);
+    }
 
     let scheduledTime;
     if (date && hour && minute) {
@@ -1154,13 +1219,15 @@ export const getVendorContacts = async (vendor_id) => {
  */
 export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     const leadData = await TblLeads.findOne({
-        attributes: ['id', 'email', 'company_id', 'category_id', 'leadinsight'],
+        attributes: ['id', 'email', 'company_id', 'category_id', 'lead_visibility'],
         where: { id: lead_id }
     });
 
     if (!leadData) return 0;
-    const { email, leadinsight, company_id, category_id } = leadData.toJSON();
+    const { email, company_id, category_id, lead_visibility } = leadData.toJSON();
+    if (lead_visibility != 1) return 0;
     const domain = isBusinessEmail(email);
+    let categoryEmployeeCount = 0;
     let employeeCount = 0;
     let companyExists = false;
     if (company_id) {
@@ -1168,12 +1235,38 @@ export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
             where: { company_id: company_id }
         });
 
+        if (category_id) {
+            categoryEmployeeCount = await CompaniesEmployees.count({
+                where: {
+                    company_id: company_id,
+                    [Op.and]: sequelize.literal(`FIND_IN_SET('${category_id}', mapped_categories) > 0`)
+                }
+            });
+        }
+
         companyExists = await Companies.count({
             where: { id: company_id }
         }) > 0;
     }
 
-    if (!domain || (leadinsight === 1 && company_id && companyExists && employeeCount > 0)) {
+    if (!domain || (company_id && companyExists && (categoryEmployeeCount > 0 || employeeCount > 0))) {
+        if (domain && company_id && companyExists && category_id && categoryEmployeeCount === 0) {
+            const companyDetail = await Companies.findOne({
+                attributes: ['id', 'domain', 'organization_id'],
+                where: { id: company_id },
+                raw: true
+            });
+            if (companyDetail) {
+                const employeeList = await getEmployeeList(domain, category_id, lead_id, {
+                    company_id: companyDetail.id,
+                    organization_id: companyDetail.organization_id,
+                    domain: companyDetail.domain
+                });
+                if (employeeList?.status === 1 && employeeList?.data?.apollo_people_ids?.length > 0) {
+                    await getEmployeeEmails(employeeList.data.apollo_people_ids);
+                }
+            }
+        }
         return { status: 1, message: "Company profile details found." };
     }
 
@@ -1203,7 +1296,7 @@ export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     }
 
     await TblLeads.update(
-        { company_id: organization.data.company_id, leadinsight: 1 },
+        { company_id: organization.data.company_id},
         { where: { id: lead_id } }
     );
 
@@ -1522,6 +1615,10 @@ const getEmployeeEmails = async (apollo_people_ids) => {
         if (data.matches && data.matches.length > 0) {
             for (const empData of data.matches) {
                 const updatePayload = {};
+                const fullName = empData.name || (empData.first_name && empData.last_name ? `${empData.first_name} ${empData.last_name}`.trim() : null);
+                if (fullName) {
+                    updatePayload.emp_name = fullName;
+                }
                 if (empData.email) {
                     updatePayload.emp_email = empData.email;
                 }
@@ -1567,14 +1664,29 @@ const fetchWithCurl = async (url, headers) => {
 };
 
 export const getLeadInsightPlanDetails = async (vendor_id) => {
-    const result = await OmsPiDetail.findOne({
+    const currentDate = new Date().toISOString().split('T')[0];
+    const active = await OmsPiDetail.findOne({
         where: {
             vendor_id: vendor_id,
-            plan_type: 'leadinsight'
+            lead_plan_id: { [Op.in]: eligiblePlanIds },
+            pi_status: 3,
+            [Op.or]: [
+                { end_date: null },
+                { end_date: { [Op.gte]: currentDate } }
+            ]
         },
         order: [['id', 'DESC']]
     });
-    return result ? result.toJSON() : null;
+    if (active) return active.toJSON();
+
+    const fallback = await OmsPiDetail.findOne({
+        where: {
+            vendor_id: vendor_id,
+            lead_plan_id: { [Op.in]: eligiblePlanIds }
+        },
+        order: [['id', 'DESC']]
+    });
+    return fallback ? fallback.toJSON() : null;
 };
 
 export const hasRecentSubmission = async (vendor_id) => {
@@ -1777,8 +1889,7 @@ export const getWebsiteBuyerActivity = async (lead, vendor_id, lead_id, is_lead_
 
         allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-        const isMasked = is_lead_insight_allowed !== 1;
-        const slicedActivities = allActivities.slice(0, isMasked ? 2 : 10);
+        const slicedActivities = allActivities.slice(0, 10);
 
         const truncatedActivityMap = {};
         const activityTimeline = [];
@@ -1828,8 +1939,7 @@ export const getNonWebsiteBuyerActivity = async (lead, vendor_id, lead_id, is_le
  */
 export const getLeadInsights = async (vendor_id, lead_id) => {
     try {
-        const full_access_plan_id = 38;
-        const limited_access_plan_id = 39;
+        const full_access_plan_id = eligiblePlanIds;
 
         const vendor = await Vendor.findByPk(vendor_id, {
             attributes: ['lead_insight_display']
@@ -1855,34 +1965,35 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             const end_date = planDetails.end_date;
             const currentDate = new Date().toISOString().split('T')[0];
 
-            if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate) {
+            if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate && eligiblePlanIds.includes(Number(planDetails.lead_plan_id))) {
                 plan_id = planDetails.lead_plan_id;
-                plan_name = planDetails.plan_name || 'Paid Access';
-            } else {
-                plan_id = limited_access_plan_id;
-                plan_name = planDetails.plan_name || 'Full Free Access (Limited)';
+                plan_name = planDetails.plan_name;
             }
-        } else {
-            plan_id = limited_access_plan_id;
-            plan_name = 'Free Access (Limited)';
         }
 
         let is_lead_insight_allowed = 0;
-        if (planDetails && planDetails.id && lead.product_name && plan_id == 38) {
-            // Need product_id from TblProduct since lead only has product_name or we can join
+        const currentDate = new Date().toISOString().split('T')[0];
+        let resolvedProductId = lead.product_id;
+        if (!resolvedProductId && lead.product_name) {
             const product = await TblProduct.findOne({ where: { product_name: lead.product_name }, attributes: ['product_id'] });
-            if (product) {
-                const resultCount = await sequelize.query(`
-                    SELECT COUNT(1) as count 
-                    FROM oms_pi_details opd
-                    INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
-                    WHERE opd.id = :pi_id AND opd.pi_status = 3 AND opp.product_id = :product_id
-                `, {
-                    replacements: { pi_id: planDetails.id, product_id: product.product_id },
-                    type: sequelize.QueryTypes.SELECT
-                });
-                is_lead_insight_allowed = resultCount[0].count > 0 ? 1 : 0;
-            }
+            resolvedProductId = product ? product.product_id : null;
+        }
+
+        if (resolvedProductId) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.vendor_id = :vendor_id 
+                  AND opd.pi_status = 3 
+                  AND opd.lead_plan_id IN (:eligiblePlanIds)
+                  AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+                  AND opp.product_id = :product_id
+            `, {
+                replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: resolvedProductId },
+                type: sequelize.QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
         }
 
         if (is_lead_insight_allowed === 1) {
@@ -1976,7 +2087,6 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             used_credits: usedCredits,
             lead_credit_used: lead.credit_used,
             full_access_plan_id,
-            limited_access_plan_id,
             has_recent_submission: await hasRecentSubmission(vendor_id),
             vendor_data: vendorData || {},
             actions: await getLeadActions(lead),
@@ -2017,7 +2127,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                 Object.assign(result, company);
             }
             result.customer_company_information = company || {};
-            let keyPeople;
+            let keyPeople = [];
             if (lead.category_id) {
                 keyPeople = await CompaniesEmployees.findAll({
                     attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
@@ -2028,7 +2138,8 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
                     limit: 5,
                     raw: true
                 });
-            } else if (lead.company_id) {
+            }
+            if ((!keyPeople || keyPeople.length === 0) && lead.company_id) {
                 keyPeople = await CompaniesEmployees.findAll({
                     attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
                     where: { company_id: lead.company_id },
