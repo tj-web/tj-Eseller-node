@@ -1,0 +1,183 @@
+<html>
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+      <link href="https://fonts.googleapis.com/css?family=Poppins" rel="stylesheet" />
+      <title>Email Template</title>
+      <style type="text/css">
+         /* responsive styles */
+         @media only screen and (max-width: 480px) {
+         body {
+         width: 100% !important;
+         min-width: 100% !important;
+         }
+         }
+         .menu-ul li a {
+         text-decoration: none;
+         color: #000;
+         font-size: 16px;
+         }
+         .menu-ul li {
+         list-style: none;
+         float: left;
+         width: 30%;
+         text-decoration: none;
+         }
+      </style>
+   </head>
+   <body bgcolor="#fff" data-gr-ext-installed="" data-new-gr-c-s-check-loaded="14.1080.0" leftmargin="0" marginheight="0" marginwidth="0" offset="0" style="cursor: auto;" topmargin="0">
+      <center style="background-color:#fff;">
+         <table border="0" cellpadding="0" cellspacing="0" height="100%" id="bodyTbl" style="table-layout: fixed;max-width:100% !important;width: 100% !important;min-width: 100% !important;" width="100%">
+            <tbody>
+               <tr>
+                  <td align="center" id="bodyCell" style=" padding-top: 23px; padding-bottom: 23px;" valign="top">
+                     <table bgcolor="#f5f5f5" border="0" cellpadding="0" cellspacing="0" id="emailBody" width="600px">
+                        <tbody>
+                           <tr>
+                              <td align="center" style="background-color: #2c38b2; height: 33px; padding-top:10px; padding-bottom:10px;" valign="top">
+                                 <table border="0" cellpadding="0" cellspacing="0" style="color:#FFFFFF;" width="100%">
+                                    <tbody>
+                                       <tr>
+                                          <td align="center" valign="top">
+                                             <table border="0" cellpadding="0" cellspacing="0" class="flexibleContainer" width="600px">
+                                                <tbody>
+                                                   <tr>
+                                                      <td align="center" class="flexibleContainerCell" valign="top" width="600px">
+                                                         <table border="0" cellpadding="30" cellspacing="0" width="100%">
+                                                            <tbody>
+                                                               <tr>
+                                                                  <td align="center" style="padding: 0px" valign="top">
+                                                                     <div class="logo-nw"><a href="https://esellerhub.techjockey.com/authenticate?utm_source=clevertap&amp;utm_medium=email&amp;utm_campaign=DCL&amp;utm_content=logo"><img alt="logo" src="https://tj-web-prod.s3.ap-south-1.amazonaws.com/clevertap/call_requested/logo.png" style="max-width: 30%;" /></a></div>
+                                                                  </td>
+                                                               </tr>
+                                                            </tbody>
+                                                         </table>
+                                                      </td>
+                                                   </tr>
+                                                </tbody>
+                                             </table>
+                                          </td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </td>
+                           </tr>
+                           <tr>
+                              <td align="center" valign="top">
+                                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                    <tbody>
+                                       <tr>
+                                          <td align="center" valign="top">
+                                             <table border="0" cellpadding="30" cellspacing="0" class="flexibleContainer" width="600">
+                                                <tbody>
+                                                   <tr>
+                                                      <td class="flexibleContainerCell" style="padding-right: 0px; padding-left: 0px; padding-bottom: 0px; padding-top: 8px;" valign="top" width="600">
+                                                         <table align="center" border="0" cellpadding="0" cellspacing="0" style="width: 90%; padding-bottom: 40px; background: #fff; margin-top: 20px;" width="100%">
+                                                            <tbody>
+                                                               <tr>
+                                                                  <td align="center" class="flexibleContainerBox" valign="top">
+                                                                     <table border="0" cellpadding="0" cellspacing="0" style=" width: 90%;" width="600">
+                                                                        <tbody>
+                                                                           <tr>
+                                                                              <td align="" class="textContent">
+                                                                                 <div>
+                                                                                    <p style="text-align: left; font-size: 16px; line-height: 1.69;margin-top:30px">Hi Team,<br><br>
+                                                                                       An OEM has shown interest for paid plan. Please find vendor details below:
+                                                                                    </p>
+                                                                                    <div>
+                                                                                       <table border="0">
+                                                                                          <tr>
+                                                                                             <td>Vendor/Brand:</td>
+                                                                                             <td><%= callback_name %></td>
+                                                                                          </tr>
+                                                                                          <tr>
+                                                                                             <td>Plan:</td>
+                                                                                             <td><%= plan_name %></td>
+                                                                                          </tr>
+                                                                                          <tr>
+                                                                                             <td>Email:</td>
+                                                                                             <td><%= callback_email %></td>
+                                                                                          </tr>
+                                                                                          <tr>
+                                                                                             <td>Phone:</td>
+                                                                                             <td><%= callback_contact %></td>
+                                                                                          </tr>
+                                                                                          <tr>
+                                                                                             <td>Preferred Callback Time:</td>
+                                                                                             <td><%= reminder_datetime %></td>
+                                                                                          </tr>
+                                                                                       </table>
+                                                                                    </div>
+                                                                                    <br>
+                                                                                    <p style="text-align: left; font-size: 16px; line-height: 1.69;">Please call this prospect as soon as possible.
+                                                                                    </p>
+                                                                                 </div>
+                                                                              </td>
+                                                                           </tr>
+                                                                        </tbody>
+                                                                     </table>
+                                                                  </td>
+                                                               </tr>
+                                                            </tbody>
+                                                         </table>
+                                                      </td>
+                                                   </tr>
+                                                </tbody>
+                                             </table>
+                                          </td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </td>
+                           </tr>
+                           <tr>
+                           </tr>
+                           <tr>
+                              <td align="center" valign="top">
+                                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                    <tbody>
+                                       <tr>
+                                          <td align="center" valign="top">
+                                             <table border="0" cellpadding="30" cellspacing="0" class="flexibleContainer" width="600">
+                                                <tbody>
+                                                   <tr>
+                                                      <td class="flexibleContainerCell" style="padding-right: 0px; padding-left: 0px; padding-bottom: 22px; padding-top: 8px;" valign="top" width="600">
+                                                         <table align="center" border="0" cellpadding="0" cellspacing="0" style="width: 90%; padding-bottom: 20px; background: #fff; margin-top: 20px;" width="100%">
+                                                            <tbody>
+                                                               <tr>
+                                                                  <td align="center" class="flexibleContainerBox" valign="top">
+                                                                     <table border="0" cellpadding="0" cellspacing="0" style=" width: 90%;" width="600">
+                                                                        <tbody>
+                                                                           <tr>
+                                                                              <td align="center" class="textContent">
+                                                                                 <h2 style="font-weight: 600; font-size: 16px;text-align: center;margin-top: 19px;color: #0b0d1b;">Thanks<br />
+                                                                                    <a href="#" style="font-weight: 500;text-decoration: none;color: #0b0d1b;">Team Techjockey</a>
+                                                                                 </h2>
+                                                                              </td>
+                                                                           </tr>
+                                                                        </tbody>
+                                                                     </table>
+                                                                  </td>
+                                                               </tr>
+                                                            </tbody>
+                                                         </table>
+                                                      </td>
+                                                   </tr>
+                                                </tbody>
+                                             </table>
+                                          </td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </td>
+                           </tr>
+                        </tbody>
+                     </table>
+                  </td>
+               </tr>
+            </tbody>
+         </table>
+      </center>
+   </body>
+</html>

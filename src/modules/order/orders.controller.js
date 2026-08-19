@@ -8,7 +8,6 @@ export const getOrders = async (req, res) => {
       vendor_id,
       params: { page, limit },
     });
-
     return res.status(200).json({
       status: true,
       message: "Data fetched successfully",

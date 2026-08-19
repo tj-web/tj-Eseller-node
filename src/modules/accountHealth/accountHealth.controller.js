@@ -1,11 +1,11 @@
 import {
-  getHealthScoreService,
-  getReviewsDataService,
-  getProfileCompletionService,
-  getTrustedSellerService,
-  getAccountStatusService,
-  saveReviewReplyService,
-  sendReviewEmailService,
+  handleGetHealthScore,
+  getReviewsData,
+  handleGetProfileCompletion,
+  handleGetTrustedSeller,
+  handleGetAccountStatus,
+  handleSaveReviewReply,
+  handleSendReviewEmail,
 } from "./accountHealth.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
@@ -13,13 +13,12 @@ import SystemResponse from "../../utilis/systemResponse.js";
 export const getHealthScore = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getHealthScoreService(vendorId);
+    const result = await handleGetHealthScore(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Account health score fetched successfully", result));
   } catch (error) {
-    console.error("Error in getHealthScore controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -29,13 +28,12 @@ export const getHealthScore = async (req, res) => {
 export const getReviews = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getReviewsDataService(vendorId, req.query);
+    const result = await getReviewsData(vendorId, req.query);
 
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Reviews fetched successfully", result));
   } catch (error) {
-    console.error("Error in getReviews controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -45,13 +43,12 @@ export const getReviews = async (req, res) => {
 export const getProfileCompletion = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getProfileCompletionService(vendorId);
+    const result = await handleGetProfileCompletion(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Profile completion data fetched successfully", result));
   } catch (error) {
-    console.error("Error in getProfileCompletion controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -61,7 +58,7 @@ export const getProfileCompletion = async (req, res) => {
 export const getTrustedSeller = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getTrustedSellerService(vendorId);
+    const result = await handleGetTrustedSeller(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
@@ -76,13 +73,12 @@ export const getTrustedSeller = async (req, res) => {
 export const getAccountStatus = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await getAccountStatusService(vendorId);
+    const result = await handleGetAccountStatus(vendorId);
 
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Account status fetched successfully", result));
   } catch (error) {
-    console.error("Error in getAccountStatus controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));
@@ -93,29 +89,28 @@ export const saveReviewReply = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
     const profileId = req.user.profile_id;
-    const result = await saveReviewReplyService(vendorId, profileId, req.body);
+    const result = await handleSaveReviewReply(vendorId, profileId, req.body);
 
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success(result.message, result));
   } catch (error) {
-    console.error("Error in saveReviewReply controller:", error);
+    const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
     return res
-      .status(StatusCodes.INTERNAL_SERVER_ERROR)
-      .json(SystemResponse.internalServerError(error.message));
+      .status(statusCode)
+      .json(SystemResponse.getErrorResponse(error.message, error, statusCode));
   }
 };
 
 export const sendReviewEmail = async (req, res) => {
   try {
     const vendorId = req.user.vendor_id;
-    const result = await sendReviewEmailService(vendorId, req.body);
+    const result = await handleSendReviewEmail(vendorId, req.body);
 
     return res
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success(result.message, result));
   } catch (error) {
-    console.error("Error in sendReviewEmail controller:", error);
     return res
       .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .json(SystemResponse.internalServerError(error.message));

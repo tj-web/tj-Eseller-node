@@ -1,22 +1,24 @@
-version: "3.5"
 services:
-  # Node.js App Service
-  eseller-node-backend:
-    build: .
-    container_name: eseller-node-server
+  tj-eseller-node:
+    restart: always
+    build:
+      context: ./
+      dockerfile: ./deploy/docker-config/Dockerfile
+    container_name: tj-eseller-node
     ports:
       - "5002:5002"
     environment:
       - PORT=5002
     volumes:
-      # Syncs your local code with the container for live-reloading
       - .:/app
-      # Prevents local node_modules from overwriting the container's node_modules
       - /app/node_modules
-
-    networks:
-      - tj-net
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:5002/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   tj-net:
-    name: tj-net
+    external: true

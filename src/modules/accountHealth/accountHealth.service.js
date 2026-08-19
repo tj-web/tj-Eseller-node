@@ -14,7 +14,10 @@ import VendorAnalytics from "../../models/vendorAnalytics.model.js";
 import VendorDetail from "../../models/vendorDetail.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import EmailQueue from "../../models/emailQueue.model.js";
+import OmsPiDetail from "../../models/omsPiDetail.model.js";
+import LeadsPlan from "../../models/leadsPlan.model.js";
 import { AppError } from "../../utilis/appError.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
 
 // Define Associations
 VendorParticularMatrix.belongsTo(VendorParticular, { foreignKey: "particular_id" });
@@ -24,6 +27,7 @@ Review.hasMany(ReviewReplies, { foreignKey: "review_id" });
 ReviewReplies.belongsTo(VendorAuth, { foreignKey: "replied_by_profile_id" });
 Review.belongsTo(Product, { foreignKey: "product_id" });
 Product.hasMany(ProductImage, { foreignKey: "product_id" });
+OmsPiDetail.belongsTo(LeadsPlan, { foreignKey: "lead_plan_id" });
 
 /* =========================================
    HELPERS
@@ -59,7 +63,7 @@ const getVendorProductIds = async (vendor_id) => {
    ACCOUNT HEALTH CORE SERVICES
 ========================================= */
 
-export const getHealthScoreService = async (vendor_id) => {
+export const handleGetHealthScore = async (vendor_id) => {
   try {
     const productIds = await getVendorProductIds(vendor_id);
 
@@ -144,7 +148,7 @@ export const getHealthScoreService = async (vendor_id) => {
       }
     }
 
-    // 4. Response Time (Aligned with PHP Source: VendorAnalytics)
+    // 4. Response Time (Source: VendorAnalytics)
     const analytics = await VendorAnalytics.findOne({
       where: { vendor_id },
       attributes: [
@@ -217,7 +221,7 @@ export const getHealthScoreService = async (vendor_id) => {
   }
 };
 
-export const getReviewsDataService = async (vendor_id, query) => {
+export const getReviewsData = async (vendor_id, query) => {
   try {
     const { page = 1, limit = 10, sort_by = "latest_first", productName, rating, date } = query;
     const productIds = await getVendorProductIds(vendor_id);
@@ -370,10 +374,59 @@ export const getReviewsDataService = async (vendor_id, query) => {
   }
 };
 
-export const getProfileCompletionService = async (vendor_id) => {
+export const handleGetProfileCompletion = async (vendor_id) => {
   try {
+    // Dynamically define association if not already present globally
+    if (!VendorBrandRelation.associations.Brand) {
+      VendorBrandRelation.belongsTo(Brand, { foreignKey: "tbl_brand_id", targetKey: "brand_id" });
+    }
+
+    // 1. Fetch valid brands strictly matching PHP's get_brands_details logic
+    const validBrandRelations = await VendorBrandRelation.findAll({
+      where: {
+        vendor_id: vendor_id,
+        tbl_brand_id: { [Op.ne]: 0 },
+        [Op.or]: [
+          { status: 1 },
+          {
+            "$Brand.added_by$": "vendor",
+            "$Brand.added_by_id$": vendor_id
+          }
+        ]
+      },
+      order: [
+        ["id", "DESC"]
+      ],
+      include: [
+        {
+          model: Brand,
+          attributes: ["brand_id", "brand_name", "image", "added_by", "added_by_id"],
+          where: {
+            status: 1,
+            show_status: 1,
+            is_deleted: 0,
+          },
+          required: true,
+        }
+      ]
+    });
+
+    const validBrandIds = validBrandRelations.map(vbr => vbr.tbl_brand_id);
+
+    if (validBrandIds.length === 0) {
+      return []; // Return early if no valid brands
+    }
+
     const matrix = await VendorParticularMatrix.findAll({
-      where: { vendor_id, status: 1 },
+      where: {
+        vendor_id,
+        status: 1,
+        brand_id: { [Op.in]: validBrandIds }
+      },
+      order: [
+        ["brand_id", "DESC"],
+        ["particular_id", "ASC"],
+      ],
       include: [
         {
           model: VendorParticular,
@@ -383,23 +436,31 @@ export const getProfileCompletionService = async (vendor_id) => {
         {
           model: Brand,
           attributes: ["brand_name", "image"],
-          required: true, // Matching PHP 'JOIN'
+          required: true, // INNER JOIN
         },
         {
           model: Product,
           attributes: ["product_name"],
-          required: false, // Matching PHP 'LEFT'
+          required: false, // LEFT JOIN
+          include: [
+            {
+              model: ProductImage,
+              attributes: ["image"],
+              where: { default: 1 },
+              required: false,
+            },
+          ],
         },
       ],
     });
 
-    return matrix;
+    return { brands: validBrandRelations, matrix };
   } catch (error) {
     throw error;
   }
 };
 
-export const getAccountStatusService = async (vendor_id) => {
+export const handleGetAccountStatus = async (vendor_id) => {
   try {
     const vendor = await Vendors.findOne({
       where: { id: vendor_id },
@@ -411,9 +472,26 @@ export const getAccountStatusService = async (vendor_id) => {
   }
 };
 
-export const saveReviewReplyService = async (vendor_id, profile_id, data) => {
+export const handleSaveReviewReply = async (vendor_id, profile_id, data) => {
   try {
     const { review_id, reply_text, reply_id } = data;
+
+    // --- SECURITY FIX: Verify Review Ownership ---
+    const targetReview = await Review.findOne({
+      where: { review_id },
+      attributes: ["product_id"],
+    });
+
+    if (!targetReview) {
+      throw new AppError("Review not found", 404);
+    }
+
+    const vendorProductIds = await getVendorProductIds(vendor_id);
+
+    if (!vendorProductIds.includes(targetReview.product_id)) {
+      throw new AppError("You are not authorized to reply to this review", 403);
+    }
+    // ---------------------------------------------
 
     const replyData = {
       review_id,
@@ -443,7 +521,7 @@ export const saveReviewReplyService = async (vendor_id, profile_id, data) => {
   }
 };
 
-export const getTrustedSellerService = async (vendor_id) => {
+export const handleGetTrustedSeller = async (vendor_id) => {
   try {
     const productIds = await getVendorProductIds(vendor_id);
 
@@ -482,26 +560,29 @@ export const getTrustedSellerService = async (vendor_id) => {
       }
     }
 
-    // 3. Response Time (Aligned with PHP Source: VendorAnalytics + OMS PI Filtering)
+    // 3. Response Time (Source: VendorAnalytics + OMS PI Filtering)
     let whereAnalytics = { vendor_id };
 
-    // Apply OMS PI Plan filtering if enabled (parity with Code B)
+    // Apply OMS PI Plan filtering if enabled
     if (vendor.show_current_plan_data === 1) {
-      const activePlans = await sequelize.query(
-        `
-        SELECT opd.start_date, opd.end_date
-        FROM oms_pi_details opd
-        LEFT JOIN tbl_leads_plan tlp ON tlp.id = opd.lead_plan_id
-        WHERE tlp.plan_type = 'credit'
-          AND opd.vendor_id = :vendor_id
-          AND (CURDATE() BETWEEN opd.start_date AND opd.end_date)
-          AND opd.pi_status = 3
-      `,
-        {
-          replacements: { vendor_id },
-          type: QueryTypes.SELECT,
-        }
-      );
+      const activePlans = await OmsPiDetail.findAll({
+        attributes: ["start_date", "end_date"],
+        where: {
+          vendor_id,
+          pi_status: 3,
+          start_date: { [Op.lte]: fn("CURDATE") },
+          end_date: { [Op.gte]: fn("CURDATE") },
+        },
+        include: [
+          {
+            model: LeadsPlan,
+            attributes: [],
+            where: { plan_type: "credit" },
+            required: true,
+          },
+        ],
+        raw: true,
+      });
 
       if (activePlans.length > 0) {
         const planConditions = activePlans
@@ -565,7 +646,7 @@ export const getTrustedSellerService = async (vendor_id) => {
   }
 };
 
-export const sendReviewEmailService = async (vendor_id, data) => {
+export const handleSendReviewEmail = async (vendor_id, data) => {
   try {
     const { to_emails, product_name, product_slug, subject } = data;
 
@@ -581,46 +662,17 @@ export const sendReviewEmailService = async (vendor_id, data) => {
 
     const companyName = vendorDetail?.company || "Team Techjockey";
 
+    const htmlBody = await renderTemplate(
+      'send-review',
+      {
+        product_name,
+        product_slug,
+        companyName
+      }
+    );
+
     // 2. Prepare Email Queue records
     const emailQueueRecords = to_emails.map((email) => {
-      const htmlBody = `
-        <div style="font-family: 'Poppins', sans-serif; background-color: #f5f5f5; padding: 20px;">
-          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="background-color: #384754; padding: 20px; text-align: center;">
-              <img src="https://www.techjockey.com/assets/images/logo.png" alt="Techjockey" style="max-width: 150px;">
-            </div>
-            <div style="padding: 30px;">
-              <p style="font-size: 16px; color: #333;">Hi,</p>
-              <p style="font-size: 16px; color: #333; line-height: 1.6;">
-                Thanks for choosing us for <strong>${product_name}</strong>. We appreciate your trust in us and value your support.
-              </p>
-              <p style="font-size: 16px; color: #333; line-height: 1.6;">
-                Potential customers use reviews from people like you to decide if we have what they need, and we’d like your help.
-              </p>
-              <p style="font-size: 16px; color: #333; line-height: 1.6;">
-                If you have a moment to spare, please click on the button below to tell us if <strong>${product_name}</strong> was everything you were looking for!
-              </p>
-              <p style="font-size: 16px; color: #333; line-height: 1.6;">
-                Your feedback allows us to provide you with the best service possible.
-              </p>
-              <div style="text-align: center; margin-top: 30px;">
-                <a href="https://www.techjockey.com/add_review/${product_slug}" 
-                   style="background-color: #1973e7; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: 500; display: inline-block;">
-                  Write a Review
-                </a>
-              </div>
-              <p style="font-size: 16px; color: #333; margin-top: 30px;">
-                Thank you so much!<br>
-                <strong>${companyName}</strong>
-              </p>
-            </div>
-            <div style="background-color: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
-              For more software solutions visit <a href="https://www.techjockey.com" style="color: #1973e7;">www.techjockey.com</a>
-            </div>
-          </div>
-        </div>
-      `;
-
       return {
         from_email: "noreply@techjockey.com",
         to: email.trim(),

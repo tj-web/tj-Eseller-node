@@ -19,7 +19,7 @@ VendorAuth.hasOne(VendorDetails, {
 });
 
 /********* GET VENDOR DATA *********/
-export const getVendorDataService = async ({ profile_id }) => {
+export const getVendorData = async ({ profile_id }) => {
   const result = await VendorAuth.findOne({
     where: { id: profile_id },
     include: [
@@ -51,7 +51,7 @@ export const getVendorDataService = async ({ profile_id }) => {
 };
 
 /******** GET DESIGNATION ********/
-export const getDesignationService = async () => {
+export const getDesignation = async () => {
   return await Designation.findAll({
     where: {
       status: 1,
@@ -88,7 +88,7 @@ export const getCityInfoService = async (city_id) => {
 };
 
 /******** GET BILLING ADDRESS NAMES ********/
-export const getBillingCountryStateCityService = async (data) => {
+export const getBillingCountryStateCity = async (data) => {
   const return_data = {
     billing_country_name: "",
     billing_state_name: "",
@@ -114,7 +114,7 @@ export const getBillingCountryStateCityService = async (data) => {
 };
 
 /******** GET VENDOR ADDRESS NAMES ********/
-export const getVendorCountryStateCityService = async (data) => {
+export const getVendorCountryStateCity = async (data) => {
   const return_data = {
     country_name: "",
     state_name: "",
@@ -140,7 +140,7 @@ export const getVendorCountryStateCityService = async (data) => {
 };
 
 /* 1. UPDATE VENDOR AUTH */
-export const updateVendorAuthService = async (profile_id, data) => {
+export const updateVendorAuth = async (profile_id, data) => {
   return await VendorAuth.update(
     {
       first_name: data.first_name,
@@ -153,7 +153,7 @@ export const updateVendorAuthService = async (profile_id, data) => {
 };
 
 /* 2. UPDATE VENDOR DETAILS */
-export const updateVendorDetailsService = async (vendor_id, data) => {
+export const updateVendorDetails = async (vendor_id, data) => {
   const allowedFields = [
     "company",
     "designation",
@@ -200,7 +200,7 @@ export const updateVendorDetailsService = async (vendor_id, data) => {
 };
 
 /* 3. DYNAMIC SEARCH (Dropdowns) */
-export const getSearchedLocationsService = async (search, search_by, context_id) => {
+export const getSearchedLocations = async (search, search_by, context_id) => {
   const searchParam = search ? `%${search}%` : "%";
 
   if (search_by === "country") {

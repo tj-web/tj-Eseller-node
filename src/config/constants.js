@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 export const AWS_paths = () => {
   //Base URL
   const AWS_PATH = process.env.AWS_PATH;
@@ -15,3 +16,13 @@ export const AWS_paths = () => {
     AWS_BRAND_IMAGES,
   };
 };
+
+export const EMAIL_DLQ_NAME = "email.dlx";
+
+export const EMAIL_QUEUE_PRIORITY = {
+  NORMAL: { routingKey: "email.normal", priority: "normal" },
+  HIGH: { routingKey: "email.high", priority: "high" },
+  LOW: { routingKey: "email.low", priority: "low" },
+};
+
+export const generateMessageId = () => uuidv4();

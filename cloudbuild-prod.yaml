@@ -1,0 +1,117 @@
+steps:
+
+# 1️⃣ Package application
+- name: gcr.io/cloud-builders/gcloud
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      set -e
+      echo "Creating deployment artifact..."
+
+      tar \
+        --exclude=.git \
+        --exclude=node_modules \
+        --exclude=vendor \
+        --exclude=release.tar.gz \
+        -czf release.tar.gz .
+
+# 2️⃣ Maintain current + previous artifact in bucket
+- name: gcr.io/cloud-builders/gsutil
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      set -e
+
+      BUCKET=gs://prod-cloudbuild-artifact-bucket
+
+      echo "Saving current artifact as previous version"
+      gsutil cp $$BUCKET/tj-eseller-node/release.tar.gz $$BUCKET/tj-eseller-node/release_previous.tar.gz || true
+
+      echo "Uploading new release"
+      gsutil cp release.tar.gz $$BUCKET/tj-eseller-node/release.tar.gz
+
+# 3️⃣ Deploy to VM
+- name: gcr.io/cloud-builders/gcloud
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      set -e
+
+      VMS=(
+        "crm:asia-south1-a"
+      )
+
+      for ITEM in "$${VMS[@]}"; do
+
+        VM_NAME=$$(echo $$ITEM | cut -d: -f1)
+        ZONE=$$(echo $$ITEM | cut -d: -f2)
+
+        echo "================================="
+        echo "Deploying to $$VM_NAME"
+        echo "================================="
+
+        gcloud compute ssh ubuntu@$$VM_NAME \
+        --zone=$$ZONE \
+        --tunnel-through-iap \
+        --command='
+
+        set -eEuo pipefail
+
+        rollback() {
+
+          echo "Deployment failed. Rolling back using previous artifact..."
+          cd /home/ubuntu
+          rm -rf /home/ubuntu/tj-eseller-node
+          mkdir -p /home/ubuntu/tj-eseller-node
+
+          echo "Downloading previous release"
+          cd /home/ubuntu/tj-eseller-node
+          gsutil cp gs://prod-cloudbuild-artifact-bucket/tj-eseller-node/release_previous.tar.gz .
+
+          echo "Extracting previous release"
+          tar -xzf release_previous.tar.gz -C /home/ubuntu/tj-eseller-node
+          rm -f release_previous.tar.gz
+
+          echo "Restarting previous version"
+          sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_start.sh
+
+          echo "Rollback completed"
+        }
+
+        trap rollback ERR
+
+        echo "Stopping existing containers"
+        if [ -f /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_stop.sh ]; then
+          sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_stop.sh || true
+        fi
+
+        echo "Preparing deployment directory"
+        sudo rm -rf /home/ubuntu/tj-eseller-node
+        sudo mkdir -p /home/ubuntu/tj-eseller-node
+        sudo chown ubuntu:ubuntu /home/ubuntu/tj-eseller-node
+        cd /home/ubuntu/tj-eseller-node
+
+        echo "Downloading new artifact"
+        gsutil cp gs://prod-cloudbuild-artifact-bucket/tj-eseller-node/release.tar.gz .
+
+        echo "Extracting release"
+        tar -xzf release.tar.gz
+        rm -f release.tar.gz
+
+        echo "Starting application"
+        sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/app_start.sh
+
+        echo "Waiting for health check to pass..."
+        sudo bash /home/ubuntu/tj-eseller-node/deploy/code-deploy/health_status.sh
+        '
+      done
+
+timeout: "1800s"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  pool:
+    name: projects/tj-prod-service-prj/locations/asia-south1/workerPools/tj-prod-build-workerpool

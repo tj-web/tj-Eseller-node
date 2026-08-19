@@ -8,14 +8,135 @@ import LeadHistory from "../../models/leadHistory.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import EmailQueue from "../../models/emailQueue.model.js";
 import sequelize from "../../db/connection.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
+import { getDeterministicBuyerActivityTimeline } from "../../helpers/buyerActivityHelper.js";
 import Setting from "../../models/websiteSetting.model.js";
 import Vendor from "../../models/vendor.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import VendorLeadInsightInterest from "../../models/vendorLeadInsightInterest.model.js";
+import OmsPiProduct from "../../models/omsPiProduct.model.js";
+import VendorDetails from "../../models/vendorDetail.model.js";
+import StateMaster from "../../models/stateMaster.model.js";
+import CityMaster from "../../models/cityMaster.model.js";
+import KnowlarityAcdStatus from "../../models/knowlarityAcdStatus.model.js";
+import KnowlarityHistory from "../../models/knowlarityHistory.model.js";
+import Companies from "../../models/companies.model.js";
+import CompaniesEmployees from "../../models/companiesEmployees.model.js";
+import LeadsCallAttempt from "../../models/leadsCallAttempt.model.js";
+import VendorAnalytics from "../../models/vendorAnalytics.model.js";
+import AdminUsers from "../../models/adminUser.model.js";
+import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 
+import { AppError } from "../../utilis/appError.js";
+import StatusCodes from "../../utilis/statusCodes.js";
+import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
+
+const ACD_START_TIME = "08:00 AM";
+const ACD_END_TIME = "10:00 PM";
+const CALL_CONN_MAX_DAYS = 45;
+const CALL_MISS_MAX_DAYS = 10;
+const eligiblePlanIds = [46, 47, 48];
+
+const getWorkingHoursStatus = () => {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const timeValue = hours + minutes / 60;
+    if (timeValue >= 8 && timeValue <= 22) {
+        return true;
+    }
+    return false;
+};
+
+const checkAnyConnected = async (lead_id) => {
+    const connectedCall = await TblRequestCallbacks.findOne({
+        where: { lead_id: lead_id, call_status: 2 }
+    });
+    return !!connectedCall;
+};
+
+const addDaysToDate = (dateStr, days) => {
+    const d = new Date(dateStr || new Date());
+    d.setDate(d.getDate() + days);
+    return d;
+};
+
+const addWeekdaysToDate = (dateStr, days) => {
+    let d = new Date(dateStr || new Date());
+    let added = 0;
+    while (added < days) {
+        d.setDate(d.getDate() + 1);
+        if (d.getDay() !== 0 && d.getDay() !== 6) {
+            added++;
+        }
+    }
+    return d;
+};
 
 /**
- * Helper to get vendor's lead insight permissions and allowed products.
+ * Calculates whether calling is allowed for a lead and the reason if not.
+ */
+export const calculateLeadCallPermissions = async (leadJson) => {
+    const leadModelType = leadJson.product ? leadJson.product.lead_model_type : 2;
+    let isCallAllowed = true;
+    let callDisableMsg = "";
+
+    if (leadModelType === 9) {
+        isCallAllowed = true;
+    } else if (leadJson.is_lead_cta === 0) {
+        isCallAllowed = false;
+        callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
+    } else if (leadJson.acd_uuid) {
+        const isWorkingHours = getWorkingHoursStatus();
+        const currTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+
+        if (leadJson.lead_type === 'DEMO') {
+            const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), 10);
+            if (currTime > maxTime && isWorkingHours) {
+                callDisableMsg = `Your call back period of 10 days is over. Please contact support for more details.`;
+                isCallAllowed = false;
+            } else if (!isWorkingHours) {
+                callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                isCallAllowed = false;
+            }
+        } else {
+            const isAnyConnected = await checkAnyConnected(leadJson.id);
+            if (isAnyConnected) {
+                const maxTime = addDaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_CONN_MAX_DAYS);
+                if (currTime > maxTime && isWorkingHours) {
+                    callDisableMsg = `Your call back period of ${CALL_CONN_MAX_DAYS} days is over. Please contact support for more details.`;
+                    isCallAllowed = false;
+                } else if (!isWorkingHours) {
+                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                    isCallAllowed = false;
+                }
+            } else {
+                const maxTime = addWeekdaysToDate((leadJson.callback?.start_date || leadJson.created_at), CALL_MISS_MAX_DAYS);
+                const callTime = new Date((leadJson.callback?.start_date || leadJson.created_at) || new Date());
+                const callStatus = leadJson.callback ? leadJson.callback.call_status : null;
+
+                if (currTime > maxTime && callStatus != 5 && isWorkingHours) {
+                    callDisableMsg = `In future, kindly attempt to callback the potential customer in ${CALL_MISS_MAX_DAYS} days to keep this option active. Please contact support for more details.`;
+                    isCallAllowed = false;
+                } else if ((callStatus == 0 || callStatus == 5) && isWorkingHours && currTime < callTime) {
+                    callDisableMsg = "Please wait to call back until the pre-scheduled time requested by customer";
+                    isCallAllowed = false;
+                } else if (!isWorkingHours) {
+                    callDisableMsg = `Available from ${ACD_START_TIME} to ${ACD_END_TIME}`;
+                    isCallAllowed = false;
+                }
+            }
+        }
+    }
+
+    return {
+        is_call_allowed: isCallAllowed ? 1 : 0,
+        call_disable_msg: callDisableMsg
+    };
+};
+
+/**
+ * Retrieves vendor lead insight permissions and allowed products.
  */
 const getVendorInsightPermission = async (vendor_id) => {
     const vendor = await Vendor.findByPk(vendor_id, {
@@ -26,16 +147,41 @@ const getVendorInsightPermission = async (vendor_id) => {
         return { allowed: false, productIds: [] };
     }
 
-    // Return allowed: true if the feature is enabled for the vendor.
-    // We can also fetch the list of products they HAVE a plan for, but if we want to show it for all, we return all.
-    // Matching the user's request to see the button and unlock flow.
+    const currentDate = new Date().toISOString().split('T')[0];
+
+    const activePlans = await OmsPiDetail.findAll({
+        attributes: ['id', 'pi_status', 'end_date', 'lead_plan_id'],
+        where: {
+            vendor_id: vendor_id,
+            pi_status: 3,
+            lead_plan_id: { [Op.in]: eligiblePlanIds },
+            [Op.or]: [
+                { end_date: null },
+                { end_date: { [Op.gte]: currentDate } }
+            ]
+        }
+    });
+
+    if (!activePlans || activePlans.length === 0) {
+        return { allowed: false, productIds: [] };
+    }
+
+    const piIds = activePlans.map(p => p.id);
+
+    const piProducts = await OmsPiProduct.findAll({
+        attributes: ['product_id'],
+        where: { pi_id: { [Op.in]: piIds } }
+    });
+
+    const productIds = piProducts.map(p => p.product_id);
+
     return {
         allowed: true,
-        isFeatureEnabled: true
+        isFeatureEnabled: true,
+        productIds: productIds
     };
 };
 
-// Define associations
 TblLeads.hasOne(TblRequestCallbacks, {
     foreignKey: 'acd_uuid',
     sourceKey: 'acd_uuid',
@@ -52,7 +198,6 @@ TblLeads.belongsTo(LeadStatus, {
     as: 'leadStatus'
 });
 
-// Inverse associations for getDemos
 TblRequestCallbacks.belongsTo(TblLeads, {
     foreignKey: 'lead_id',
     as: 'lead'
@@ -66,7 +211,7 @@ const verifyLeadOwnership = async (vendor_id, lead_id) => {
         where: { id: lead_id, vendor_id: vendor_id },
         attributes: ['id']
     });
-    if (!lead) throw new Error("Unauthorized: Lead does not belong to vendor");
+    if (!lead) throw new AppError("Unauthorized: Lead does not belong to vendor", StatusCodes.FORBIDDEN);
     return lead;
 };
 
@@ -88,13 +233,46 @@ const maskString = (str, type = 'phone') => {
 };
 
 /**
+ * Get count of pending leads for a vendor
+ */
+export const getPendingLeadsCount = async (vendor_id) => {
+    try {
+        const date48HoursAgo = new Date();
+        date48HoursAgo.setHours(date48HoursAgo.getHours() - 48);
+        // Adjust for IST (+5:30) because DB DATETIME is in IST and Sequelize sends as UTC
+        date48HoursAgo.setMinutes(date48HoursAgo.getMinutes() + 330);
+
+        const pendingCount = await TblLeads.count({
+            where: {
+                vendor_id: vendor_id,
+                created_at: {
+                    [Op.lte]: date48HoursAgo
+                },
+                lead_action: {
+                    [Op.in]: [1, 2, 4]
+                },
+                phone: { [Op.ne]: '' },
+                email: { [Op.ne]: '' },
+                [Op.or]: [
+                    { lead_visibility: 1 },
+                    { lead_visibility: 0, is_trashed: 1 }
+                ]
+            }
+        });
+
+        return { pending_leads_count: pendingCount };
+    } catch (error) {
+        throw new AppError(error.message, StatusCodes.INTERNAL_SERVER_ERROR);
+    }
+};
+
+/**
  * Get all leads for a vendor with filtering and pagination.
  */
-export const getLeads=async (vendor_id, post) => {
+export const getLeads = async (vendor_id, post) => {
     const filters = {
         order_by: post.order_by || 'id',
         order: post.order || 'DESC',
-        search: post.search || "",
         date_from: post.date_from || "",
         date_to: post.date_to || "",
         status: post.lead_status !== undefined ? post.lead_status : "",
@@ -104,7 +282,9 @@ export const getLeads=async (vendor_id, post) => {
         action: post.lead_action || '',
         is_trashed: post.is_trashed || 0,
         limit: parseInt(post.limit) || 10,
-        page: parseInt(post.page) || 0
+        page: parseInt(post.page) || 0,
+        srch_state: post.srch_state || '',
+        srch_city: post.srch_city || ''
     };
 
     const offset = filters.page * filters.limit;
@@ -121,7 +301,7 @@ export const getLeads=async (vendor_id, post) => {
     ];
 
     if (filters.status === 'action_required' || filters.status == -2) {
-        filters.status = [0];
+        filters.status = "";
         filters.hour_upto = '48';
         filters.action = [1, 2, 4];
         filters.date_to = new Date().toISOString().split('T')[0];
@@ -148,6 +328,8 @@ export const getLeads=async (vendor_id, post) => {
         const toDate = new Date(filters.date_to);
         if (filters.date_to === new Date().toISOString().split('T')[0] && filters.hour_upto === '48') {
             const hourUpto = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            // Adjust for IST (+5:30)
+            hourUpto.setMinutes(hourUpto.getMinutes() + 330);
             whereClause.created_at = { ...whereClause.created_at, [Op.lte]: hourUpto };
         } else {
             toDate.setHours(23, 59, 59, 999);
@@ -155,16 +337,35 @@ export const getLeads=async (vendor_id, post) => {
         }
     }
 
-    // PHP Search Logic Refined
     if (filters.srch_by && filters.srch_value) {
-        if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
-            whereClause.is_contact_viewed = { [Op.gt]: 0 };
+        if (filters.srch_by === 'all') {
+            whereClause[Op.and] = [
+                ...(whereClause[Op.and] || []),
+                {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${filters.srch_value}%` } },
+                        { product_name: { [Op.like]: `%${filters.srch_value}%` } }
+                    ]
+                }
+            ];
+        } else {
+            if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
+                whereClause.is_contact_viewed = { [Op.gt]: 0 };
+            }
+            whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
         }
-        whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
     }
 
     if (filters.is_trashed) {
         whereClause.is_trashed = filters.is_trashed;
+    }
+
+    if (filters.srch_state) {
+        whereClause.state = filters.srch_state;
+    }
+
+    if (filters.srch_city) {
+        whereClause.city = filters.srch_city;
     }
 
     const { count, rows } = await TblLeads.findAndCountAll({
@@ -195,6 +396,8 @@ export const getLeads=async (vendor_id, post) => {
     });
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
+    const has_recent_submission = await hasRecentSubmission(vendor_id);
+    const currentDate = new Date().toISOString().split('T')[0];
 
     const enrichedLeads = await Promise.all(rows.map(async (lead) => {
         const leadJson = lead.toJSON();
@@ -206,17 +409,23 @@ export const getLeads=async (vendor_id, post) => {
         const showContact = (isInternational || leadJson.is_show_contact > 0);
         leadJson.is_show_contact = showContact ? 1 : 0;
 
+        let isShowContactAllowed = true;
+        let showContactDisableMsg = '';
 
-        if (!contactViewed) {
-            leadJson.email = maskString(leadJson.email, 'email');
+        if (leadJson.is_show_contact === 0) {
+            isShowContactAllowed = false;
+            showContactDisableMsg = 'Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.';
         }
 
+        leadJson.is_show_contact_allowed = isShowContactAllowed;
+        leadJson.show_contact_disable_msg = showContactDisableMsg;
 
-        if (isInternational || showContact || contactViewed) {
-            leadJson.show_contact_phone = leadJson.phone;
-        } else {
+        if (!contactViewed && !isInternational) {
+            leadJson.email = maskString(leadJson.email, 'email');
             leadJson.phone = maskString(leadJson.phone, 'phone');
             leadJson.show_contact_phone = maskString(leadJson.phone, 'phone');
+        } else {
+            leadJson.show_contact_phone = leadJson.phone;
         }
 
         const latestRemark = await LeadHistory.findOne({
@@ -238,7 +447,6 @@ export const getLeads=async (vendor_id, post) => {
         leadJson.lead_call_attempt_count = parseInt(attempts.connected || 0) + parseInt(attempts.customer_missed || 0);
 
         const leadModelType = leadJson.product ? leadJson.product.lead_model_type : 2;
-        // show_contact_cta visible if International OR Model 1,3,4,7
         leadJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
         leadJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
@@ -248,22 +456,31 @@ export const getLeads=async (vendor_id, post) => {
 
         leadJson.lead_actions = await getLeadActions(leadJson);
 
-        // Call button permission logic
-        let isCallAllowed = true;
-        let callDisableMsg = "";
+        const callPerms = await calculateLeadCallPermissions(leadJson);
+        leadJson.is_call_allowed = callPerms.is_call_allowed;
+        leadJson.call_disable_msg = callPerms.call_disable_msg;
 
-        if (leadModelType === 9) {
-            isCallAllowed = true;
-        } else if (leadJson.is_show_contact === 0) {
-            isCallAllowed = false;
-            callDisableMsg = "Sorry! You do not have permission to view this content. Click on Upgrade Now to get access.";
+        let is_lead_insight_allowed = 0;
+        if (insightPermission.allowed && leadJson.product_id) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.vendor_id = :vendor_id 
+                  AND opd.pi_status = 3 
+                  AND opd.lead_plan_id IN (:eligiblePlanIds)
+                  AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+                  AND opp.product_id = :product_id
+            `, {
+                replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: leadJson.product_id },
+                type: QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
         }
-
-        leadJson.is_call_allowed = isCallAllowed ? 1 : 0;
-        leadJson.call_disable_msg = callDisableMsg;
-
-        // Lead Insight permission logic: Show button if feature is enabled for vendor
-        leadJson.is_lead_insight_allowed = insightPermission.allowed ? 1 : 0;
+        if (is_lead_insight_allowed === 0 && has_recent_submission) {
+            is_lead_insight_allowed = 2;
+        }
+        leadJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
         return leadJson;
     }));
@@ -278,7 +495,7 @@ export const getLeads=async (vendor_id, post) => {
 /**
  * Get all demos for a vendor.
  */
-export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
+export const getDemos = async (vendor_id, post, flg = '', acd_uuid = '') => {
     const filters = {
         order_by: post.order_by || 'id',
         order: post.order || 'DESC',
@@ -321,6 +538,25 @@ export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
         }
     }
 
+    if (filters.srch_by && filters.srch_value) {
+        if (filters.srch_by === 'all') {
+            whereClause[Op.and] = [
+                ...(whereClause[Op.and] || []),
+                {
+                    [Op.or]: [
+                        { name: { [Op.like]: `%${filters.srch_value}%` } },
+                        { product_name: { [Op.like]: `%${filters.srch_value}%` } }
+                    ]
+                }
+            ];
+        } else {
+            if (filters.srch_by === 'phone' || filters.srch_by === 'email') {
+                whereClause.is_contact_viewed = { [Op.gt]: 0 };
+            }
+            whereClause[filters.srch_by] = { [Op.like]: `%${filters.srch_value}%` };
+        }
+    }
+
     const { count, rows } = await TblRequestCallbacks.findAndCountAll({
         where: callbackWhere,
         include: [
@@ -333,7 +569,7 @@ export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
                     {
                         model: TblProduct,
                         as: 'product',
-                        attributes: ['slug', 'lead_model_type'],
+                        attributes: ['product_id', 'slug', 'lead_model_type'],
                         required: false
                     },
                     {
@@ -351,25 +587,23 @@ export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
     });
 
     const insightPermission = await getVendorInsightPermission(vendor_id);
+    const has_recent_submission = await hasRecentSubmission(vendor_id);
+    const currentDate = new Date().toISOString().split('T')[0];
 
     const enrichedDemos = await Promise.all(rows.map(async (demo) => {
         const demoJson = demo.toJSON();
         const lead = demoJson.lead;
 
-        // PHP Masking Logic Refined for demos
         const isInternational = lead.dial_code !== '91';
         const contactViewed = lead.is_contact_viewed > 0;
         const showContact = lead.is_show_contact > 0;
 
-        if (!contactViewed) {
+        if (!contactViewed && !isInternational) {
             lead.email = maskString(lead.email, 'email');
-        }
-
-        if (isInternational || showContact || contactViewed) {
-            demoJson.show_contact_phone = lead.phone;
-        } else {
             lead.phone = maskString(lead.phone, 'phone');
             demoJson.show_contact_phone = maskString(lead.phone, 'phone');
+        } else {
+            demoJson.show_contact_phone = lead.phone;
         }
 
         const latestRemark = await LeadHistory.findOne({
@@ -383,8 +617,28 @@ export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
         demoJson.show_contact_cta = ([1, 3, 4, 7].includes(leadModelType) || isInternational) ? 1 : 0;
         demoJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
 
-        // Lead Insight permission logic
-        demoJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(lead.product_id)) ? 1 : 0;
+        let is_lead_insight_allowed = 0;
+        const resolvedProductId = lead.product_id || (lead.product ? lead.product.product_id : null);
+        if (insightPermission.allowed && resolvedProductId) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.vendor_id = :vendor_id 
+                  AND opd.pi_status = 3 
+                  AND opd.lead_plan_id IN (:eligiblePlanIds)
+                  AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+                  AND opp.product_id = :product_id
+            `, {
+                replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: resolvedProductId },
+                type: QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
+        }
+        if (is_lead_insight_allowed === 0 && has_recent_submission) {
+            is_lead_insight_allowed = 2;
+        }
+        demoJson.is_lead_insight_allowed = is_lead_insight_allowed;
 
         return demoJson;
     }));
@@ -399,7 +653,7 @@ export const getDemos=async (vendor_id, post, flg = '', acd_uuid = '') => {
 /**
  * Get lead history for a specific vendor's lead.
  */
-export const getLeadHistory=async (vendor_id, leadId) => {
+export const getLeadHistory = async (vendor_id, leadId) => {
     await verifyLeadOwnership(vendor_id, leadId);
 
     return await LeadHistory.findAll({
@@ -417,7 +671,7 @@ export const getLeadHistory=async (vendor_id, leadId) => {
 /**
  * Add remark or reminder with ownership verification.
  */
-export const addRemarkReminder=async (data) => {
+export const addRemarkReminder = async (data) => {
     const { vendor_id, lead_id, remark, is_reminder_set, reminder_date, reminder_hour, reminder_minute, reminder_type } = data;
 
     await verifyLeadOwnership(vendor_id, lead_id);
@@ -453,10 +707,10 @@ export const addRemarkReminder=async (data) => {
 /**
  * Handler for lead status updates with ownership verification.
  */
-export const leadStatusHandler=async (vendor_id, body) => {
+export const leadStatusHandler = async (vendor_id, body) => {
     const { lead_id, action, action_name } = body;
 
-    if (!lead_id) throw new Error('Lead Id is required');
+    if (!lead_id) throw new AppError('Lead Id is required', StatusCodes.BAD_REQUEST);
     await verifyLeadOwnership(vendor_id, lead_id);
 
     const response = await updateLeadStatusManual(
@@ -472,9 +726,9 @@ export const leadStatusHandler=async (vendor_id, body) => {
 };
 
 /**
- * Port of updateLeadStatusManual from PHP.
+ * Updates lead status manually.
  */
-export const updateLeadStatusManual=async (data, source = 'web') => {
+export const updateLeadStatusManual = async (data, source = 'web') => {
     if (!data.lead_id) return false;
 
     const previousLead = await TblLeads.findOne({
@@ -504,7 +758,7 @@ export const updateLeadStatusManual=async (data, source = 'web') => {
         lead_id: data.lead_id,
         acd_uuid: previousLeadData.acd_uuid,
         type: 'action',
-        remark: data.action_name,
+        remark: data.action_name || data.remark,
         source: 'eseller'
     });
 
@@ -514,7 +768,7 @@ export const updateLeadStatusManual=async (data, source = 'web') => {
 /**
  * Get lead details.
  */
-export const getLeadDetails=async (vendor_id, leadId) => {
+export const getLeadDetails = async (vendor_id, leadId) => {
     const lead = await TblLeads.findOne({
         where: {
             id: leadId,
@@ -548,7 +802,6 @@ export const getLeadDetails=async (vendor_id, leadId) => {
     if (!lead) return null;
     const leadJson = lead.toJSON();
 
-    // PHP Masking Logic Refined for details
     const isInternational = leadJson.dial_code !== '91';
     const contactViewed = leadJson.is_contact_viewed > 0;
     const showContact = (isInternational || leadJson.is_show_contact > 0);
@@ -570,20 +823,71 @@ export const getLeadDetails=async (vendor_id, leadId) => {
     leadJson.show_upgrade_cta = ([4, 7].includes(leadModelType)) ? 1 : 0;
     leadJson.is_international = isInternational ? '1' : '0';
 
-    leadJson.history = await getLeadHistory(vendor_id, leadId);
     leadJson.lead_actions = await getLeadActions(leadJson);
 
-    // Lead Insight permission logic
     const insightPermission = await getVendorInsightPermission(vendor_id);
-    leadJson.is_lead_insight_allowed = (insightPermission.allowed && insightPermission.productIds.includes(leadJson.product_id)) ? 1 : 0;
+    const has_recent_submission = await hasRecentSubmission(vendor_id);
+    const currentDate = new Date().toISOString().split('T')[0];
+    let is_lead_insight_allowed = 0;
+    if (insightPermission.allowed && leadJson.product_id) {
+        const resultCount = await sequelize.query(`
+            SELECT COUNT(1) as count 
+            FROM oms_pi_details opd
+            INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+            WHERE opd.vendor_id = :vendor_id 
+              AND opd.pi_status = 3 
+              AND opd.lead_plan_id IN (:eligiblePlanIds)
+              AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+              AND opp.product_id = :product_id
+        `, {
+            replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: leadJson.product_id },
+            type: QueryTypes.SELECT
+        });
+        is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
+    }
+    if (is_lead_insight_allowed === 0 && has_recent_submission) {
+        is_lead_insight_allowed = 2;
+    }
 
-    return leadJson;
+    const callPerms = await calculateLeadCallPermissions(leadJson);
+
+    return {
+        id: leadJson.id,
+        name: leadJson.name || "",
+        email: leadJson.email || "",
+        phone: leadJson.phone || "",
+        dial_code: leadJson.dial_code || "91",
+        product_name: leadJson.product_name || "",
+        user_intent: leadJson.user_intent || "",
+        created_at: leadJson.created_at,
+        city: leadJson.city || "",
+        state: leadJson.state || "",
+        keyword: leadJson.keyword || null,
+        status: leadJson.status,
+        lead_action: leadJson.lead_action,
+        is_trashed: leadJson.is_trashed,
+        is_contact_viewed: leadJson.is_contact_viewed,
+        is_show_contact: leadJson.is_show_contact,
+        show_contact_phone: leadJson.show_contact_phone,
+        show_contact_cta: leadJson.show_contact_cta,
+        show_upgrade_cta: leadJson.show_upgrade_cta,
+        is_international: leadJson.is_international,
+        is_lead_insight_allowed: is_lead_insight_allowed,
+        is_call_allowed: callPerms.is_call_allowed,
+        call_disable_msg: callPerms.call_disable_msg,
+        lead_actions: leadJson.lead_actions,
+        product: {
+            slug: leadJson.product?.slug || null,
+            lead_model_type: leadJson.product?.lead_model_type || 2,
+            micro_transaction_model_price: leadJson.product?.micro_transaction_model_price || null
+        }
+    };
 };
 
 /**
  * Updates follow-up schedule for a lead with ownership verification.
  */
-export const setFollowup=async (vendor_id, data) => {
+export const setFollowup = async (vendor_id, data) => {
     const { lead_id, followup_date, followup_hour, followup_minute, action_name, set_follow_up } = data;
 
     const lead = await verifyLeadOwnership(vendor_id, lead_id);
@@ -614,37 +918,55 @@ export const setFollowup=async (vendor_id, data) => {
 /**
  * Retrieves ACD history with ownership verification through acd_uuid.
  */
-export const getLeadAcdHistory=async (vendor_id, acd_uuid, type) => {
-    // Verify that this acd_uuid belongs to a lead owned by this vendor
+export const getLeadAcdHistory = async (vendor_id, acd_uuid, type) => {
     const lead = await TblLeads.findOne({
         where: { acd_uuid: acd_uuid, vendor_id: vendor_id },
         attributes: ['id']
     });
-    if (!lead) throw new Error("Unauthorized: ACD record does not belong to vendor");
+    if (!lead) throw new AppError("Unauthorized: ACD record does not belong to vendor", StatusCodes.FORBIDDEN);
 
-    const sql = `
-        SELECT trc.recording_url, trc.call_status, tkas.display_name, trc.last_updated
-        FROM tbl_request_callbacks as trc
-        INNER JOIN tbl_knowlarity_acd_status as tkas ON tkas.status_id = trc.call_status 
-        WHERE (trc.acd_uuid = :acd_uuid OR trc.parent_acd_uuid = :acd_uuid) 
-        AND tkas.source = 2 
-        AND tkas.type = (CASE WHEN trc.action_performed = 'GetFreeDemo' THEN 2 ELSE 1 END) 
-        ORDER BY start_date
-    `;
+    if (!TblRequestCallbacks.associations.acdStatus) {
+        TblRequestCallbacks.belongsTo(KnowlarityAcdStatus, { foreignKey: 'call_status', targetKey: 'status_id', as: 'acdStatus' });
+    }
 
-    return await sequelize.query(sql, {
-        replacements: { acd_uuid },
-        type: QueryTypes.SELECT
+    const records = await TblRequestCallbacks.findAll({
+        where: {
+            [Op.or]: [
+                { acd_uuid: acd_uuid },
+                { parent_acd_uuid: acd_uuid }
+            ]
+        },
+        include: [{
+            model: KnowlarityAcdStatus,
+            as: 'acdStatus',
+            required: true,
+            where: {
+                source: 2,
+                [Op.and]: sequelize.literal("`acdStatus`.`type` = (CASE WHEN `TblRequestCallbacks`.`action_performed` = 'GetFreeDemo' THEN 2 ELSE 1 END)")
+            },
+            attributes: ['display_name']
+        }],
+        attributes: ['recording_url', 'call_status', 'last_updated'],
+        order: [['start_date', 'ASC']]
+    });
+
+    return records.map(r => {
+        const data = r.toJSON();
+        return {
+            recording_url: data.recording_url,
+            call_status: data.call_status,
+            display_name: data.acdStatus?.display_name,
+            last_updated: data.last_updated
+        };
     });
 };
 
 /**
  * Marks demo as accepted by vendor with ownership verification.
  */
-export const acceptDemo=async (vendor_id, data) => {
+export const acceptDemo = async (vendor_id, data) => {
     const { acd_uuid, lead_id } = data;
 
-    // Verify ownership
     await verifyLeadOwnership(vendor_id, lead_id);
 
     await TblRequestCallbacks.update(
@@ -652,10 +974,13 @@ export const acceptDemo=async (vendor_id, data) => {
         { where: { acd_uuid: acd_uuid, lead_id: lead_id } }
     );
 
-    await sequelize.query(
-        "INSERT INTO tbl_knowlarity_history (acd_uuid, type, source, status_id, event_data) VALUES (?, ?, ?, ?, ?)",
-        { replacements: [acd_uuid, 2, '2', 7, 'Accepted by vendor'], type: QueryTypes.INSERT }
-    );
+    await KnowlarityHistory.create({
+        acd_uuid: acd_uuid,
+        type: 2,
+        source: '2',
+        status_id: 7,
+        event_data: 'Accepted by vendor'
+    });
 
     await LeadHistory.create({
         lead_id,
@@ -671,7 +996,7 @@ export const acceptDemo=async (vendor_id, data) => {
 /**
  * Reschedule demo with ownership verification.
  */
-export const rescheduleDemo=async (vendor_id, data) => {
+export const rescheduleDemo = async (vendor_id, data) => {
     const { acd_uuid, lead_id, option1, option2, option3 } = data;
 
     await verifyLeadOwnership(vendor_id, lead_id);
@@ -695,9 +1020,6 @@ export const rescheduleDemo=async (vendor_id, data) => {
 };
 
 /**
- * Schedule callback with ownership verification.
- */
-/**
  * Triggers ACD call via main site API
  */
 const triggerACD = async (data) => {
@@ -717,7 +1039,6 @@ const triggerACD = async (data) => {
         const result = await response.json();
         return result;
     } catch (err) {
-        console.error("ACD Trigger Failed:", err);
         return { status: false, message: err.message };
     }
 };
@@ -725,21 +1046,60 @@ const triggerACD = async (data) => {
 /**
  * Schedules a callback or demo.
  */
-export const scheduleCallback=async (vendor_id, data) => {
+export const scheduleCallback = async (vendor_id, data) => {
     const { lead_id, date, hour, minute, action, agent_number } = data;
 
-    const lead = await TblLeads.findOne({
-        where: { id: lead_id, vendor_id: vendor_id }
+    const isWorkingHours = getWorkingHoursStatus();
+    if (!isWorkingHours) {
+        throw new AppError(`We are unable to process your request. Our working hours are from ${ACD_START_TIME} to ${ACD_END_TIME}`, StatusCodes.BAD_REQUEST);
+    }
+
+    // Plan eligibility check — vendor must have an active plan (46, 47, or 48) to make calls
+    const currentDate = new Date().toISOString().split('T')[0];
+    const activePlan = await OmsPiDetail.findOne({
+        attributes: ['id'],
+        where: {
+            vendor_id: vendor_id,
+            pi_status: 3,
+            lead_plan_id: { [Op.in]: eligiblePlanIds },
+            [Op.or]: [
+                { end_date: null },
+                { end_date: { [Op.gte]: currentDate } }
+            ]
+        }
     });
-    if (!lead) throw new Error("Unauthorized: Lead does not belong to vendor");
+    if (!activePlan) {
+        throw new AppError("You do not have an active plan to make calls. Please upgrade your plan to access this feature.", StatusCodes.FORBIDDEN);
+    }
+
+    const lead = await TblLeads.findOne({
+        where: { id: lead_id, vendor_id: vendor_id },
+        include: [
+            {
+                model: TblRequestCallbacks,
+                as: 'callback',
+                required: false
+            },
+            {
+                model: TblProduct,
+                as: 'product',
+                attributes: ['lead_model_type'],
+                required: false
+            }
+        ]
+    });
+    if (!lead) throw new AppError("Unauthorized: Lead does not belong to vendor", StatusCodes.FORBIDDEN);
+
+    const callPerms = await calculateLeadCallPermissions(lead.toJSON());
+    if (callPerms.is_call_allowed === 0) {
+        throw new AppError(callPerms.call_disable_msg || "Call is not allowed for this lead", StatusCodes.BAD_REQUEST);
+    }
 
     let scheduledTime;
     if (date && hour && minute) {
         scheduledTime = `${date} ${hour}:${minute}:00`;
     } else {
-        // Default to "Now" in IST (UTC+5:30) like PHP
         const now = new Date();
-        // Add 5.5 hours for IST + 1 minute buffer
         now.setMinutes(now.getMinutes() + 331);
         scheduledTime = now.getFullYear() + '-' +
             String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -800,9 +1160,49 @@ export const scheduleCallback=async (vendor_id, data) => {
 };
 
 /**
+ * Get lead locations (States/Cities) for search filters.
+ */
+export const getLeadLocations = async (search_by, context_id) => {
+    try {
+        if (search_by === "state") {
+            return await StateMaster.findAll({
+                where: {
+                    countries_id: 99,
+                    status: 1,
+                },
+                attributes: [
+                    ["state_id", "id"],
+                    ["state_name", "text"],
+                ],
+                order: [["state_name", "ASC"]],
+                raw: true,
+            });
+        } else if (search_by === "city") {
+            if (!context_id) return [];
+            return await CityMaster.findAll({
+                where: {
+                    state_id: context_id,
+                    status: 1,
+                    is_deleted: 0
+                },
+                attributes: [
+                    ["city_id", "id"],
+                    ["city_name", "text"],
+                ],
+                order: [["city_name", "ASC"]],
+                raw: true,
+            });
+        }
+        return [];
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
  * Retrieves vendor phone numbers.
  */
-export const getVendorContacts=async (vendor_id) => {
+export const getVendorContacts = async (vendor_id) => {
     return await VendorAuth.findAll({
         attributes: [
             [sequelize.literal("CONCAT(first_name, ' ', last_name)"), 'contact_name'],
@@ -815,28 +1215,67 @@ export const getVendorContacts=async (vendor_id) => {
 };
 
 /**
- * Port of fetch_lead_insights_data from PHP.
  * Orchestrates enrichment from Apollo.
  */
-export const fetchLeadInsightsData=async (lead_id, vendor_id) => {
+export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     const leadData = await TblLeads.findOne({
-        attributes: ['id', 'email', 'company_id', 'category_id', 'leadinsight'],
+        attributes: ['id', 'email', 'company_id', 'category_id', 'lead_visibility'],
         where: { id: lead_id }
     });
 
     if (!leadData) return 0;
-    const { email, leadinsight, company_id, category_id } = leadData.toJSON();
+    const { email, company_id, category_id, lead_visibility } = leadData.toJSON();
+    if (lead_visibility != 1) return 0;
     const domain = isBusinessEmail(email);
+    let categoryEmployeeCount = 0;
+    let employeeCount = 0;
+    let companyExists = false;
+    if (company_id) {
+        employeeCount = await CompaniesEmployees.count({
+            where: { company_id: company_id }
+        });
 
-    if (!domain || leadinsight === 1) {
-        return 0;
+        if (category_id) {
+            categoryEmployeeCount = await CompaniesEmployees.count({
+                where: {
+                    company_id: company_id,
+                    [Op.and]: sequelize.literal(`FIND_IN_SET('${category_id}', mapped_categories) > 0`)
+                }
+            });
+        }
+
+        companyExists = await Companies.count({
+            where: { id: company_id }
+        }) > 0;
+    }
+
+    if (!domain || (company_id && companyExists && (categoryEmployeeCount > 0 || employeeCount > 0))) {
+        if (domain && company_id && companyExists && category_id && categoryEmployeeCount === 0) {
+            const companyDetail = await Companies.findOne({
+                attributes: ['id', 'domain', 'organization_id'],
+                where: { id: company_id },
+                raw: true
+            });
+            if (companyDetail) {
+                const employeeList = await getEmployeeList(domain, category_id, lead_id, {
+                    company_id: companyDetail.id,
+                    organization_id: companyDetail.organization_id,
+                    domain: companyDetail.domain
+                });
+                if (employeeList?.status === 1 && employeeList?.data?.apollo_people_ids?.length > 0) {
+                    await getEmployeeEmails(employeeList.data.apollo_people_ids);
+                }
+            }
+        }
+        return { status: 1, message: "Company profile details found." };
     }
 
     let organization = null;
-    const companyDetail = await sequelize.query(
-        "SELECT id, domain, organization_id FROM tbl_companies WHERE domain = ?",
-        { replacements: [domain], type: QueryTypes.SELECT, plain: true }
-    );
+    const companyDetail = await Companies.findOne({
+        attributes: ['id', 'domain', 'organization_id'],
+        where: { domain: domain },
+        raw: true
+    });
 
     if (companyDetail) {
         organization = {
@@ -857,7 +1296,7 @@ export const fetchLeadInsightsData=async (lead_id, vendor_id) => {
     }
 
     await TblLeads.update(
-        { company_id: organization.data.company_id, leadinsight: 1 },
+        { company_id: organization.data.company_id},
         { where: { id: lead_id } }
     );
 
@@ -913,11 +1352,11 @@ const getCompanySize = (value) => {
 const getOrganizationData = async (domain) => {
     const apiKey = process.env.APOLLO_API_KEY;
     if (!apiKey || apiKey === 'YOUR_APOLLO_API_KEY_HERE') {
-        console.warn("Apollo API Key missing or placeholder. Skipping enrichment.");
         return { status: 0, msg: "API Key missing" };
     }
 
-    const url = `https://api.apollo.io/api/v1/organizations/enrich?domain=${encodeURIComponent(domain)}`;
+    const APOLLO_API_URL = process.env.APOLLO_API_URL || "https://api.apollo.io/api/v1/";
+    const url = `${APOLLO_API_URL}organizations/enrich?domain=${encodeURIComponent(domain)}`;
 
     try {
         const response = await fetch(url, {
@@ -929,7 +1368,10 @@ const getOrganizationData = async (domain) => {
             }
         });
 
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`HTTP Error: ${response.status} - ${errBody}`);
+        }
         const data = await response.json();
 
         if (data.organization && data.organization.id) {
@@ -938,23 +1380,26 @@ const getOrganizationData = async (domain) => {
             const companySize = getCompanySize(estimatedNumEmployees);
             const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-            const [company_id] = await sequelize.query(
-                `INSERT INTO tbl_companies (
-                    organization_id, company, employees_size, industry, website, domain, 
-                    company_linkedin_url, facebook_url, twitter_url, \` company_street\`, 
-                    company_city, company_state, company_country, company_postal_code, 
-                    company_address, logo_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                {
-                    replacements: [
-                        org.id, org.name || '', companySize, org.industry || '', org.website_url || '', domain,
-                        org.linkedin_url || '', org.facebook_url || '', org.twitter_url || '', org.street_address || '',
-                        org.city || '', org.state || '', org.country || '', org.postal_code || '',
-                        org.raw_address || '', org.logo_url || '', createdAt
-                    ],
-                    type: QueryTypes.INSERT
-                }
-            );
+            const newCompany = await Companies.create({
+                organization_id: org.id,
+                company: org.name || '',
+                employees_size: companySize,
+                industry: org.industry || '',
+                website: org.website_url || '',
+                domain: domain,
+                company_linkedin_url: org.linkedin_url || '',
+                facebook_url: org.facebook_url || '',
+                twitter_url: org.twitter_url || '',
+                company_street: org.street_address || '',
+                company_city: org.city || '',
+                company_state: org.state || '',
+                company_country: org.country || '',
+                company_postal_code: org.postal_code || '',
+                company_address: org.raw_address || '',
+                logo_url: org.logo_url || '',
+                created_at: createdAt
+            });
+            const company_id = newCompany.id;
 
             return {
                 status: 1,
@@ -965,9 +1410,11 @@ const getOrganizationData = async (domain) => {
                     domain
                 }
             };
+        } else {
+            // Apollo Enrichment: Domain profile not found
         }
     } catch (error) {
-        console.error("Apollo Organization Enrichment Error:", error);
+        // Ignored
     }
 
     return { status: 0, msg: "organization not found", data: { domain } };
@@ -979,52 +1426,66 @@ const getOrganizationData = async (domain) => {
 const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => {
     const categoryParams = await getKeyData(category_id);
     const department = categoryParams?.search_keys || [];
-    let queryString = '';
 
-    if (department.length > 0) {
-        queryString = department.map(item => `person_titles[]=${encodeURIComponent(item)}`).join('&') + '&';
-    }
-
-    const empData = await employeeData(domain, queryString);
+    const empData = await employeeData(domain, department);
     const apolloPeopleIds = [];
 
     if (empData && empData.length > 0) {
         const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
         for (const employee of empData) {
+            if (!employee.apollo_people_id) {
+                continue;
+            }
+
             apolloPeopleIds.push(employee.apollo_people_id);
 
-            const existingEmployee = await sequelize.query(
-                "SELECT id, emp_email, apollo_people_id, mapped_categories FROM tbl_companies_employees WHERE apollo_people_id = ?",
-                { replacements: [employee.apollo_people_id], type: QueryTypes.SELECT, plain: true }
-            );
+            const existingEmployee = await CompaniesEmployees.findOne({
+                attributes: ['id', 'company_id', 'emp_email', 'apollo_people_id', 'mapped_categories'],
+                where: { apollo_people_id: employee.apollo_people_id },
+                raw: true
+            });
 
             if (existingEmployee) {
                 const existingMapped = existingEmployee.mapped_categories || "";
                 const mappedArray = existingMapped.split(',').map(s => s.trim()).filter(Boolean);
+                let needsUpdate = false;
+                let updatedMapped = existingMapped;
 
                 if (!mappedArray.includes(String(category_id))) {
                     mappedArray.push(category_id);
-                    const updatedMapped = mappedArray.filter(Boolean).join(',');
-                    await sequelize.query(
-                        "UPDATE tbl_companies_employees SET mapped_categories = ? WHERE apollo_people_id = ?",
-                        { replacements: [updatedMapped, employee.apollo_people_id], type: QueryTypes.UPDATE }
+                    updatedMapped = mappedArray.filter(Boolean).join(',');
+                    needsUpdate = true;
+                }
+
+                const currentCompanyId = existingEmployee.company_id;
+                const targetCompanyId = companyDetails.company_id;
+                let finalCompanyId = currentCompanyId;
+
+                if (targetCompanyId && currentCompanyId !== targetCompanyId) {
+                    finalCompanyId = targetCompanyId;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
+                    await CompaniesEmployees.update(
+                        { mapped_categories: updatedMapped || null, company_id: finalCompanyId || null },
+                        { where: { apollo_people_id: employee.apollo_people_id || null } }
                     );
                 }
             } else {
-                await sequelize.query(
-                    `INSERT INTO tbl_companies_employees (
-                        company_id, emp_name, linkedin_id, twitter_id, photo, 
-                        designation, apollo_people_id, mapped_categories, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    {
-                        replacements: [
-                            companyDetails.company_id, employee.emp_name, employee.linkedin_url, employee.twitter_id,
-                            employee.photo, employee.designation, employee.apollo_people_id, category_id, createdAt
-                        ],
-                        type: QueryTypes.INSERT
-                    }
-                );
+                await CompaniesEmployees.create({
+                    company_id: companyDetails.company_id || null,
+                    emp_name: employee.emp_name || "",
+                    emp_email: employee?.emp_email || "",
+                    linkedin_id: employee.linkedin_url || "",
+                    twitter_id: employee.twitter_id || "",
+                    photo: employee.photo || "",
+                    designation: employee.designation || "",
+                    apollo_people_id: employee.apollo_people_id || "",
+                    mapped_categories: category_id ? String(category_id) : null,
+                    created_at: createdAt || null
+                });
             }
         }
 
@@ -1037,50 +1498,88 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
 /**
  * Searches for people on Apollo.
  */
-const employeeData = async (domain, queryString) => {
+const employeeData = async (domain, department = []) => {
     const apiKey = process.env.APOLLO_API_KEY;
+    const APOLLO_API_URL = process.env.APOLLO_API_URL || "https://api.apollo.io/api/v1/";
+    const url = `${APOLLO_API_URL}mixed_people/api_search`;
     const headers = {
         "Accept": "application/json",
         "Cache-Control": "no-cache",
         "Content-Type": "application/json",
-        "x-api-key": apiKey
+        "X-Api-Key": apiKey
     };
 
     let resArr = [];
-    const urlWithQuery = `https://api.apollo.io/api/v1/mixed_people/search?${queryString}q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-
     try {
-        const response = await fetchWithCurl(urlWithQuery, headers);
+        const payload = {
+            q_organization_domains: domain,
+            page: 1,
+            per_page: 5
+        };
+
+        if (department && department.length > 0) {
+            payload.person_titles = department;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new AppError(`HTTP Error: ${response.status}`, StatusCodes.INTERNAL_SERVER_ERROR);
         const data = await response.json();
         const people = (data.people || []).slice(0, 5);
 
-        resArr = people.map(emp => ({
-            apollo_people_id: emp.id,
-            emp_name: emp.name,
-            linkedin_url: emp.linkedin_url,
-            twitter_id: emp.twitter_url,
-            photo: emp.photo_url,
-            designation: emp.title
-        }));
-
-        if (resArr.length < 5) {
-            const remainLen = 5 - resArr.length;
-            const urlWithoutQuery = `https://api.apollo.io/api/v1/mixed_people/search?q_organization_domains_list[]=${encodeURIComponent(domain)}`;
-            const responseNoQuery = await fetchWithCurl(urlWithoutQuery, headers);
-            const dataNoQuery = await responseNoQuery.json();
-            const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
-
-            resArr.push(...morePeople.map(emp => ({
+        resArr = people.map(emp => {
+            const firstName = emp.first_name || "";
+            const lastName = emp.last_name || emp.last_name_obfuscated || "";
+            const empName = emp.name || `${firstName} ${lastName}`.trim();
+            return {
                 apollo_people_id: emp.id,
-                emp_name: emp.name,
-                linkedin_url: emp.linkedin_url,
-                twitter_id: emp.twitter_url,
-                photo: emp.photo_url,
-                designation: emp.title
-            })));
+                emp_name: empName || "Anonymous",
+                linkedin_url: emp.linkedin_url || null,
+                twitter_id: emp.twitter_url || null,
+                photo: emp.photo_url || null,
+                designation: emp.title || null
+            };
+        });
+
+        if (resArr.length < 5 && department && department.length > 0) {
+            const remainLen = 5 - resArr.length;
+            const fallbackPayload = {
+                q_organization_domains: domain,
+                page: 1,
+                per_page: 5
+            };
+
+            const responseNoQuery = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(fallbackPayload)
+            });
+
+            if (responseNoQuery.ok) {
+                const dataNoQuery = await responseNoQuery.json();
+                const morePeople = (dataNoQuery.people || []).slice(0, remainLen);
+
+                resArr.push(...morePeople.map(emp => {
+                    const firstName = emp.first_name || "";
+                    const lastName = emp.last_name || emp.last_name_obfuscated || "";
+                    const empName = emp.name || `${firstName} ${lastName}`.trim();
+                    return {
+                        apollo_people_id: emp.id,
+                        emp_name: empName || "Anonymous",
+                        linkedin_url: emp.linkedin_url || null,
+                        twitter_id: emp.twitter_url || null,
+                        photo: emp.photo_url || null,
+                        designation: emp.title || null
+                    };
+                }));
+            }
         }
     } catch (error) {
-        console.error("Apollo Employee Search Error:", error);
+        // Ignored
     }
 
     return resArr;
@@ -1110,21 +1609,33 @@ const getEmployeeEmails = async (apollo_people_ids) => {
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        if (!response.ok) throw new AppError(`HTTP Error: ${response.status}`, StatusCodes.INTERNAL_SERVER_ERROR);
         const data = await response.json();
 
         if (data.matches && data.matches.length > 0) {
             for (const empData of data.matches) {
+                const updatePayload = {};
+                const fullName = empData.name || (empData.first_name && empData.last_name ? `${empData.first_name} ${empData.last_name}`.trim() : null);
+                if (fullName) {
+                    updatePayload.emp_name = fullName;
+                }
                 if (empData.email) {
-                    await sequelize.query(
-                        "UPDATE tbl_companies_employees SET emp_email = ? WHERE apollo_people_id = ?",
-                        { replacements: [empData.email, empData.id], type: QueryTypes.UPDATE }
+                    updatePayload.emp_email = empData.email;
+                }
+                if (empData.linkedin_url) {
+                    updatePayload.linkedin_id = empData.linkedin_url;
+                }
+
+                if (Object.keys(updatePayload).length > 0) {
+                    await CompaniesEmployees.update(
+                        updatePayload,
+                        { where: { apollo_people_id: empData.id } }
                     );
                 }
             }
         }
     } catch (error) {
-        console.error("Apollo Bulk Match Error:", error);
+        // Ignored
     }
 };
 
@@ -1144,26 +1655,41 @@ const getKeyData = async (key) => {
 };
 
 /**
- * Wrapper for fetch to simulate PHP's fetchWithCurl.
+ * Wrapper for fetch.
  */
 const fetchWithCurl = async (url, headers) => {
     const response = await fetch(url, { method: 'POST', headers });
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+    if (!response.ok) throw new AppError(`HTTP Error: ${response.status}`, StatusCodes.INTERNAL_SERVER_ERROR);
     return response;
 };
 
-export const getLeadInsightPlanDetails=async (vendor_id) => {
-    const result = await OmsPiDetail.findOne({
+export const getLeadInsightPlanDetails = async (vendor_id) => {
+    const currentDate = new Date().toISOString().split('T')[0];
+    const active = await OmsPiDetail.findOne({
         where: {
             vendor_id: vendor_id,
-            plan_type: 'leadinsight'
+            lead_plan_id: { [Op.in]: eligiblePlanIds },
+            pi_status: 3,
+            [Op.or]: [
+                { end_date: null },
+                { end_date: { [Op.gte]: currentDate } }
+            ]
         },
         order: [['id', 'DESC']]
     });
-    return result ? result.toJSON() : null;
+    if (active) return active.toJSON();
+
+    const fallback = await OmsPiDetail.findOne({
+        where: {
+            vendor_id: vendor_id,
+            lead_plan_id: { [Op.in]: eligiblePlanIds }
+        },
+        order: [['id', 'DESC']]
+    });
+    return fallback ? fallback.toJSON() : null;
 };
 
-export const hasRecentSubmission=async (vendor_id) => {
+export const hasRecentSubmission = async (vendor_id) => {
     const count = await VendorLeadInsightInterest.count({
         where: {
             vendor_id: vendor_id,
@@ -1174,173 +1700,41 @@ export const hasRecentSubmission=async (vendor_id) => {
     });
     return count > 0;
 };
-const getActivityText = (asset_type, asset_name, activity_name, activity_count) => {
-    const countText = activity_count > 1 ? ` **${activity_count} times**` : "";
-    const boldAssetName = asset_name ? `**${asset_name}**` : "";
 
-    if (asset_type === 'searched_keyword' && activity_name === 'form_submit') {
-        return `Customer searched for ${boldAssetName}${countText}`;
-    } else if (asset_type === 'visited_home_page' && activity_name === 'page_view') {
-        return `Customer visited **Home Page**${countText}`;
-    } else {
-        switch (activity_name) {
-            case 'lead_created':
-                return `Requested Demo for ${boldAssetName}${countText}`;
-            case 'page_view':
-                return `Frequently revisited the ${boldAssetName} page${countText}`;
-            case 'form_submit':
-                return `Initiated call request for ${boldAssetName}${countText}`;
-            case 'checked_price':
-                return `Checked pricing options for ${boldAssetName} ${asset_type}${countText}`;
-            case 'add_to_cart':
-                return `${asset_type} ${boldAssetName} has been added to the cart${countText}`;
-            case 'add_to_wishlist':
-                return `${asset_type} ${boldAssetName} has been added to wishlist${countText}`;
-            case 'read_reviews':
-                return `Read multiple product reviews for ${boldAssetName} ${asset_type}${countText}`;
-            default:
-                return `Customer expressed interest in ${boldAssetName} ${asset_type}${countText}`;
-        }
-    }
-};
-
-const timeAgo = (date) => {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    let interval = seconds / 31536000;
-    if (interval > 1) return Math.floor(interval) + " years ago";
-    interval = seconds / 2592000;
-    if (interval > 1) return Math.floor(interval) + " months ago";
-    interval = seconds / 86400;
-    if (interval > 1) return Math.floor(interval) + " days ago";
-    interval = seconds / 3600;
-    if (interval > 1) return Math.floor(interval) + " hours ago";
-    interval = seconds / 60;
-    if (interval > 1) return Math.floor(interval) + " minutes ago";
-    return Math.floor(seconds) + " seconds ago";
-};
 
 /**
- * Get lead insights with ownership verification.
+ * Fetches buyer activity timeline from MongoDB tracks for website leads.
  */
-export const getLeadInsights=async (vendor_id, lead_id) => {
-    const full_access_plan_id = 38;
-    const limited_access_plan_id = 39;
-
-    const vendor = await Vendor.findByPk(vendor_id, {
-        attributes: ['lead_insight_display']
-    });
-
-    if (!vendor || vendor.lead_insight_display != 1) {
-        return null;
-    }
-
-    const planDetails = await getLeadInsightPlanDetails(vendor_id);
-    let plan_name = 'No Plan';
-    let plan_id = '';
-
-    if (planDetails) {
-        const pi_status = planDetails.pi_status;
-        const end_date = planDetails.end_date;
-        const currentDate = new Date().toISOString().split('T')[0];
-
-        if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate) {
-            plan_id = planDetails.lead_plan_id;
-            plan_name = planDetails.plan_name || 'Paid Access';
-
-            if (plan_id == full_access_plan_id) {
-                await fetchLeadInsightsData(lead_id, vendor_id);
-            }
-        } else {
-            // Expired or inactive plan -> Limited Access
-            plan_id = limited_access_plan_id;
-            plan_name = planDetails.plan_name || 'Full Free Access (Limited)';
+export const getWebsiteBuyerActivity = async (lead, vendor_id, lead_id, is_lead_insight_allowed) => {
+    try {
+        const db = mongoose.connection?.db;
+        if (!db) {
+            return { customer_activity_details: {}, activity: [] };
         }
-    } else {
-        // No plan at all -> still show Limited Access (Blurred) as requested by user
-        plan_id = limited_access_plan_id;
-        plan_name = 'Free Access (Limited)';
-    }
+        const tracksCollection = db.collection('tracks');
 
-    await verifyLeadOwnership(vendor_id, lead_id);
+        let guuids = [];
+        const fetchGuuids = async (customerIdType) => {
+            const guuidPipeline = [
+                { $match: { 'feeds.customer_id': { $in: [customerIdType] } } },
+                { $project: { 'feeds.guuid': 1, 'feeds.created_at': 1, 'feeds.customer_id': 1 } },
+                { $unwind: '$feeds' },
+                { $match: { 'feeds.customer_id': { $in: [customerIdType] }, 'feeds.guuid': { $ne: null, $exists: true } } },
+                { $sort: { 'feeds.created_at': -1 } },
+                { $group: { _id: '$feeds.guuid', guuid: { $first: '$feeds.guuid' } } },
+                { $limit: 10 }
+            ];
+            const results = await tracksCollection.aggregate(guuidPipeline).toArray();
+            return results.map(r => r.guuid);
+        };
 
-    const lead = await TblLeads.findByPk(lead_id, {
-        attributes: ['id', 'user_id', 'email', 'company_id', 'category_id', 'product_name']
-    });
-    if (!lead) return null;
-
-    const result = {
-        customer_activity_details: { activities: [] },
-        customer_company_information: {},
-        top_five_key_people: [],
-        device: 'web',
-        leadinsight_plan_name: plan_name,
-        leadinsight_plan_id: plan_id,
-        full_access_plan_id,
-        limited_access_plan_id,
-        has_recent_submission: await hasRecentSubmission(vendor_id)
-    };
-
-    // 1. Fetch Company Information from MySQL
-    if (lead.company_id) {
-        let company = await sequelize.query(
-            `SELECT id as company_id, company as name, employees_size as size, industry, website, company_linkedin_url, logo_url 
-             FROM tbl_companies WHERE id = ?`,
-            { replacements: [lead.company_id], type: QueryTypes.SELECT, plain: true }
-        );
-
-        if (company && plan_id === limited_access_plan_id) {
-            // Redact sensitive company info for Limited Access
-            company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
-            company.website = company.website ? "********" : null;
-            company.company_linkedin_url = company.company_linkedin_url ? "********" : null;
-            company.logo_url = null; // Do not send logo
-            // Industry and Size are generally safe to show to encourage unlocking
+        guuids = await fetchGuuids(String(lead.customer_id));
+        if (guuids.length === 0 && !isNaN(Number(lead.customer_id))) {
+            guuids = await fetchGuuids(Number(lead.customer_id));
         }
 
-        result.customer_company_information = company || {};
-
-        // 2. Fetch Top 5 Key People from MySQL
-        let keyPeople = await sequelize.query(
-            `SELECT * FROM (
-                SELECT id, company_id, emp_name, emp_email, linkedin_id, photo, designation, mapped_categories,
-                ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY id ASC) AS \`rank\`
-                FROM tbl_companies_employees WHERE company_id = ?
-                ${lead.category_id ? 'AND FIND_IN_SET(?, mapped_categories) > 0' : ''}
-            ) AS Top5KeyEmployee WHERE \`rank\` <= 5`,
-            {
-                replacements: lead.category_id ? [lead.company_id, lead.category_id] : [lead.company_id],
-                type: QueryTypes.SELECT
-            }
-        );
-
-        if (keyPeople && plan_id === limited_access_plan_id) {
-            keyPeople = keyPeople.map(person => ({
-                ...person,
-                emp_name: person.emp_name ? person.emp_name.substring(0, 3) + "********" : "********",
-                emp_email: "********",
-                linkedin_id: person.linkedin_id ? "********" : null,
-                photo: null // Do not send photo
-            }));
-        }
-
-        result.top_five_key_people = keyPeople || [];
-    }
-
-    // 3. Fetch Buyer Activity Timeline from MongoDB
-    if (lead.user_id) {
-        try {
-            const db = mongoose.connection?.db;
-            if (!db) {
-                console.warn("MongoDB connection not established for Lead Insights");
-                return result;
-            }
-            const tracksCollection = db.collection('tracks');
-
-            // Get related GUUIDs (simplified version of PHP logic)
-            const guuids = await tracksCollection.distinct('feeds.guuid', {
-                'feeds.customer_id': String(lead.user_id)
-            });
-
+        let activities = [];
+        if (guuids.length > 0) {
             const activityQuery = [
                 {
                     $match: {
@@ -1363,65 +1757,459 @@ export const getLeadInsights=async (vendor_id, lead_id) => {
                         page_info: '$feeds.page_info',
                         formdata: '$feeds.formdata',
                         product_info: '$feeds.product_info',
+                        lead_details: '$feeds.changes',
                         created_at: '$created_at'
                     }
                 }
             ];
+            activities = await tracksCollection.aggregate(activityQuery).toArray();
+        }
 
-            const activities = await tracksCollection.aggregate(activityQuery).toArray();
+        const finalActivityMap = {};
+        for (const activity of activities) {
+            let assetName = '';
+            let assetType = '';
+            const feedAction = activity.feed_action;
 
-            // Process activities to match PHP final_activity_array format
-            const finalActivityMap = {};
-            for (const activity of activities) {
-                let assetName = '';
-                let assetType = '';
-                const feedAction = activity.feed_action;
+            const productId = activity.page_info?.product_id || activity.product_info?.product_id || activity.formdata?.product_id;
+            let productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name || activity.page_info?.title;
+            const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
 
-                // Extraction logic matching Lmslib.php
-                const productName = activity.page_info?.product_name || activity.product_info?.product_name || activity.formdata?.product_name;
-                const categoryName = activity.page_info?.category_name || activity.product_info?.category_name;
-
-                if (productName) {
-                    assetName = (plan_id === limited_access_plan_id) ? (productName.substring(0, 5) + "********") : productName;
-                    assetType = 'Product';
-                } else if (categoryName) {
-                    assetName = (plan_id === limited_access_plan_id) ? (categoryName.substring(0, 5) + "********") : categoryName;
-                    assetType = 'Category';
-                } else if (activity.page_url?.includes('techjockey.com') && feedAction === 'page_view') {
-                    assetName = 'visited_home_page';
-                    assetType = 'visited_home_page';
-                }
-
-                if (assetName && feedAction && assetType) {
-                    if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
-                    if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
-                    if (!finalActivityMap[assetType][assetName][feedAction]) {
-                        finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
+            let productVendorId = null;
+            if (productId || productName) {
+                try {
+                    if (!TblProduct.associations.vendorBrandRelations) {
+                        TblProduct.hasMany(VendorBrandRelation, { foreignKey: 'tbl_brand_id', sourceKey: 'brand_id', as: 'vendorBrandRelations' });
                     }
-                    finalActivityMap[assetType][assetName][feedAction].count++;
+                    const productCondition = productId ? { product_id: productId } : { product_name: productName };
+                    const productDetailsResult = await TblProduct.findOne({
+                        attributes: ['product_name'],
+                        where: productCondition,
+                        include: [{
+                            model: VendorBrandRelation,
+                            as: 'vendorBrandRelations',
+                            attributes: ['vendor_id'],
+                            where: { status: 1, vendor_id: vendor_id },
+                            required: false
+                        }]
+                    });
+
+                    if (productDetailsResult) {
+                        if (productDetailsResult.vendorBrandRelations && productDetailsResult.vendorBrandRelations.length > 0) {
+                            productVendorId = productDetailsResult.vendorBrandRelations[0].vendor_id;
+                        }
+                        if (!productName) productName = productDetailsResult.product_name;
+                    }
+                } catch (err) {
+                    // Ignored
                 }
             }
-            result.customer_activity_details = finalActivityMap;
-        } catch (mongoError) {
-            console.error("MongoDB Insight Error:", mongoError);
-        }
-    }
 
-    return result;
+            if (productName && productVendorId && String(productVendorId) === String(vendor_id)) {
+                assetName = productName;
+                assetType = 'Product';
+            } else if (categoryName) {
+                assetName = categoryName;
+                assetType = 'Category';
+            } else if (activity.page_info?.page_type === 'home' && feedAction === 'page_view' && /techjockey\.com\/$/.test(activity.page_url)) {
+                assetName = 'visited_home_page';
+                assetType = 'visited_home_page';
+            } else if (activity.formdata?.form_name === 'searchForm' && feedAction === 'form_submit') {
+                assetName = activity.formdata.keyword ? activity.formdata.keyword.replace(/\b\w/g, l => l.toUpperCase()) : 'Search';
+                assetType = 'searched_keyword';
+            }
+
+            if (assetName && feedAction && assetType) {
+                if (!finalActivityMap[assetType]) finalActivityMap[assetType] = {};
+                if (!finalActivityMap[assetType][assetName]) finalActivityMap[assetType][assetName] = {};
+                if (!finalActivityMap[assetType][assetName][feedAction]) {
+                    finalActivityMap[assetType][assetName][feedAction] = { count: 0, created_at: activity.created_at };
+                }
+                finalActivityMap[assetType][assetName][feedAction].count++;
+            }
+        }
+
+        const getActivityByFeedAction = (asset_type, asset_name, activity_name, activity_count) => {
+            const countText = activity_count > 1 ? ` ${activity_count} times` : "";
+            let activity = "";
+            if (asset_type === 'searched_keyword' && activity_name === 'form_submit') {
+                activity = `Customer searched for "${asset_name}"${countText}`;
+            } else if (asset_type === 'visited_home_page' && activity_name === 'page_view') {
+                activity = `Customer visited Home Page${countText}`;
+            } else {
+                switch (activity_name) {
+                    case 'lead_created':
+                        activity = `Requested Demo for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    case 'page_view':
+                        activity = `Frequently revisited the ${asset_name} page${countText}`;
+                        break;
+                    case 'form_submit':
+                        activity = `Initiated call request for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    case 'checked_price':
+                        activity = `Checked pricing options for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    case 'add_to_cart':
+                        activity = `${asset_type} ${asset_name} has been added to the cart${countText}`;
+                        break;
+                    case 'add_to_wishlist':
+                        activity = `${asset_type} ${asset_name} has been added to wishlist${countText}`;
+                        break;
+                    case 'read_reviews':
+                        activity = `Read multiple product reviews for ${asset_name} ${asset_type}${countText}`;
+                        break;
+                    default:
+                        activity = `Customer expressed interest in ${asset_name} ${asset_type}${countText}`;
+                        break;
+                }
+            }
+            return activity;
+        };
+
+        const allActivities = [];
+        for (const assetType of Object.keys(finalActivityMap)) {
+            for (const assetName of Object.keys(finalActivityMap[assetType])) {
+                for (const feedAction of Object.keys(finalActivityMap[assetType][assetName])) {
+                    const details = finalActivityMap[assetType][assetName][feedAction];
+                    const text = getActivityByFeedAction(assetType, assetName, feedAction, details.count);
+                    if (text) {
+                        allActivities.push({
+                            assetType,
+                            assetName,
+                            feedAction,
+                            action: text,
+                            created_at: details.created_at,
+                            count: details.count
+                        });
+                    }
+                }
+            }
+        }
+
+        allActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        const slicedActivities = allActivities.slice(0, 10);
+
+        const truncatedActivityMap = {};
+        const activityTimeline = [];
+
+        for (const item of slicedActivities) {
+            if (!truncatedActivityMap[item.assetType]) truncatedActivityMap[item.assetType] = {};
+            if (!truncatedActivityMap[item.assetType][item.assetName]) truncatedActivityMap[item.assetType][item.assetName] = {};
+
+            truncatedActivityMap[item.assetType][item.assetName][item.feedAction] = {
+                count: item.count,
+                created_at: item.created_at
+            };
+
+            activityTimeline.push({
+                action: item.action,
+                created_at: item.created_at
+            });
+        }
+
+        return {
+            customer_activity_details: truncatedActivityMap,
+            activity: activityTimeline
+        };
+    } catch (mongoError) {
+        return { customer_activity_details: {}, activity: [] };
+    }
 };
 
 /**
- * Unlock lead insights interest with exact PHP parity.
+ * Fetches buyer activity timeline for Non-Website leads (e.g. Calls/ACD, CRM, Manual, Campaigns).
  */
-export const unlockLeadInsights=async (vendor_id, data) => {
-    console.log("Unlocking insights for vendor:", vendor_id, "Data:", data);
-    const { company, email, date = null, time = [], remark = null, gp = null } = data;
+export const getNonWebsiteBuyerActivity = async (lead, vendor_id, lead_id, is_lead_insight_allowed) => {
+    try {
+        const activityTimeline = await getDeterministicBuyerActivityTimeline(lead);
+
+        return {
+            customer_activity_details: {},
+            activity: activityTimeline
+        };
+    } catch (error) {
+        return { customer_activity_details: {}, activity: [] };
+    }
+};
+
+/**
+ * Get lead insights with ownership verification.
+ */
+export const getLeadInsights = async (vendor_id, lead_id) => {
+    try {
+        const full_access_plan_id = eligiblePlanIds;
+
+        const vendor = await Vendor.findByPk(vendor_id, {
+            attributes: ['lead_insight_display']
+        });
+
+        if (!vendor || vendor.lead_insight_display != 1) {
+            return null;
+        }
+
+        await verifyLeadOwnership(vendor_id, lead_id);
+
+        let lead = await TblLeads.findByPk(lead_id, {
+            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed']
+        });
+        if (!lead) return null;
+
+        const planDetails = await getLeadInsightPlanDetails(vendor_id);
+        let plan_name = 'No Plan';
+        let plan_id = '';
+
+        if (planDetails) {
+            const pi_status = planDetails.pi_status;
+            const end_date = planDetails.end_date;
+            const currentDate = new Date().toISOString().split('T')[0];
+
+            if (pi_status == '3' && new Date(end_date).toISOString().split('T')[0] >= currentDate && eligiblePlanIds.includes(Number(planDetails.lead_plan_id))) {
+                plan_id = planDetails.lead_plan_id;
+                plan_name = planDetails.plan_name;
+            }
+        }
+
+        let is_lead_insight_allowed = 0;
+        const currentDate = new Date().toISOString().split('T')[0];
+        let resolvedProductId = lead.product_id;
+        if (!resolvedProductId && lead.product_name) {
+            const product = await TblProduct.findOne({ where: { product_name: lead.product_name }, attributes: ['product_id'] });
+            resolvedProductId = product ? product.product_id : null;
+        }
+
+        if (resolvedProductId) {
+            const resultCount = await sequelize.query(`
+                SELECT COUNT(1) as count 
+                FROM oms_pi_details opd
+                INNER JOIN oms_pi_products opp ON opd.id = opp.pi_id
+                WHERE opd.vendor_id = :vendor_id 
+                  AND opd.pi_status = 3 
+                  AND opd.lead_plan_id IN (:eligiblePlanIds)
+                  AND (opd.end_date IS NULL OR opd.end_date >= :currentDate)
+                  AND opp.product_id = :product_id
+            `, {
+                replacements: { vendor_id, eligiblePlanIds, currentDate, product_id: resolvedProductId },
+                type: sequelize.QueryTypes.SELECT
+            });
+            is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
+        }
+
+        if (is_lead_insight_allowed === 1) {
+            await fetchLeadInsightsData(lead_id, vendor_id);
+            // Re-fetch lead since fetchLeadInsightsData might have updated company_id and leadinsight
+            lead = await TblLeads.findByPk(lead_id, {
+                attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed']
+            });
+            if (!lead) return null;
+        }
+
+        const totalCredits = lead?.oms_pi_id ? await OmsPiDetail.sum('total_lead', {
+            where: { id: lead.oms_pi_id }
+        }) : 0;
+
+        const usedCredits = lead?.oms_pi_id ? await TblLeads.sum('credit_used', {
+            where: { oms_pi_id: lead.oms_pi_id, is_trashed: 0 }
+        }) : 0;
+
+        const latestCallback = await TblRequestCallbacks.findOne({
+            where: { lead_id },
+            order: [['created_at', 'DESC']],
+            attributes: ['designation']
+        });
+
+        const questionnaireQuery = `
+            SELECT alqa.lead_id, lqs.id as tag_id, lqs.tag_name, lqs.tag_value, aq.id as question_id, aq.question, 
+            (CASE 
+                WHEN alqa.custom_ans IS NOT NULL THEN alqa.custom_ans
+                WHEN aqo.is_user_defined=0 THEN aqo.option 
+                WHEN aqo.is_user_defined=1 && aqo.option != 'NA' THEN CONCAT(aqo.option, ' - ', alqa.user_defined_ans) 
+                ELSE alqa.user_defined_ans
+            END) as answer 
+            FROM acd_leads_ques_ans alqa 
+            LEFT JOIN acd_questions_options aqo on alqa.ans_id = aqo.id 
+            LEFT JOIN acd_questions aq on alqa.ques_id = aq.id 
+            LEFT JOIN leads_questions_tags lqs on aq.tag_id = lqs.id
+            WHERE alqa.lead_id = :lead_id
+            ORDER BY alqa.lead_id DESC, aq.id ASC
+        `;
+
+        const questionnaireData = await sequelize.query(questionnaireQuery, {
+            replacements: { lead_id },
+            type: sequelize.QueryTypes.SELECT
+        });
+
+        let qDesignation = null;
+        let qIndustry = null;
+        let qCompanySize = null;
+        let additionalInfo = [];
+
+        if (questionnaireData && questionnaireData.length > 0) {
+            let qId = 0;
+            questionnaireData.forEach(q => {
+                if (q.answer) {
+                    if (q.question_id !== qId) {
+                        additionalInfo.push({ ...q });
+                    } else {
+                        additionalInfo[additionalInfo.length - 1].answer += '  |  ' + q.answer;
+                    }
+                    qId = q.question_id;
+                }
+            });
+
+            // Extract the specific fields for convenience, just like before, using the aggregated answers
+            additionalInfo.forEach(q => {
+                if (q.tag_value === 'persona') {
+                    qDesignation = q.answer;
+                } else if (q.tag_value === 'industry') {
+                    qIndustry = q.answer;
+                } else if (q.tag_value === 'company_size') {
+                    qCompanySize = q.answer;
+                }
+            });
+        }
+
+
+        const vendorData = await Vendor.findByPk(vendor_id, {
+            attributes: ['id', 'first_name', 'last_name', 'email', 'phone', 'dial_code']
+        });
+
+        const result = {
+            customer_activity_details: {},
+            customer_company_information: {},
+            top_five_key_people: [],
+            activity: [],
+            device: 'web',
+            leadinsight_plan_name: plan_name,
+            leadinsight_plan_id: plan_id,
+            total_credits: totalCredits,
+            used_credits: usedCredits,
+            lead_credit_used: lead.credit_used,
+            full_access_plan_id,
+            has_recent_submission: await hasRecentSubmission(vendor_id),
+            vendor_data: vendorData || {},
+            actions: await getLeadActions(lead),
+            current_status: lead.status,
+            current_action: lead.lead_action,
+            buying_stage: (lead.status === 2 || lead.status === 12) ? 'Decision' : (lead.status === 1 ? 'Evaluation' : 'Awareness'),
+            city: lead.city,
+            state: lead.state,
+            designation: qDesignation || (latestCallback ? latestCallback.designation : null),
+            industry: qIndustry,
+            company_size: qCompanySize,
+            additional_info: additionalInfo
+        };
+
+        if (lead.company_id) {
+            let company = await Companies.findOne({
+                attributes: [
+                    ['id', 'company_id'],
+                    ['company', 'name'],
+                    ['employees_size', 'team_size'],
+                    'industry',
+                    'website',
+                    ['company_linkedin_url', 'linkedin'],
+                    'logo_url'
+                ],
+                where: { id: lead.company_id },
+                raw: true
+            });
+
+            if (company && is_lead_insight_allowed !== 1) {
+                company.name = company.name ? company.name.substring(0, 5) + "********" : "********";
+                company.website = company.website ? "********" : null;
+                company.linkedin = company.linkedin ? "********" : null;
+                company.logo_url = null;
+            }
+
+            if (company) {
+                Object.assign(result, company);
+            }
+            result.customer_company_information = company || {};
+            let keyPeople = [];
+            if (lead.category_id) {
+                keyPeople = await CompaniesEmployees.findAll({
+                    attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
+                    where: {
+                        company_id: lead.company_id,
+                        [Op.and]: sequelize.literal(`FIND_IN_SET('${lead.category_id}', mapped_categories) > 0`)
+                    },
+                    limit: 5,
+                    raw: true
+                });
+            }
+            if ((!keyPeople || keyPeople.length === 0) && lead.company_id) {
+                keyPeople = await CompaniesEmployees.findAll({
+                    attributes: ['id', 'company_id', 'emp_name', 'emp_email', 'linkedin_id', 'photo', 'designation', 'mapped_categories'],
+                    where: { company_id: lead.company_id },
+                    limit: 5,
+                    raw: true
+                });
+            }
+
+            if (keyPeople && is_lead_insight_allowed !== 1) {
+                keyPeople = [];
+            }
+
+            result.top_five_key_people = keyPeople || [];
+        }
+
+        if (qIndustry) result.industry = qIndustry;
+        if (qCompanySize) result.team_size = qCompanySize;
+
+        // 3. Fetch Buyer Activity Timeline (Website vs Non-Website)
+        const isWebsiteSource = ['website', 'web'].includes(String(lead.source || '').toLowerCase().trim());
+
+        let activityResult = { customer_activity_details: {}, activity: [] };
+        if (isWebsiteSource) {
+            if (lead.customer_id) {
+                activityResult = await getWebsiteBuyerActivity(lead, vendor_id, lead_id, is_lead_insight_allowed);
+            }
+        } else {
+            activityResult = await getNonWebsiteBuyerActivity(lead, vendor_id, lead_id, is_lead_insight_allowed);
+        }
+
+        result.customer_activity_details = activityResult.customer_activity_details || {};
+        result.activity = activityResult.activity || [];
+
+        const twoDaysAgo = new Date();
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        const recentRequest = await VendorLeadInsightInterest.findOne({
+            where: {
+                vendor_id: vendor_id,
+                submitted_at: {
+                    [Op.gte]: twoDaysAgo
+                }
+            }
+        });
+        result.has_recent_submission = !!recentRequest;
+
+        return result;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Unlock lead insights interest.
+ */
+export const unlockLeadInsights = async (vendor_id, data) => {
+    let { company, email, date = null, time = [], remark = null, gp = null } = data;
+
+    if (!company || !email || !gp) {
+        const vendor = await Vendor.findByPk(vendor_id);
+        const vendorDetails = await VendorDetails.findOne({ where: { vendor_id } });
+
+        if (!company && vendorDetails) company = vendorDetails.company;
+        if (!email && vendor) email = vendor.email;
+        if (!gp && vendor) gp = `${vendor.first_name || ''} ${vendor.last_name || ''}`.trim();
+    }
 
     const submitted_at = new Date();
     const createdAtStr = submitted_at.toISOString().slice(0, 19).replace('T', ' ');
 
     try {
-        // 1. Save Interest
         const truncatedGp = gp ? gp.substring(0, 10) : null;
         await VendorLeadInsightInterest.create({
             vendor_id,
@@ -1433,44 +2221,34 @@ export const unlockLeadInsights=async (vendor_id, data) => {
             preferred_call_date: date,
             preferred_call_time: time ? (typeof time === 'string' ? time : JSON.stringify(time)) : '[]'
         });
-        console.log("Interest saved successfully");
 
-        // 2. Queue Email (Matching PHP template)
         const timeArr = Array.isArray(time) ? time : JSON.parse(time || '[]');
-        const emailBody = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Lead Insight Interest Notification</title>
-  <style>
-    body { font-family: Arial, sans-serif; background-color: #f6f8fa; padding: 20px; }
-    .container { max-width: 600px; margin: auto; background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; }
-    h2 { color: #2c3e50; }
-    .info { margin-top: 20px; padding: 10px; background-color: #f0f4f8; border-left: 4px solid #2c7be5; }
-    .info p { margin: 5px 0; }
-    .footer { margin-top: 30px; font-size: 12px; color: #7f8c8d; text-align: center; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2>New Interest in "Unlock Lead Insights"</h2>
-    <p>A vendor has shown interest in unlocking lead insights. Please review their details below and connect accordingly.</p>
-    <div class="info">
-      <p><strong>Vendor Id:</strong> ${vendor_id}</p>
-      <p><strong>Company:</strong> ${company || 'N/A'}</p>
-      <p><strong>Email :</strong> ${email || 'N/A'}</p>
-      <p><strong>Preferred Call Time:</strong> ${date || ''} ${timeArr[0] || ''}:${timeArr[1] || ''}</p>
-      <p><strong>Additional Notes:</strong> ${remark || ''}</p>
-    </div>
-    <p><strong>Action Required:</strong><br>Reach out to the vendor to schedule a call and walk them through the Lead Insights feature and benefits.</p>
-    <div class="footer">Techjockey Internal Notification • Powered by VendorCRM</div>
-  </div>
-</body>
-</html>`;
+        const emailBody = await renderTemplate("lead-insight-interest", {
+            vendor_id: vendor_id,
+            company: company || 'N/A',
+            email: email || 'N/A',
+            date: date || '',
+            time_hour: timeArr[0] || '',
+            time_minute: timeArr[1] || '',
+            remark: remark || ''
+        });
+
+        if (!Vendor.associations.manager) {
+            Vendor.belongsTo(AdminUsers, { foreignKey: 'acc_manager_id', targetKey: 'adminusers_id', as: 'manager' });
+        }
+        const vendorRec = await Vendor.findOne({
+            attributes: ['id'],
+            where: { id: vendor_id },
+            include: [{
+                model: AdminUsers,
+                as: 'manager',
+                attributes: ['adminusers_email']
+            }]
+        });
+        const toEmail = vendorRec?.manager?.adminusers_email || 'Aniruddha_chaturvedi@techjockey.com';
 
         await EmailQueue.create({
-            to: 'Aniruddha_chaturvedi@techjockey.com',
+            to: toEmail,
             subject: `New Interest in Unlock Lead Insights from ${company}`,
             body: emailBody,
             type: 'lead_insight_interest',
@@ -1479,27 +2257,174 @@ export const unlockLeadInsights=async (vendor_id, data) => {
             created_at: createdAtStr,
             updated_at: createdAtStr
         });
-        console.log("Email queued successfully");
+
+        await publishEmailToQueue({
+          rawHtml: emailBody,
+          subject: `New Interest in Unlock Lead Insights from ${company}`,
+          emailType: "lead_insight_interest",
+          to: toEmail,
+        });
 
         return { status: true, message: 'Thank you for your interest! Our team will contact you shortly.' };
     } catch (err) {
-        console.error("FAILED to unlock lead insights:", err);
         throw err;
     }
 };
 
 /**
+ * Private helper to calculate working minutes between two dates.
+ */
+function getAvgTimeMinute(beginDate, endDate) {
+    const begin = new Date(beginDate);
+    const end = new Date(endDate);
+    let totalMinutes = 0;
+
+    const startHour = 10;
+    const endHour = 19;
+
+    let current = new Date(begin);
+    while (current.toDateString() !== end.toDateString()) {
+        const dayOfWeek = current.getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            if (current.toDateString() === begin.toDateString()) {
+                const h = begin.getHours();
+                const m = begin.getMinutes();
+                if (h < startHour) {
+                    totalMinutes += (endHour - startHour) * 60;
+                } else if (h < endHour) {
+                    totalMinutes += (endHour * 60) - (h * 60 + m);
+                }
+            } else {
+                totalMinutes += (endHour - startHour) * 60;
+            }
+        }
+        current.setDate(current.getDate() + 1);
+    }
+
+    const dayOfWeek = end.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        if (begin.toDateString() === end.toDateString()) {
+            const startH = begin.getHours();
+            const startM = begin.getMinutes();
+            const endH = end.getHours();
+            const endM = end.getMinutes();
+
+            const s = Math.max(startH * 60 + startM, startHour * 60);
+            const e = Math.min(endH * 60 + endM, endHour * 60);
+            if (e > s) {
+                totalMinutes += (e - s);
+            }
+        } else {
+            const h = end.getHours();
+            const m = end.getMinutes();
+            if (h >= startHour) {
+                const e = Math.min(h * 60 + m, endHour * 60);
+                totalMinutes += (e - startHour * 60);
+            }
+        }
+    }
+    return totalMinutes;
+}
+
+/**
  * Unlocks contact with ownership verification.
  */
-export const unlockContact=async (vendor_id, lead_id) => {
+export const unlockContact = async (vendor_id, lead_id) => {
     await verifyLeadOwnership(vendor_id, lead_id);
 
-    await TblLeads.update(
-        { is_contact_viewed: 1 },
-        { where: { id: lead_id } }
-    );
+    const leadInfo = await TblLeads.findOne({
+        where: { id: lead_id },
+        attributes: ['id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone', 'dial_code', 'is_show_contact', 'product_id'],
+        include: [{
+            model: TblProduct,
+            as: 'product',
+            attributes: ['lead_model_type']
+        }]
+    });
 
-    return { status: true, message: 'Contact unlocked successfully' };
+    if (!leadInfo) throw new Error("Lead not found");
+
+
+    if (leadInfo.is_contact_viewed === 0) {
+        await TblLeads.update(
+            { is_contact_viewed: 1, is_show_contact: 1 },
+            { where: { id: lead_id } }
+        );
+
+        const contactViewedCount = await LeadHistory.count({
+            where: {
+                lead_id: lead_id,
+                type: 'contact_viewed'
+            }
+        });
+
+        if (contactViewedCount === 0) {
+            await LeadHistory.create({
+                lead_id: lead_id,
+                acd_uuid: '',
+                type: 'contact_viewed',
+                remark: 'Contact viewed by OEM'
+            });
+
+            try {
+                const db = mongoose.connection?.db;
+                if (db) {
+                    await db.collection('tracks').insertOne({
+                        lead_id: Number(lead_id),
+                        feed_action: 'lead_contact_info',
+                        feed_activity: 'OEM Clicked On Contact Info.',
+                        created_at: new Date()
+                    });
+                }
+            } catch (mongoErr) {
+                // Ignored
+            }
+
+            try {
+                const countVal = await LeadsCallAttempt.count({
+                    where: { lead_id: lead_id }
+                });
+                if (countVal === 0) {
+                    const lead_avg_time = getAvgTimeMinute(leadInfo.created_at, new Date());
+
+                    await LeadsCallAttempt.create({
+                        lead_id: leadInfo.id,
+                        vendor_id: leadInfo.vendor_id,
+                        attempt_time: lead_avg_time,
+                        lead_date: leadInfo.created_at,
+                        lead_attempt_date: new Date()
+                    });
+
+                    const lead_date = new Date(leadInfo.created_at).toISOString().split('T')[0];
+                    const today = new Date().toISOString().split('T')[0];
+                    if (today > lead_date) {
+                        await VendorAnalytics.increment({
+                            total_attempt_lead: 1,
+                            total_attempt_time: lead_avg_time,
+                            utilised_leads: 1
+                        }, {
+                            where: { vendor_id: leadInfo.vendor_id, logic_date: lead_date }
+                        });
+                    }
+                }
+            } catch (sqlErr) {
+                // Ignored
+            }
+        }
+    }
+
+    const updatedLead = await TblLeads.findOne({
+        where: { id: lead_id },
+        attributes: ['email', 'phone']
+    });
+
+    return {
+        status: true,
+        message: 'Contact unlocked successfully',
+        email: updatedLead ? updatedLead.email : null,
+        phone: updatedLead ? updatedLead.phone : null,
+        is_show_contact: 1
+    };
 };
 
 /**
@@ -1519,7 +2444,7 @@ function addWeekdays(date, days) {
 /**
  * Get lead actions with business logic.
  */
-export const getLeadActions=async (lead) => {
+export const getLeadActions = async (lead) => {
     const weekdays = 100;
 
     let logicDate = new Date(lead.created_at || Date.now());
@@ -1610,4 +2535,297 @@ export const getLeadActions=async (lead) => {
     }
 
     return Object.values(actionsMap);
+};
+
+/**
+ * Get lead insights with ownership verification.
+ */
+
+export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
+    try {
+        const vendor = await Vendor.findByPk(vendor_id, {
+            attributes: ['lead_insight_display'],
+            raw: true
+        });
+
+        if (!vendor || Number(vendor.lead_insight_display) !== 1) {
+            return [];
+        }
+
+        const lead = await TblLeads.findByPk(lead_id, {
+            attributes: ['id', 'customer_id', 'category_id', 'product_id', 'product_name', 'original_parent_id'],
+            raw: true
+        });
+
+        if (!lead || !lead.customer_id) {
+            return [];
+        }
+
+        const db = mongoose.connection?.db;
+
+        if (!db) {
+            console.warn("MongoDB connection not established for Lead Insights");
+            return [];
+        }
+
+        const customerRelatedData = await getCustomerRelatedGuuids(
+            lead.customer_id
+        );
+
+        const guuids = customerRelatedData
+            ?.map(item => item.guuid)
+            ?.filter(Boolean);
+
+        let relatedProducts = [];
+
+        if (guuids?.length) {
+
+            const activityQuery = [
+                {
+                    $match: {
+                        "feeds.guuid": {
+                            $in: guuids
+                        }
+                    }
+                },
+
+                {
+                    $unwind: "$feeds"
+                },
+
+                {
+                    $match: {
+                        "feeds.page_info.category_id": String(lead.category_id),
+
+                        "feeds.page_info.product_id": {
+                            $exists: true,
+                            $ne: null,
+                            $nin: [
+                                String(lead.product_id),
+                                Number(lead.product_id)
+                            ]
+                        }
+                    }
+                },
+
+                {
+                    $group: {
+                        _id: "$feeds.page_info.product_id",
+
+                        product_id: {
+                            $first: "$feeds.page_info.product_id"
+                        },
+
+                        product_name: {
+                            $first: "$feeds.page_info.product_name"
+                        },
+
+                        visits: {
+                            $sum: 1
+                        }
+                    }
+                },
+
+                {
+                    $project: {
+                        _id: 0,
+                        product_id: 1,
+                        product_name: 1,
+                        visits: 1
+                    }
+                },
+
+                {
+                    $sort: {
+                        visits: -1
+                    }
+                },
+
+                {
+                    $limit: 20
+                }
+            ];
+
+            relatedProducts = await db
+                .collection('tracks')
+                .aggregate(activityQuery)
+                .toArray();
+        }
+
+        if (
+            (!relatedProducts || relatedProducts.length === 0)
+        ) {
+
+            const fallbackProducts = await TblLeads.findAll({
+                attributes: ['product_id', 'product_name'],
+                where: {
+                    original_parent_id: lead.id
+                },
+                raw: true
+            });
+
+            if (fallbackProducts?.length) {
+
+                // Remove duplicates using product_id + product_name
+                const uniqueProductsMap = new Map();
+
+                fallbackProducts.forEach(item => {
+
+                    const productId = item.product_id;
+                    const productName = item.product_name?.trim();
+
+                    if (
+                        productId &&
+                        productName &&
+                        String(productId) !== String(lead.product_id)
+                    ) {
+
+                        // Avoid duplicate product_id
+                        if (!uniqueProductsMap.has(String(productId))) {
+
+                            uniqueProductsMap.set(String(productId), {
+                                product_id: productId,
+                                product_name: productName,
+                                visits: 0
+                            });
+                        }
+                    }
+                });
+
+                relatedProducts = Array.from(uniqueProductsMap.values());
+            }
+        }
+
+        return relatedProducts || [];
+
+    } catch (error) {
+
+        console.error(
+            "Error while fetching getLeadCompetiterInsights:",
+            error
+        );
+
+        return [];
+    }
+};
+
+
+export const getCustomerRelatedGuuids = async (customerId) => {
+    try {
+        const db = mongoose.connection?.db;
+        if (!db) {
+            return [];
+        }
+
+        const tracksCollection = db.collection("tracks");
+
+        const runAggregation = async (customerIdValue) => {
+            return await tracksCollection
+                .aggregate(
+                    [
+                        {
+                            $unwind: "$feeds",
+                        },
+                        {
+                            $match: {
+                                "feeds.customer_id": customerIdValue,
+                                "feeds.guuid": {
+                                    $exists: true,
+                                    $ne: null,
+                                },
+                            },
+                        },
+                        {
+                            $sort: {
+                                "feeds.created_at": -1,
+                            },
+                        },
+                        {
+                            $group: {
+                                _id: "$feeds.guuid",
+                                guuid: {
+                                    $first: "$feeds.guuid",
+                                },
+                            },
+                        },
+                        {
+                            $limit: 10,
+                        },
+                        {
+                            $project: {
+                                _id: 0,
+                                guuid: 1,
+                            },
+                        },
+                    ],
+                    {
+                        batchSize: 10,
+                    }
+                )
+                .toArray();
+        };
+
+        // First try string customer_id
+        let customerRelatedGuuids = await runAggregation(
+            String(customerId)
+        );
+
+        // Retry with number customer_id if empty
+        if (!customerRelatedGuuids.length) {
+            customerRelatedGuuids = await runAggregation(
+                Number(customerId)
+            );
+        }
+
+        return customerRelatedGuuids;
+    } catch (error) {
+
+        return [];
+    }
+};
+
+/**
+ * Get map data (leads grouped by state or city)
+ */
+export const getMapData = async (vendor_id, type) => {
+    try {
+        let query = "";
+        
+        if (type === 'state') {
+            query = `
+                SELECT l.state as name, COUNT(*) as value
+                FROM tbl_leads l
+                JOIN tbl_state_master s ON l.state = s.state_name
+                WHERE l.vendor_id = :vendor_id
+                  AND s.countries_id = 99
+                  AND l.state IS NOT NULL
+                  AND l.state != ''
+                  AND (l.lead_visibility = 1 OR (l.lead_visibility = 0 AND l.is_trashed = 1))
+                GROUP BY l.state
+            `;
+        } else if (type === 'city') {
+            query = `
+                SELECT l.city as name, l.state as state, COUNT(*) as value
+                FROM tbl_leads l
+                JOIN tbl_state_master s ON l.state = s.state_name
+                WHERE l.vendor_id = :vendor_id
+                  AND s.countries_id = 99
+                  AND l.city IS NOT NULL
+                  AND l.city != ''
+                  AND l.state IS NOT NULL
+                  AND l.state != ''
+                  AND (l.lead_visibility = 1 OR (l.lead_visibility = 0 AND l.is_trashed = 1))
+                GROUP BY l.state, l.city
+            `;
+        }
+
+        const results = await sequelize.query(query, {
+            replacements: { vendor_id },
+            type: QueryTypes.SELECT
+        });
+
+        return results;
+    } catch (error) {
+        throw new AppError(error.message, StatusCodes.INTERNAL_SERVER_ERROR);
+    }
 };

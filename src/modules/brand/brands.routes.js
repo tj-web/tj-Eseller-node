@@ -1,11 +1,10 @@
 import express from "express";
 import {
   addBrand,
-  checkBrand,
   getBrandsCount,
   getBrands,
   updateBrand,
-  view_brand,
+  viewBrand,
   requestBrand,
   searchBrandsForRequest,
 } from "./brand.controller.js";
@@ -32,17 +31,14 @@ router.get("/brand-list", getBrands);
 /****** Route for brand counts by status (tab badges) *****/
 router.get("/counts", getBrandsCount);
 
-/****** Route for checking brand name availability *****/
-router.post("/checkbrand", checkBrand);
-
 /****** Route for adding a new brand *********/
-router.post("/addbrand", upload.single("image"), addBrand);
+router.post("/add-brand", upload.single("image"), addBrand);
 
 /****** Route for updating the brand information. *****/
-router.post("/addbrand/:brand_id", upload.single("image"), updateBrand);
+router.post("/add-brand/:brand_id", upload.single("image"), updateBrand);
 
 /***** Route for viewing the brand information. ******/
-router.get("/viewbrand/:brand_id", view_brand);
+router.get("/view-brand/:brand_id", viewBrand);
 
 /****** Route for Searching Global Brands to request a Brand *****/
 router.get("/search-brands", searchBrandsForRequest);

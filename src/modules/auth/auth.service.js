@@ -12,6 +12,7 @@ import {
   createVendorLeads,
 } from "../common/service/userService.js";
 import { sendVerificationEmail, sendAdminNotification } from "../common/service/emailService.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
 import validator from "validator";
 import Vendor from "../../models/vendor.model.js";
 import Otp from "../../models/otp.model.js";
@@ -22,6 +23,7 @@ import VendorAuth from "../../models/vendorAuth.model.js";
 import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
+import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
 
 export const handleResetPassword = async (token, newPassword) => {
   const record = await PasswordReset.findOne({
@@ -62,7 +64,7 @@ export const handleResetPassword = async (token, newPassword) => {
       }
     );
 
-    /* update vendor */
+    // Update vendor table password
     await Vendor.update(
       { password: hashedPassword },
       {
@@ -80,7 +82,7 @@ export const handleResetPassword = async (token, newPassword) => {
     throw error;
   }
 };
-// ******************************************************
+
 
 export const logoutService = async (refreshToken) => {
   if (!refreshToken) {
@@ -107,7 +109,7 @@ export const logoutService = async (refreshToken) => {
   };
 };
 
-// ************************************************************************
+
 
 export const handleForgotPassword = async (email) => {
   const normalizedEmail = email.trim().toLowerCase();
@@ -126,11 +128,17 @@ export const handleForgotPassword = async (email) => {
   });
 
   const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+  const mainsiteUrl = process.env.MAINSITE_URL || "https://www.techjockey.com/";
+  const assetUrl = `${mainsiteUrl}assets/images/`;
+  const tjassetUrl = `${mainsiteUrl}assets/nw-wb/emailer_img/`;
 
-  const emailBody = `
-    <h3>Reset Password</h3>
-    <a href="${resetLink}">Reset Password</a>
-  `;
+  const emailBody = await renderTemplate("reset-password", {
+    assetUrl,
+    normalizedEmail,
+    resetLink,
+    mainsiteUrl,
+    tjassetUrl,
+  });
 
   await EmailQueue.create({
     to: normalizedEmail,
@@ -145,10 +153,17 @@ export const handleForgotPassword = async (email) => {
     updated_at: new Date(),
   });
 
+  await publishEmailToQueue({
+    rawHtml: emailBody,
+    subject: "Reset Password",
+    emailType: "forget_password",
+    to: normalizedEmail,
+  });
+
   return true;
 };
 
-// *****************************************************************************
+
 export const registerVendor = async (data) => {
   const {
     frmtype,
@@ -312,9 +327,9 @@ export const registerVendor = async (data) => {
   }
 };
 
-/* =========================================
-   GENERATE TOKENS
-========================================= */
+/**
+ * Generates auth and refresh tokens for a user.
+ */
 export const generateAuthTokens = (user) => {
   if (!process.env.ACCESS_TOKEN_SECRET) {
     throw new Error("Missing ACCESS_TOKEN_SECRET");
@@ -329,6 +344,7 @@ export const generateAuthTokens = (user) => {
     v_name: user.Vendor?.first_name,
     v_lname: user.Vendor?.last_name,
     v_email: user.email,
+    vendor_mode: user.Vendor?.vendor_mode ?? 0,
   };
 
   const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
@@ -356,12 +372,12 @@ export const createLoginHistory = async (
       ip,
       device_id: deviceId,
       login_status: 1,
-      profile_id: user.id || user.Vendor?.id,
+      profile_id: user.id ,
       auth_token: refreshToken,
     });
 
     const now = new Date();
-    await VendorAuth.update({ last_login_date: now }, { where: { vendor_id: user.vendor_id } });
+    await VendorAuth.update({ last_login_date: now }, { where: { id: user.id } });
     await Vendor.update({ last_login_date: now }, { where: { id: user.vendor_id } });
 
     return record.id;
@@ -371,8 +387,9 @@ export const createLoginHistory = async (
   }
 };
 
-// ****************************** Verify Password ************************
-export const verifyPassword = async (inputPassword, dbPassword) => {
+/**
+ * Verifies the provided password against the database hash.
+ */export const verifyPassword = async (inputPassword, dbPassword) => {
   const hashed = await hashPassword(inputPassword);
   return hashed === dbPassword;
 };

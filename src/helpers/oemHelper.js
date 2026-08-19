@@ -1,8 +1,9 @@
 export const prepareOemPlansData = (plansData) => {
   const temp = {};
-  const sort = { plan_status: [], credits_used: [] };
+  const sort = { plan_status: [], used_lead: [] };
 
   plansData.forEach((plan, key) => {
+
     const order_id = plan.id;
 
     const product = {
@@ -18,7 +19,7 @@ export const prepareOemPlansData = (plansData) => {
         products: product.product_id ? [product] : [],
         plan_status:
           plan.end_date >= new Date().toISOString().split('T')[0] &&
-          plan.credits_used <= plan.total_credits
+          plan.used_lead <= plan.total_lead
             ? 1
             : 0,
         start_end_date: `${formatDate(plan.start_date)} - ${formatDate(
@@ -63,13 +64,13 @@ export const prepareOemPlansData = (plansData) => {
 
       temp[order_id] = planObj;
       sort.plan_status[key] = planObj.plan_status;
-      sort.credits_used[key] = planObj.credits_used;
+      sort.used_lead[key] = planObj.used_lead;
     }
   });
 
   const sorted = Object.values(temp).sort((a, b) => {
     if (b.plan_status === a.plan_status) {
-      return b.credits_used - a.credits_used;
+      return b.used_lead - a.used_lead;
     }
     return b.plan_status - a.plan_status;
   });

@@ -9,6 +9,13 @@ const sequelize = new Sequelize(
     host: process.env.MYSQL_HOST,
     dialect: process.env.MYSQL_DIALECT,
     logging: false,
+    pool: {
+      max: 10,
+      min: 0,
+      idle: 60000,
+      acquire: 30000,
+      evict: 1000,
+    }
   }
 );
 

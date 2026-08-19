@@ -1,6 +1,7 @@
 import sequelize from "../../db/connection.js";
-import { uploadfile2 } from "../../utilis/s3Uploader.js"; 
-import { Op, QueryTypes } from "sequelize";
+import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
+import sizeOf from "image-size";
+import { Op } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import Brand from "../../models/brand.model.js";
 import TblLeads from "../../models/leads.model.js";
@@ -9,10 +10,7 @@ import ProductImage from "../../models/productImage.model.js";
 import Category from "../../models/category.model.js";
 import ProductSpecification from "../../models/productSpecification.model.js";
 import VendorLog from "../../models/vendorLog.model.js";
-import Setting from "../../models/websiteSetting.model.js"
 import Language from "../../models/languages.model.js";
-import fs from "fs";
-import path from "path";
 import ProductFeature from "../../models/productFeature.model.js";
 import Feature from "../../models/features.model.js";
 import ProductDescription from "../../models/productDescription.model.js";
@@ -22,7 +20,7 @@ import ProductIndustry from "../../models/productIndustry.model.js";
 import BusinessType from "../../models/businessType.model.js";
 import ProductFaq from "../../models/productFaqs.model.js";
 import ProductScreenshot from "../../models/productScreenshot.model.js";
-import DescriptionGallery from "../../models/descriptionGallery.model.js"; 
+import DescriptionGallery from "../../models/descriptionGallery.model.js";
 import ProductEnrichmentImage from "../../models/productEnrichmentImage.model.js";
 import ProductVideo from "../../models/productVideo.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
@@ -104,7 +102,7 @@ export const getVendorBrands = async (vendor_id) => {
       vendor_id: vendor_id,
       [Op.or]: [
         { status: 1 },
-        { 
+        {
           '$Brand.added_by$': 'vendor',
           '$Brand.added_by_id$': vendor_id
         }
@@ -112,8 +110,8 @@ export const getVendorBrands = async (vendor_id) => {
     },
     include: [{
       model: Brand,
-      attributes: [], 
-      required: true  
+      attributes: [],
+      required: true
     }],
     raw: true
   });
@@ -133,7 +131,7 @@ export const getVendorBrandsDetails = async (vendor_id) => {
       vendor_id: vendor_id,
       [Op.or]: [
         { status: 1 },
-        { 
+        {
           '$Brand.added_by$': 'vendor',
           '$Brand.added_by_id$': vendor_id
         }
@@ -142,9 +140,9 @@ export const getVendorBrandsDetails = async (vendor_id) => {
     include: [{
       model: Brand,
       attributes: [
-        'brand_name', 
-        'description', 
-        'image', 
+        'brand_name',
+        'description',
+        'image',
         ['status', 'brand_status']
       ],
       required: true // INNER JOIN
@@ -168,7 +166,7 @@ export const getVendorBrandsDetails = async (vendor_id) => {
 };
 
 
-// ----------------------------------------GetProductList----------------------------
+// ---------------------------------------- Get Product List ----------------------------
 
 export const getProductList = async (
   brand_arr,
@@ -176,7 +174,8 @@ export const getProductList = async (
   order_by = "tp.product_id",
   order = "desc",
   limit,
-  pageNumber
+  pageNumber,
+  vendor_id = null
 ) => {
   const limitNum = limit ? parseInt(limit, 10) : null;
   const pageNum = pageNumber ? parseInt(pageNumber, 10) : 1;
@@ -231,14 +230,14 @@ export const getProductList = async (
         attributes: ['image'],
         where: { default: 1 },
         required: false // LEFT JOIN
-      }
+      },
     ],
     order: [[sortColumn, order]],
     limit: limitNum,
     offset: offset,
     raw: true,
     nest: true,
-    logging:false
+    logging: false
     // Emulate GROUP BY tp.product_id by taking unique products if needed
     // In practice, if there are multiple images, raw: true + nest: true might return multiple rows.
     // However, the original SQL had GROUP BY tp.product_id, usually to get a single image if any.
@@ -246,7 +245,7 @@ export const getProductList = async (
   });
 
   // Flatten the result to match raw SQL output
-  const flattenedResults = results.rows.map(row => ({
+  let flattenedResults = results.rows.map(row => ({
     product_id: row.product_id,
     product_name: row.product_name,
     slug: row.slug,
@@ -262,11 +261,78 @@ export const getProductList = async (
     return row;
   });
 
+  // Attach leads_count for each product by querying TblLeads grouped by product_id
+  try {
+    const productIds = flattenedResults.map(r => r.product_id).filter(Boolean);
+    if (productIds.length > 0) {
+      // Count leads with visibility/trashed constraints and optional vendor filter
+      const leadsWhere = {
+        product_id: { [Op.in]: productIds },
+        [Op.or]: [
+          { lead_visibility: 1 },
+          { [Op.and]: [{ lead_visibility: 0 }, { is_trashed: 1 }] }
+        ]
+      };
+
+      if (vendor_id) {
+        leadsWhere.vendor_id = vendor_id;
+      }
+
+      const leads = await TblLeads.findAll({
+        attributes: ['product_id', [sequelize.fn('COUNT', sequelize.col('id')), 'leads_count']],
+        where: leadsWhere,
+        group: ['product_id'],
+        raw: true,
+      });
+
+      const leadMap = new Map(leads.map(l => [l.product_id, Number(l.leads_count) || 0]));
+      flattenedResults = flattenedResults.map(r => ({ ...r, leads_count: leadMap.get(r.product_id) || 0 }));
+    }
+  } catch (err) {
+    console.error('Error fetching leads counts for products:', err);
+    // Do not fail the whole request — return products without leads_count if query fails
+  }
+
   // Return both count and data for pagination
   return {
     count: results.count,
     rows: flattenedResults
   };
+};
+
+export const getVendorProductsCount = async (brand_arr, srch_product_name = "") => {
+  if (!brand_arr || brand_arr.length === 0) {
+    return { all: 0, active: 0, inactive: 0 };
+  }
+
+  const whereConditions = {
+    is_deleted: 0,
+    brand_id: { [Op.in]: brand_arr },
+  };
+
+  if (srch_product_name) {
+    whereConditions.product_name = { [Op.like]: `%${srch_product_name}%` };
+  }
+
+  const rows = await Product.findAll({
+    attributes: [
+      "status",
+      [sequelize.fn("COUNT", sequelize.col("product_id")), "count"],
+    ],
+    where: whereConditions,
+    group: ["status"],
+    raw: true,
+  });
+
+  const counts = { all: 0, active: 0, inactive: 0 };
+  for (const row of rows) {
+    const n = Number(row.count) || 0;
+    counts.all += n;
+    if (row.status === 1) counts.active += n;
+    else counts.inactive += n;
+  }
+
+  return counts;
 };
 
 export const getProductLeadsCount = async (productId) => {
@@ -283,7 +349,7 @@ export const getProductLeadsCount = async (productId) => {
   }
 };
 
-// ----------------------------------------GetCategoryList----------------------------
+// ---------------------------------------- Get Category List ----------------------------
 
 export const getCategoryList = async (search = "", limit = 20, offset = 0) => {
   const safeLimit = parseInt(limit) || 20;
@@ -321,7 +387,7 @@ export const getSelectedCol = async ({
   order_by = null
 }) => {
   try {
-    
+
     let Model = sequelize.models[table];
     if (!Model) {
       Model = Object.values(sequelize.models).find(m => m.tableName === table);
@@ -343,8 +409,8 @@ export const getSelectedCol = async ({
 
     if (records === "single") {
       return await Model.findOne(options);
-    } 
-    
+    }
+
     return await Model.findAll(options);
 
   } catch (error) {
@@ -386,7 +452,7 @@ export const saveProductImage = async (productId, imageFiles, externalTransactio
 
       // Upload to S3
       const sanitizedImg = { ...img, originalname: originalName, key };
-      const imageUrl = await uploadfile2(sanitizedImg);
+      const imageUrl = await uploadFileToS3(sanitizedImg);
 
       // Derive human-readable name (strip productId_ prefix and extension)
       const fileExt = fileName.substring(fileName.lastIndexOf("."));
@@ -433,7 +499,7 @@ export const savePricingDocument = async (productId, documentFiles, externalTran
 
       // Upload to S3
       const sanitizedDoc = { ...doc, originalname: originalName, key };
-      const docUrl = await uploadfile2(sanitizedDoc);
+      const docUrl = await uploadFileToS3(sanitizedDoc);
 
       savedDocs.push({
         id: null,
@@ -471,7 +537,7 @@ export const uploadProductImageOnly = async (productId, imageFiles) => {
     const key = `web/assets/images/techjockey/products/${fileName}`;
 
     const sanitizedImg = { ...img, originalname: originalName, key };
-    const imageUrl = await uploadfile2(sanitizedImg);
+    const imageUrl = await uploadFileToS3(sanitizedImg);
 
     savedImages.push({ fileName, s3Key: key, url: imageUrl });
   }
@@ -483,14 +549,14 @@ export const uploadPricingDocumentOnly = async (productId, documentFiles) => {
   if (!documentFiles || documentFiles.length === 0) return [];
   const savedDocs = [];
 
-  // Upload pricing documents to S3 under pricing/pending for vendor edits
+  // Upload pricing documents to S3  under pricing/pending for vendor edits
   for (const doc of documentFiles) {
     const originalName = doc.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
     const fileName = `${productId}_${originalName}`;
     const key = `web/assets/images/techjockey/products/pricing/${fileName}`;
 
     const sanitizedDoc = { ...doc, originalname: originalName, key };
-    const docUrl = await uploadfile2(sanitizedDoc);
+    const docUrl = await uploadFileToS3(sanitizedDoc);
 
     savedDocs.push({ fileName, s3Key: key, url: docUrl });
   }
@@ -505,9 +571,23 @@ export const saveProductDescription = async (descriptionData, externalTransactio
   try {
     const { product_id, brief, overview, description, internal_description } = descriptionData;
 
+    // Validation: DB columns are VARCHAR(255) - enforce max length
+    const MAX_LEN = 255;
+    const tooLongField = (name, value) => typeof value === 'string' && value.length > MAX_LEN ? name : null;
+    const violations = [
+      tooLongField('brief', brief),
+      tooLongField('overview', overview),
+      tooLongField('description', description),
+      tooLongField('internal_description', internal_description),
+    ].filter(Boolean);
+
+    if (violations.length > 0) {
+      throw new Error(`Product description fields exceed maximum length ${MAX_LEN}: ${violations.join(', ')}`);
+    }
+
     const existingDesc = await ProductDescription.findOne({
       where: { product_id },
-      transaction, 
+      transaction,
     });
 
     if (existingDesc) {
@@ -521,7 +601,7 @@ export const saveProductDescription = async (descriptionData, externalTransactio
         },
         {
           where: { product_id },
-          transaction, 
+          transaction,
         }
       );
     } else {
@@ -536,14 +616,14 @@ export const saveProductDescription = async (descriptionData, externalTransactio
           updated_at: new Date().toISOString(),
         },
         {
-          transaction, 
+          transaction,
         }
       );
     }
 
-    if (ownsTransaction) await transaction.commit(); 
+    if (ownsTransaction) await transaction.commit();
   } catch (error) {
-    if (ownsTransaction) await transaction.rollback(); 
+    if (ownsTransaction) await transaction.rollback();
     console.error("Error saving product description:", error);
     throw error;
   }
@@ -580,12 +660,12 @@ export const logProductSaveToVendorLogs = async ({
   try {
     const logRows = [];
     const now = new Date();
-    
+
     // For new products: status=1, action=insert, p_key=""
     // For updates: status=0, action=updated, p_key="id"
     const status = isNewProduct ? 1 : 0;
     const action_performed = isNewProduct ? "insert" : "updated";
-    
+
     const fieldsToLog = [
       // tbl_product fields
       { table: "tbl_product", column: "product_name", value: productData?.product_name },
@@ -626,6 +706,16 @@ export const logProductSaveToVendorLogs = async ({
       });
     }
 
+    // Validate lengths for vendor_logs (updated_column_value is VARCHAR(255))
+    const MAX_LOG_LEN = 255;
+    const tooLong = fieldsToLog
+      .filter(f => f.value !== undefined && f.value !== null && String(f.value).length > MAX_LOG_LEN)
+      .map(f => `${f.table}.${f.column}`);
+
+    if (tooLong.length > 0) {
+      throw new Error(`Vendor log fields exceed maximum length ${MAX_LOG_LEN}: ${tooLong.join(', ')}`);
+    }
+
     // Create vendor log entries for each field
     for (const field of fieldsToLog) {
       if (field.value === undefined || field.value === null || field.value === "") continue;
@@ -641,7 +731,7 @@ export const logProductSaveToVendorLogs = async ({
         table_name: field.table,
         column_name: field.column,
         p_key,
-        updated_column_value: field.value.toString(),
+        updated_column_value: String(field.value).toString(),
         linked_attribute: "",
         item_updated_id,
         reject_reason: "",
@@ -701,7 +791,7 @@ export const updateVendorLogs = async ({
       if (change.updated_column_value === undefined || change.updated_column_value === null) continue;
 
       const isArrayTable = arrayTables.includes(change.table_name);
-      
+
       if (!isArrayTable) {
         const existingLog = await VendorLog.findOne({
           where: {
@@ -836,8 +926,272 @@ export const replaceProductCategories = async ({
 export const startProductBasicDetailsTransaction = async () =>
   Product.sequelize.transaction();
 
-//--------------This function will fetch the data of the existing product for editing purpose----------------
+export const saveOrUpdateProductBasicDetails = async (
+  vendor_id,
+  post = {},
+  files = {},
+  product_id = null
+) => {
+  const isNewProduct = !product_id;
+  const transaction = await startProductBasicDetailsTransaction();
+  try {
+    // Build save object (preserve exact defaults as controller)
+    const save = {
+      product_name: post?.product_name ?? "",
+      brand_id: post?.brand_id ?? "",
+      website_url: post?.website_url ?? "",
+      trial_available: post?.trial_available ?? 0,
+      free_downld_available: post?.free_downld_available ?? "",
+      status: 0,
+      date_added: new Date(),
+      added_by: "vendor",
+      added_by_id: vendor_id ?? "",
+      product_code: post?.product_code ?? "TP01",
+      similar_product: post?.similar_product ?? "",
+      price: post?.price || 10.2,
+      special_price: post?.special_price || 200,
+      duration: post?.duration || 0,
+      duration_mode: post?.duration_mode ?? "",
+      discount: post?.discount || 10.2,
+      price_text: post?.price_text || "varun",
+      brochure: post?.brochure ?? "",
+      slug: post?.slug ?? "",
+      search_keyword: post?.search_keyword ?? "",
+      page_title: post?.page_title ?? "",
+      meta_title: post?.meta_title ?? "",
+      page_keyword: post?.page_keyword ?? "",
+      page_description: post?.page_description ?? "",
+      cano_url: post?.cano_url ?? "",
+      featured_start_date: post?.featured_start_date ?? new Date(),
+      featured_end_date: post?.featured_end_date ?? new Date(),
+      downld_file_path: post?.downld_file_path ?? "",
+      trial_duration: post?.trial_duration ?? "0",
+      trial_duration_in: post?.trial_duration_in ?? "",
+      free_downld_path: post?.free_downld_path || 0,
+      show_in_peripherals: post?.show_in_peripherals ?? "0",
+      price_type: post?.price_type ?? "1",
+      commission_type: post?.commission_type ?? "1",
+      commission: post?.commission ?? "4",
+      tp_comment: post?.tp_comment ?? "",
+      discount_factor: post?.discount_factor ?? "0",
+      discount_value: post?.discount_value ?? "2",
+      rebate: post?.rebate ?? "",
+      renewable_term: post?.renewable_term ?? "",
+      custom_search_order: post?.custom_search_order ?? "0",
+      recommended: post?.recommended ?? "22",
+      manual_reviews: post?.manual_reviews ?? "1",
+    };
 
+    // Slug ID generation
+    const maxSlug = await getSelectedCol({
+      table: "Setting",
+      columns: ["setting_value"],
+      where: { var_name: "MAX_SLUG_ID" },
+    });
+    save.slug_id = parseInt(maxSlug?.setting_value || 0) + 1;
+
+    let productId = product_id;
+    let uploadedImages = [];
+    let uploadedDocuments = [];
+
+    if (isNewProduct) {
+      // Save product
+      productId = await saveProduct(save, transaction);
+
+      // Images
+      if (files?.image) {
+        uploadedImages = await saveProductImage(productId, files.image, transaction);
+      }
+
+      // Documents
+      if (files?.documents) {
+        uploadedDocuments = await savePricingDocument(productId, files.documents, transaction);
+      }
+
+      // Description
+      if (post?.brief || post?.overview || post?.description || post?.internal_description) {
+        await saveProductDescription({
+          product_id: productId,
+          brief: post?.brief ?? "",
+          overview: post?.overview ?? "",
+          description: post?.description ?? "",
+          internal_description: post?.internal_description ?? "",
+        }, transaction);
+      }
+
+      // Categories
+      if (post?.product_category) {
+        const categories = Array.isArray(post.product_category)
+          ? post.product_category
+          : [post.product_category];
+
+        await replaceProductCategories({
+          productId,
+          categories,
+          category_parent_id: post.category_parent_id,
+          transaction,
+        });
+      }
+    }
+
+    // Log to vendor_logs
+    const descriptionForLog = post?.brief || post?.overview ? { overview: post?.overview ?? "" } : null;
+    const categoryIds = Array.isArray(post?.product_category)
+      ? post.product_category
+      : post?.product_category
+        ? [post.product_category]
+        : [];
+
+    await logProductSaveToVendorLogs({
+      product_id: productId,
+      vendor_id,
+      productData: save,
+      imageFileName: uploadedImages[0]?.fileName || null,
+      documentFileName: uploadedDocuments[0]?.fileName || null,
+      categoryIds,
+      descriptionData: descriptionForLog,
+      isNewProduct,
+      existingRecordIds: {},
+      transaction,
+    });
+
+    await transaction.commit();
+
+    return {
+      product_id: productId,
+      images: uploadedImages,
+      documents: uploadedDocuments,
+    };
+  } catch (err) {
+    if (transaction) await transaction.rollback();
+    throw err;
+  }
+};
+
+export const updateProductBasicDetails = async (vendor_id, product_id, post, files) => {
+  const existing = await geteditProductDetail(product_id);
+  if (!existing) {
+    const error = new Error("Product not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  let transaction = await startProductBasicDetailsTransaction();
+  try {
+    let uploadedImages = [];
+    let uploadedDocuments = [];
+
+    if (files?.image) {
+      uploadedImages = await uploadProductImageOnly(product_id, files.image);
+    }
+
+    if (files?.documents) {
+      uploadedDocuments = await uploadPricingDocumentOnly(product_id, files.documents);
+    }
+
+    const changes = [];
+
+    const tpFields = [
+      { key: "product_name", orig: existing.product_name },
+      { key: "brand_id", orig: existing.brand_id },
+      { key: "website_url", orig: existing.website_url },
+      { key: "trial_available", orig: existing.trial_available },
+      { key: "free_downld_available", orig: existing.free_downld_available }
+    ];
+
+    tpFields.forEach(f => {
+      if (post[f.key] !== undefined && post[f.key] != f.orig) {
+        changes.push({
+          table_name: "tbl_product",
+          column_name: f.key,
+          updated_column_value: post[f.key],
+          p_key: "product_id",
+          item_updated_id: product_id
+        });
+      }
+    });
+
+    if (uploadedDocuments.length > 0) {
+      changes.push({
+        table_name: "tbl_product",
+        column_name: "pricing_document",
+        updated_column_value: uploadedDocuments[0].fileName,
+        p_key: "product_id",
+        item_updated_id: product_id
+      });
+    }
+
+    if (uploadedImages.length > 0) {
+      const existingImage = await getSelectedCol({
+        table: "ProductImage",
+        columns: ["image_id"],
+        where: { product_id }
+      });
+      changes.push({
+        table_name: "tbl_product_image",
+        column_name: "product_image",
+        updated_column_value: uploadedImages[0].fileName,
+        p_key: "image_id",
+        item_updated_id: existingImage ? existingImage.id : 0
+      });
+    }
+
+    if (post.overview !== undefined && post.overview != existing.overview) {
+      const existingDesc = await getSelectedCol({
+        table: "ProductDescription",
+        columns: ["id"],
+        where: { product_id }
+      });
+      changes.push({
+        table_name: "tbl_product_description",
+        column_name: "overview",
+        updated_column_value: post.overview,
+        p_key: "id",
+        item_updated_id: existingDesc ? existingDesc.id : 0
+      });
+    }
+
+    if (post.product_category !== undefined) {
+      const categoryIds = Array.isArray(post.product_category) ? post.product_category.map(String) : [String(post.product_category)];
+      const existingCats = existing.arr_cat_selected ? existing.arr_cat_selected.map(c => String(c.category_id)) : [];
+
+      const newCats = categoryIds.sort().join(',');
+      const oldCats = existingCats.sort().join(',');
+
+      if (newCats !== oldCats) {
+        for (const cat of categoryIds) {
+          changes.push({
+            table_name: "tbl_product_category",
+            column_name: "category_id",
+            updated_column_value: cat,
+            p_key: "id",
+            item_updated_id: 0
+          });
+        }
+      }
+    }
+
+    if (changes.length > 0) {
+      await updateVendorLogs({
+        item_id: product_id,
+        profile_id: vendor_id,
+        module: "product",
+        action_performed: "updated",
+        status: 0,
+        changes,
+        externalTransaction: transaction
+      });
+    }
+
+    await transaction.commit();
+    return { product_id };
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    throw error;
+  }
+};
+
+// Fetch existing product data for editing
 export const getProductDetail = async (product_id) => {
   try {
     // 1. Fetch main product data with basic associations
@@ -846,7 +1200,7 @@ export const getProductDetail = async (product_id) => {
       include: [
         { model: ProductDescription, attributes: ['overview', 'description'] },
         { model: ProductSpecification },
-        { model: ProductImage, attributes: ['image'] }
+        { model: ProductImage, attributes: ['image'], where: { default: 1 }, required: false }
       ]
     });
 
@@ -862,9 +1216,9 @@ export const getProductDetail = async (product_id) => {
       BusinessType.findAll({ raw: true })
     ]);
 
-    // 3. Logic to handle comma-separated IDs (The "Developer way" to replace FIND_IN_SET)
+    // 3. Handle comma-separated IDs
     const spec = product.ProductSpecification || {};
-    
+
     // Helper function to filter lookup tables based on comma-separated IDs in the spec
     const getNames = (ids, lookupTable, key, returnAttr) => {
       if (!ids) return "";
@@ -884,7 +1238,7 @@ export const getProductDetail = async (product_id) => {
       overview: product.ProductDescription?.overview,
       description: product.ProductDescription?.description,
       image: product.ProductImages?.[0]?.image || product.ProductImage?.image || null,
-      
+
       // Specification Data
       industries: spec.industries,
       business: spec.business,
@@ -894,7 +1248,7 @@ export const getProductDetail = async (product_id) => {
       hw_configuration: spec.hw_configuration,
       sw_configuration: spec.sw_configuration,
 
-      // Mapped Names (Replacing the raw SQL literals)
+      // Mapped Names
       operating_system_names: getNames(spec.operating_system, allOS, 'id', 'os_name'),
       operating_system_images: getNames(spec.operating_system, allOS, 'id', 'os_image'),
       industries_names: getNames(spec.industries, allIndustries, 'id', 'name'),
@@ -972,13 +1326,10 @@ export const geteditProductDetail = async (productId) => {
   }
 };
 
-const csvIdsToLabels = (csv, labels) => {
-  if (csv === undefined || csv === null || csv === "") return "";
-  return String(csv)
-    .split(",")
-    .map((v) => labels[Number(String(v).trim())])
-    .filter(Boolean)
-    .join(",");
+
+const ORGANIZATION_TYPES = {
+  1: "Small Business", 2: "Startups", 3: "Medium Business",
+  4: "Enterprises", 5: "SMBs", 6: "SMEs", 7: "MSMBs", 8: "MSMEs"
 };
 
 export const productUpdationRelatedEvent = async (
@@ -1181,7 +1532,7 @@ export const getLanguageList = async () => {
   try {
     const languages = await Language.findAll({
       attributes: ['id', 'language', 'display_language'],
-      order: [['language', 'ASC']] 
+      order: [['language', 'ASC']]
     });
 
     return languages;
@@ -1205,7 +1556,7 @@ const defaultCols = {
   compliance_regulation: "",
   hw_configuration: "",
   sw_configuration: "",
-  
+
 };
 
 const createProductSpecificationVendorLogs = async ({
@@ -1264,7 +1615,7 @@ export const saveOrUpdateProductSpecification = async (
       raw: true
     });
 
-    // 2. Define fields to compare (matching the PHP logic)
+    // 2. Define fields to compare
     const trackingFields = [
       'deployment',
       'device',
@@ -1277,7 +1628,7 @@ export const saveOrUpdateProductSpecification = async (
     const item_updated_id = existingSpec ? existingSpec.id : 0;
 
     // Helper to normalize CSV strings (removes spaces, ensures consistent format)
-    const normalize = (val) => 
+    const normalize = (val) =>
       String(val || "")
         .split(",")
         .map(v => v.trim())
@@ -1329,6 +1680,39 @@ export const saveOrUpdateProductSpecification = async (
     console.error("Error in saveOrUpdateProductSpecification:", error);
     throw error;
   }
+};
+
+export const updateProductSpecification = async (vendor_id, product_id, post) => {
+  const brandArr = await getVendorBrands(vendor_id);
+  const isVendor = await isVendorProduct(product_id, brandArr);
+
+  if (!isVendor) {
+    const error = new Error("Unauthorized: Product does not belong to vendor");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const toCSV = (val) =>
+    Array.isArray(val) ? val.join(",") : val || "";
+
+  const productData = {
+    product_id,
+    deployment: toCSV(post.deployment),
+    device: toCSV(post.device),
+    operating_system: toCSV(post.operating_system),
+    organization_type: toCSV(post.organization_type),
+    languages: toCSV(post.languages),
+  };
+
+  const data = await getSelectedCol({
+    table: "ProductSpecification",
+    columns: ["id"],
+    where: { product_id: product_id },
+    records: "single",
+  });
+  const id = data?.id || null;
+
+  return await saveOrUpdateProductSpecification(id, productData, vendor_id);
 };
 
 
@@ -1480,6 +1864,38 @@ export const saveOrUpdateProductFeature = async (id, post, vendor_id) => {
   }
 };
 
+export const updateProductFeature = async (vendor_id, post) => {
+  const product_id = post.product_id;
+  const section_id = post.section_id;
+
+  let id = post.fid || null;
+
+  if (!id) {
+    const data = await getSelectedCol({
+      table: "ProductFeature",
+      columns: ["id"],
+      where: { product_id, section_id },
+      records: "single",
+    });
+    id = data?.id || null;
+  }
+
+  return await saveOrUpdateProductFeature(id, post, vendor_id);
+};
+
+export const getFeaturesListForVendor = async (vendor_id, product_id, search = null) => {
+  const brand = await getVendorBrands(vendor_id);
+  const check = await isVendorProduct(product_id, brand);
+
+  if (!check) {
+    const error = new Error("Unauthorized: Product does not belong to vendor");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return await getAllFeatures(search);
+};
+
 
 export const getProductScreenshots = async (product_id) => {
   try {
@@ -1506,7 +1922,7 @@ export const logProductScreenshotsRequest = async ({
   const transaction = await VendorLog.sequelize.transaction();
   try {
     const changes = [];
-    
+
     // 1. Fetch existing screenshots for comparison
     const existingScreenshots = await ProductScreenshot.findAll({
       where: { product_id: productId, status: 1, is_deleted: 0 },
@@ -1518,7 +1934,7 @@ export const logProductScreenshotsRequest = async ({
     for (const data of screenshotsData) {
       let { id, alt_text, image } = data;
       const groupLinkedAttr = Date.now().toString() + (loopIndex++);
-      
+
       // Ensure id is treated as null if it's "0" or invalid
       if (id === "0" || id === 0 || id === "") id = null;
 
@@ -1589,15 +2005,166 @@ export const logProductScreenshotsRequest = async ({
     });
 
     await transaction.commit();
-    return { action: "logged", count: changes.length };
+    return { action: "updated", message: "Changes logged successfully", changes };
   } catch (error) {
-    if (transaction) await transaction.rollback();
+    await transaction.rollback();
     console.error("Error in logProductScreenshotsRequest:", error);
     throw error;
   }
 };
 
+const cleanFileName = (name) => {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, "_").toLowerCase();
+};
 
+export const updateProductScreenshots = async (productId, vendorId, body, files) => {
+  // 1. Verify vendor ownership
+  const brandArr = await getVendorBrands(vendorId);
+  const isVendor = await isVendorProduct(productId, brandArr);
+  if (!isVendor) {
+    const error = new Error("Unauthorized: Product does not belong to vendor");
+    error.status = 403;
+    throw error;
+  }
+
+  // 2. Parse array-indexed payload
+  let { id: ids, 'id[]': idsArr, alt_text: alt_texts, 'alt_text[]': alt_texts_arr, screenshot_hidden: hidden_screenshots, 'screenshot_hidden[]': hidden_screenshots_arr, screenshot_index: screenshot_indices, 'screenshot_index[]': screenshot_indices_arr } = body;
+  files = files || [];
+
+  const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+  ids = toArray(ids || idsArr);
+  alt_texts = toArray(alt_texts || alt_texts_arr);
+  hidden_screenshots = toArray(hidden_screenshots || hidden_screenshots_arr);
+  screenshot_indices = toArray(screenshot_indices || screenshot_indices_arr);
+
+  if (alt_texts.length === 0) {
+    const error = new Error("alt_text[] is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const screenshotsToProcess = [];
+
+  for (let i = 0; i < alt_texts.length; i++) {
+    let currentId = ids[i] || null;
+    if (currentId === "0" || currentId === "") currentId = null;
+    const currentAlt = alt_texts[i];
+    let currentImage = hidden_screenshots[i] || null;
+
+    const filePos = screenshot_indices.findIndex(idx => String(idx) === String(i));
+
+    if (filePos !== -1 && files[filePos]) {
+      const file = files[filePos];
+      const sanitizedOriginalName = cleanFileName(file.originalname);
+      const dbImageName = `${productId}_${sanitizedOriginalName}`;
+      const key = `web/assets/images/techjockey/products/screenshots/${dbImageName}`;
+
+      await uploadFileToS3({ ...file, originalname: dbImageName, key });
+      currentImage = dbImageName;
+    }
+
+    if (currentImage || currentAlt) {
+      screenshotsToProcess.push({
+        id: currentId,
+        alt_text: currentAlt,
+        image: currentImage
+      });
+    }
+  }
+
+  // 3. Log the changes
+  const result = await logProductScreenshotsRequest({
+    productId,
+    vendor_id: vendorId,
+    screenshotsData: screenshotsToProcess
+  });
+
+  return { result, screenshotsToProcess };
+};
+
+export const updateProductGallery = async (productId, vendorId, body, files) => {
+  // 1. Verify vendor ownership
+  const brandArr = await getVendorBrands(vendorId);
+  const isVendor = await isVendorProduct(productId, brandArr);
+
+  if (!isVendor) {
+    const error = new Error("Unauthorized: Product does not belong to vendor");
+    error.status = 403;
+    throw error;
+  }
+
+  // 2. Normalize inputs
+  const {
+    id: ids, 'id[]': idsArr,
+    title: titles, 'title[]': titlesArr,
+    desc: descriptions, 'desc[]': descriptionsArr,
+    gallery_hidden: hidden_galleries, 'gallery_hidden[]': hidden_galleries_arr,
+    gallery_index: gallery_indices, 'gallery_index[]': gallery_indices_arr,
+    description
+  } = body;
+
+  const toArray = (val) => Array.isArray(val) ? val : (val !== undefined && val !== null ? [val] : []);
+  const idList = toArray(ids || idsArr);
+  const titleList = toArray(titles || titlesArr);
+  const descList = toArray(descriptions || descriptionsArr || description || body['description[]']);
+  const hiddenList = toArray(hidden_galleries || hidden_galleries_arr);
+  const indexList = toArray(gallery_indices || gallery_indices_arr);
+
+  // 3. Min-3 Validation: Check if there are at least 3 non-empty slots
+  let validSlotsCount = 0;
+  const galleryToProcess = [];
+  let fileCounter = 0;
+
+  files = files || [];
+
+  for (let i = 0; i < titleList.length; i++) {
+    const currentTitle = titleList[i]?.trim();
+    const currentDesc = descList[i]?.trim();
+    let currentImage = hiddenList[i] || null;
+
+    const filePos = indexList.length > 0
+      ? indexList.findIndex(idx => String(idx) === String(i))
+      : fileCounter;
+
+    if (filePos !== -1 && files[filePos]) {
+      const file = files[filePos];
+      const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const dbImageName = `${productId}_${sanitizedOriginalName}`;
+      const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
+
+      await uploadFileToS3({ ...file, originalname: dbImageName, key });
+      currentImage = dbImageName;
+
+      if (indexList.length === 0) fileCounter++;
+    }
+
+    if (currentTitle && currentDesc && currentImage) {
+      validSlotsCount++;
+    }
+
+    galleryToProcess.push({
+      id: idList[i] || null,
+      title: currentTitle,
+      description: currentDesc,
+      image: currentImage
+    });
+  }
+
+  if (validSlotsCount < 3) {
+    const error = new Error("Please add atleast 3 gallery per product!.");
+    error.status = 400;
+    throw error;
+  }
+
+  // 4. Log changes for approval instead of direct write
+  const result = await logProductGalleryRequest({
+    productId,
+    vendor_id: vendorId,
+    galleryData: galleryToProcess
+  });
+
+  return { result, galleryToProcess };
+};
 
 export const logProductGalleryRequest = async ({
   productId,
@@ -1607,7 +2174,7 @@ export const logProductGalleryRequest = async ({
   const transaction = await VendorLog.sequelize.transaction();
   try {
     const changes = [];
-    
+
     // Fetch existing gallery items for comparison
     const existingGallery = await DescriptionGallery.findAll({
       where: { product_id: productId, is_deleted: 0 },
@@ -1619,7 +2186,7 @@ export const logProductGalleryRequest = async ({
     for (const data of galleryData) {
       let { id, title, description, image } = data;
       const groupLinkedAttr = Date.now().toString() + (loopIndex++);
-      
+
       // Ensure id is treated as null if it's "0" or invalid
       if (id === "0" || id === 0 || id === "") id = null;
 
@@ -1820,7 +2387,7 @@ export const upsertEnrichmentImages = async (enrichmentData) => {
 };
 
 /**
- * Fetch enrichment images and compute budget math for parity with legacy PHP.
+ * Fetch enrichment images and compute budget math.
  */
 export const getProductEnrichmentImages = async (productId) => {
   try {
@@ -1873,11 +2440,11 @@ export const logProductEnrichmentRequest = async ({
 }) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
-    const changes = [];
-    
+    let changes = [];
+
     // 1. Fetch existing enrichment for comparison
     const existingImages = await ProductEnrichmentImage.findAll({
-      where: { product_id: productId},
+      where: { product_id: productId },
       raw: true
     });
 
@@ -1885,7 +2452,6 @@ export const logProductEnrichmentRequest = async ({
     for (const data of enrichmentData) {
       let { id, type, image_width, image_height, image } = data;
       const groupLinkedAttr = Date.now().toString() + (loopIndex++);
-      
       // Ensure id is treated as null if it's "0" or invalid
       if (id === "0" || id === 0 || id === "") id = null;
 
@@ -1914,16 +2480,9 @@ export const logProductEnrichmentRequest = async ({
             });
           }
         }
-      } else if (image) {
+      } else if (type || image) {
         // INSERT case: Create insert-style logs (item_updated_id: 0)
-        changes.push({
-          table_name: "tbl_product_enrichment_images",
-          column_name: "enrichment_image",
-          updated_column_value: image,
-          p_key: "id",
-          item_updated_id: 0,
-          linked_attribute: groupLinkedAttr
-        });
+        // Always log type for new enrichment items
         changes.push({
           table_name: "tbl_product_enrichment_images",
           column_name: "type",
@@ -1932,6 +2491,17 @@ export const logProductEnrichmentRequest = async ({
           item_updated_id: 0,
           linked_attribute: groupLinkedAttr
         });
+        // Log image if present
+        if (image) {
+          changes.push({
+            table_name: "tbl_product_enrichment_images",
+            column_name: "enrichment_image",
+            updated_column_value: image,
+            p_key: "id",
+            item_updated_id: 0,
+            linked_attribute: groupLinkedAttr
+          });
+        }
       }
     }
 
@@ -1960,64 +2530,7 @@ export const logProductEnrichmentRequest = async ({
 };
 
 
-export const addVideoModel = async (videos) => {
-  const transaction = await ProductVideo.sequelize.transaction();
-  try {
-    if (!videos || videos.length === 0) {
-      await transaction.commit();
-      return [];
-    }
 
-    // Map data to ensure all database fields from your image are handled
-    const formattedVideos = videos.map(item => ({
-      id: item.id || null,
-      product_id: item.product_id,
-      video_title: item.video_title,
-      video_url: item.video_url,
-      video_desc: item.video_desc,
-      show_on_acd: item.show_on_acd ?? 0,
-      show_in_comm: item.show_in_comm ?? 0,
-      show_as_cover: item.show_as_cover ?? 0,
-      publish_date: item.publish_date || null,
-      is_deleted: item.is_deleted ?? 0,
-      updated_at: item.id ? new Date() : null, 
-      created_at: item.id ? undefined : new Date() 
-    }));
-
-    // Perform Upsert (Update on Duplicate Key)
-    const result = await ProductVideo.bulkCreate(formattedVideos, {
-      updateOnDuplicate: [
-        "video_title",
-        "video_url",
-        "video_desc",
-        "product_id",
-        "show_on_acd",
-        "show_in_comm",
-        "show_as_cover",
-        "publish_date",
-        "is_deleted",
-        "updated_at" 
-      ],
-      transaction,
-    });
-
-    // Return the original formatted data with IDs from the result
-    // This ensures correct timestamps in the response
-    const response = formattedVideos.map((item, index) => ({
-      ...item,
-      id: result[index]?.id || item.id, // Get the ID from the result if it was inserted
-      created_at: item.created_at, 
-      updated_at: item.updated_at  
-    }));
-    await transaction.commit();
-    return response;
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("Error in addVideoModel:", error);
-    throw error;
-  }
-};
 
 /**
  * Fetch existing product videos (ordered by ID)
@@ -2037,7 +2550,7 @@ export const getProductVideos = async (productId) => {
 };
 
 /**
- * Handle video approval workflow via vendor_logs (Legacy PHP parity)
+ * Handle video approval workflow via vendor_logs.
  */
 export const logProductVideoRequest = async ({
   productId,
@@ -2047,7 +2560,7 @@ export const logProductVideoRequest = async ({
   const transaction = await VendorLog.sequelize.transaction();
   try {
     const changes = [];
-    
+
     // 1. Fetch existing videos for comparison (ordered to match index)
     const existingRows = await ProductVideo.findAll({
       where: { product_id: productId, is_deleted: 0 },
@@ -2060,14 +2573,14 @@ export const logProductVideoRequest = async ({
       let { id, video_url, video_title } = data;
       // Use a robust unique attribute per video slot
       const groupLinkedAttr = `${Date.now()}_${Math.floor(Math.random() * 1000)}_${loopIndex}`;
-      
+
       // Keep it numeric (0) for new items to avoid DB schema errors
       const logItemId = (id && id !== "0") ? id : 0;
 
       if (id && id !== "0") {
         // UPDATE Case
         const existing = existingRows.find(v => String(v.id) === String(id));
-        
+
         if (existing) {
           const isTitleChanged = String(video_title || "") !== String(existing.video_title || "");
           const isUrlChanged = String(video_url || "") !== String(existing.video_url || "");
@@ -2136,3 +2649,249 @@ export const logProductVideoRequest = async ({
     throw error;
   }
 };
+
+export const updateProductVideo = async (productId, vendorId, body) => {
+  const {
+    video_id, 'video_id[]': videoIdArr,
+    video_url, 'video_url[]': videoUrlArr,
+    video_title, 'video_title[]': videoTitleArr
+  } = body;
+
+  const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+  const idList = toArray(video_id || videoIdArr);
+  const urlList = toArray(video_url || videoUrlArr);
+  const titleList = toArray(video_title || videoTitleArr);
+
+  if (urlList.length === 0) {
+    const error = new Error("At least one video URL is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const urlPattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([\/\w .-]*)*\/?$/;
+  for (const url of urlList) {
+    if (url && !urlPattern.test(url)) {
+      const error = new Error(`Invalid URL: ${url}`);
+      error.status = 400;
+      throw error;
+    }
+  }
+
+  const videoData = urlList.map((url, i) => ({
+    id: idList[i] || null,
+    video_url: url || "",
+    video_title: titleList[i] || ""
+  }));
+
+  const existingVideos = await getProductVideos(productId);
+  const existingCount = Array.isArray(existingVideos) ? existingVideos.length : 0;
+  const newItemsCount = videoData.filter(v => !v.id || String(v.id) === "0").length;
+
+  if (existingCount + newItemsCount > 10) {
+    const error = new Error(`Maximum 10 videos are allowed per product. Current: ${existingCount}, Attempting to add: ${newItemsCount}`);
+    error.status = 400;
+    throw error;
+  }
+
+  const result = await logProductVideoRequest({
+    productId,
+    vendor_id: vendorId,
+    videoData
+  });
+
+  return { result, videoData };
+};
+
+/**
+ * Wrapper: fetch products for a vendor using vendor_id and query options.
+ * Keeps controller thin by centralizing getVendorBrands + getProductList logic.
+ */
+export const getVendorProductList = async (vendor_id, options = {}) => {
+  // Fetch vendor brand array
+  const brand_arr = await getVendorBrands(vendor_id);
+
+  // Delegate to existing getProductList which handles pagination/sorting
+  const products = await getProductList(
+    brand_arr,
+    { srch_product_name: options.srch_product_name || "", srch_status: options.srch_status || "" },
+    options.order_by || "s_id",
+    options.order || "desc",
+    options.limit,
+    options.pageNumber,
+    vendor_id
+  );
+
+  return products;
+};
+
+export const updateProductEnrichment = async (productId, vendorId, body, files) => {
+  const {
+    id: ids, 'id[]': idsArr,
+    type: types, 'type[]': typesArr,
+    enrichment_hidden: hidden_enrichments, 'enrichment_hidden[]': hidden_enrichments_arr,
+    enrichment_index: enrichment_indices, 'enrichment_index[]': enrichment_indices_arr
+  } = body;
+
+  const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+  const idList = toArray(ids || idsArr);
+  const typeList = toArray(types || typesArr);
+  const hiddenList = toArray(hidden_enrichments || hidden_enrichments_arr);
+  const indexList = toArray(enrichment_indices || enrichment_indices_arr);
+
+  if (typeList.length === 0) {
+    const error = new Error("type[] is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const typeCounts = typeList.reduce((acc, t) => {
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {});
+
+  files = files || [];
+
+  if ((typeCounts[1] || 0) < 4 || (typeCounts[2] || 0) < 4) {
+    const error = new Error("Please add 4 enrichment images for desktop and mobile view");
+    error.status = 400;
+    throw error;
+  }
+
+  let validSlots = 0;
+  for (let i = 0; i < typeList.length; i++) {
+    const hasFile = indexList.some(idx => String(idx) === String(i));
+    const existingImg = hiddenList[i];
+    const hasExistingImage = existingImg && existingImg !== "null" && existingImg !== "undefined" && existingImg !== "";
+
+    if (hasFile || hasExistingImage) {
+      validSlots++;
+    }
+  }
+
+  if (validSlots < 8) {
+    const error = new Error("Please add 4 enrichment images for desktop and mobile view");
+    error.status = 400;
+    throw error;
+  }
+
+  const enrichmentInfo = await getProductEnrichmentImages(productId);
+  const heightMapping = enrichmentInfo.image_height_mapping;
+
+  let currentDesktopHeight = 2400 - enrichmentInfo.desktop_remaining_height;
+  let currentMobileHeight = 4000 - enrichmentInfo.mobile_remaining_height;
+
+  const enrichmentToProcess = [];
+  const cleanFileName = (name) => name.replace(/[^a-zA-Z0-9._-]+/g, "");
+
+  for (let i = 0; i < typeList.length; i++) {
+    const type = Number(typeList[i]);
+    let currentId = idList[i] || null;
+    if (currentId === "undefined" || currentId === "null" || currentId === "0" || currentId === "") {
+      currentId = null;
+    }
+
+    let currentImage = null;
+    let newImageWidth = 0;
+    let newImageHeight = 0;
+
+    let fileToUpload = null;
+    let fileOriginalName = null;
+
+    const filePos = indexList.findIndex(idx => String(idx) === String(i));
+    if (filePos !== -1 && files && files[filePos]) {
+      fileToUpload = files[filePos];
+      fileOriginalName = fileToUpload.originalname || `enrichment_${i}`;
+    }
+
+    if (!fileToUpload && hiddenList[i]) {
+      const hiddenItem = hiddenList[i];
+      if (Buffer.isBuffer(hiddenItem) || (hiddenItem && typeof hiddenItem === 'object' && (hiddenItem.buffer || hiddenItem.data))) {
+        fileToUpload = hiddenItem;
+        fileOriginalName = hiddenItem.originalname || hiddenItem.filename || `enrichment_${i}`;
+      } else if (typeof hiddenItem === 'string' && hiddenItem !== "null" && hiddenItem !== "undefined" && hiddenItem !== "") {
+        currentImage = hiddenItem;
+      }
+    }
+
+    if (fileToUpload) {
+      try {
+        let buffer = fileToUpload;
+        if (fileToUpload.buffer) {
+          buffer = fileToUpload.buffer;
+        } else if (fileToUpload.data) {
+          buffer = fileToUpload.data;
+        }
+
+        const dimensions = sizeOf(buffer);
+        newImageWidth = dimensions.width;
+        newImageHeight = dimensions.height;
+
+        if (type === 1) {
+          const oldHeight = currentId ? (heightMapping[currentId] || 0) : 0;
+          const newTotalHeight = currentDesktopHeight - oldHeight + newImageHeight;
+          if (newTotalHeight > 2400) {
+            const error = new Error(`Desktop height budget exceeded at slot ${i + 1}. Current: ${newTotalHeight}px, Max: 2400px`);
+            error.status = 400;
+            throw error;
+          }
+          if (newImageWidth > 1260) {
+            const error = new Error(`Desktop image width (Found: ${newImageWidth}px) exceeds 1260px at slot ${i + 1}`);
+            error.status = 400;
+            throw error;
+          }
+          currentDesktopHeight = newTotalHeight;
+        } else {
+          const oldHeight = currentId ? (heightMapping[currentId] || 0) : 0;
+          const newTotalHeight = currentMobileHeight - oldHeight + newImageHeight;
+          if (newTotalHeight > 4000) {
+            const error = new Error(`Mobile height budget exceeded at slot ${i + 1}. Current: ${newTotalHeight}px, Max: 4000px`);
+            error.status = 400;
+            throw error;
+          }
+          if (newImageWidth > 600) {
+            const error = new Error(`Mobile image width (Found: ${newImageWidth}px) exceeds 600px at slot ${i + 1}`);
+            error.status = 400;
+            throw error;
+          }
+          currentMobileHeight = newTotalHeight;
+        }
+
+        const sanitizedName = cleanFileName(fileOriginalName);
+        const dbImageName = `${productId}_${sanitizedName}`;
+        const key = `web/assets/images/techjockey/gallery/${dbImageName}`;
+
+        await uploadFileToS3({
+          ...fileToUpload,
+          originalname: dbImageName,
+          key,
+          buffer: buffer
+        });
+
+        currentImage = dbImageName;
+      } catch (uploadError) {
+        console.error(`[Slot ${i}] File upload failed:`, uploadError);
+        throw uploadError;
+      }
+    }
+
+    if (currentImage) {
+      enrichmentToProcess.push({
+        id: currentId,
+        type,
+        image: currentImage,
+        image_width: newImageWidth,
+        image_height: newImageHeight,
+        product_id: productId
+      });
+    }
+  }
+
+  const result = await logProductEnrichmentRequest({
+    productId,
+    vendor_id: vendorId,
+    enrichmentData: enrichmentToProcess
+  });
+
+  return { result, enrichmentToProcess };
+};
+

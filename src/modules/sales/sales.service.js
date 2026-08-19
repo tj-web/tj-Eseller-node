@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import sequelize from "../../db/connection.js";
 import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorLeadsTeam from "../../models/vendorLeadsTeam.model.js";
@@ -7,8 +8,14 @@ import VendorAuth from "../../models/vendorAuth.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import VendorTeams from "../../models/vendorTeams.model.js";
 import VendorUserTeam from "../../models/vendorUserTeam.model.js";
-import { QueryTypes, fn, col, literal } from "sequelize";
+import OmsPiDetail from "../../models/omsPiDetail.model.js";
+import LeadsPlan from "../../models/leadsPlan.model.js";
+import LeadsCounter from "../../models/leadsCounter.js";
+import Product from "../../models/product.model.js";
+import { fn, col, literal } from "sequelize";
 import { AppError } from "../../utilis/appError.js";
+import { renderTemplate } from "../../helpers/emailHelper.js";
+import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
 
 // Define Associations
 VendorAuth.hasOne(VendorDetails, {
@@ -24,15 +31,19 @@ VendorsLeads.hasOne(VendorLeadsTeam, {
 VendorUserTeam.belongsTo(VendorTeams, { foreignKey: "team_id" });
 VendorUserTeam.hasMany(VendorLeadsTeam, { foreignKey: "adSales_AM", sourceKey: "user_id" });
 
+OmsPiDetail.belongsTo(LeadsPlan, { foreignKey: "lead_plan_id", targetKey: "id" });
+OmsPiDetail.hasOne(LeadsCounter, { foreignKey: "order_id", sourceKey: "id" });
+LeadsCounter.belongsTo(Product, { foreignKey: "product_id", targetKey: "product_id" });
+
 /* =========================================
    PLAN SUBSCRIBE REQUEST CORE LOGIC (Boost Sales)
 ========================================= */
 
-export const planSubscribeRequestService = async (authData, postData) => {
+export const handlePlanSubscribeRequest = async (authData, postData) => {
   const transaction = await sequelize.transaction();
   try {
     const { profile_id, vendor_id } = authData;
-    const { plan_name, budget, reminder_date, hour, minute } = postData;
+    const { plan_name, reminder_date, hour, minute, page_name, module_name } = postData;
 
     // 1. Fetch Vendor Data via ORM
     const vendorData = await VendorAuth.findOne({
@@ -52,12 +63,9 @@ export const planSubscribeRequestService = async (authData, postData) => {
     }
 
     const reminder_datetime = `${reminder_date} ${hour}:${minute}:00`;
-    const actual_plan_name = plan_name || "Upgrade Now";
-    
-    // Replace Rupee symbol with space to avoid DB collation issues
-    const sanitizedBudget = budget.replace(/₹/g, " ");
+    const actual_plan_name = plan_name || "";
 
-    const notes = `Vendor Remark:<br /> Plan name: ${actual_plan_name} <br /> Budget: ${sanitizedBudget} <br /> Selected Date and Time by User: ${reminder_datetime}`;
+    const notes = `Vendor Remark: <br /> Plan name: ${actual_plan_name} <br /> Page Name: ${page_name} <br /> Module Name: ${module_name} <br />  Profile ID: ${profile_id} <br /> Name: ${vendorData.first_name} ${vendorData.last_name} <br /> Email: ${vendorData.email} <br /> Phone No.: ${vendorData.phone} <br /> Scheduled Time: ${reminder_datetime}`;
 
     // 2. Determine Account Manager (adSales_AM)
     // First, check if a lead already exists for this vendor to reuse the AM organically
@@ -147,21 +155,24 @@ export const planSubscribeRequestService = async (authData, postData) => {
     );
 
     // 6. Queue Email Notification natively
-    const emailBody = `
-      <h3>New Paid Plan Request</h3>
-      <p><strong>Name:</strong> ${vendorData.first_name} ${vendorData.last_name}</p>
-      <p><strong>Email:</strong> ${vendorData.email}</p>
-      <p><strong>Contact:</strong> ${vendorData.phone}</p>
-      <p><strong>Plan Name:</strong> ${actual_plan_name}</p>
-      <p><strong>Budget:</strong> ${sanitizedBudget}</p>
-      <p><strong>Preferred Callback Time:</strong> ${reminder_date} ${hour}:${minute}</p>
-    `;
+    const emailBody = await renderTemplate("plan-subscribe-request", {
+      callback_name: `${vendorData.first_name} ${vendorData.last_name}`,
+      plan_name: actual_plan_name,
+      callback_email: vendorData.email,
+      callback_contact: vendorData.phone,
+      reminder_datetime: `${reminder_date} ${hour}:${minute}`,
+    });
+
+    let emailSubject = "New Paid Plan Request";
+    if (page_name) {
+      emailSubject = `New Paid Plan Request from ${page_name}`;
+    }
 
     await EmailQueue.create(
       {
         to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
         cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
-        subject: "New Paid Plan Request",
+        subject: emailSubject,
         body: emailBody,
         type: "plan_subscribe_request",
         app: "eseller",
@@ -173,6 +184,37 @@ export const planSubscribeRequestService = async (authData, postData) => {
     );
 
     await transaction.commit();
+
+    await publishEmailToQueue({
+      rawHtml: emailBody,
+      subject: emailSubject,
+      emailType: "plan_subscribe_request",
+      to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
+      cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
+    });
+
+    //  Insert to MongoDB 'tracks' collection if from dashboard/product analytics
+    // if (page_name) {
+    //   try {
+    //     const db = mongoose.connection?.db;
+    //     if (db) {
+    //       await db.collection("tracks").insertOne({
+    //         type: "eseller_request_callback",
+    //         page_name: page_name,
+    //         module: module_name || "",
+    //         schedule_time: reminder_datetime,
+    //         profile_id: profile_id,
+    //         name: `${vendorData.first_name} ${vendorData.last_name}`,
+    //         email: vendorData.email,
+    //         phone_no: vendorData.phone || vendorData.dial_code + " " + vendorData.phone,
+    //         created_at: new Date(),
+    //       });
+    //     }
+    //   } catch (mongoErr) {
+    //     console.error("Error inserting to MongoDB tracks:", mongoErr);
+    //   }
+    // }
+
     return {
       message: "Subscribe Request Sent Successfully",
     };
@@ -180,4 +222,72 @@ export const planSubscribeRequestService = async (authData, postData) => {
     if (transaction) await transaction.rollback();
     throw error;
   }
+};
+
+/* =========================================
+   OEM PLANS CORE LOGIC
+========================================= */
+
+export const getOemPlans = async (vendor_id) => {
+  const results = await OmsPiDetail.findAll({
+    attributes: [
+      "id",
+      "brand_id",
+      "vendor_id",
+      "lead_plan_id",
+      "total_lead",
+      "used_lead",
+      "start_date",
+      "end_date",
+      "impressions",
+      "clicks",
+      "profile_visits"
+    ],
+    where: {
+      vendor_id: vendor_id,
+      pi_status: 3,
+    },
+    include: [
+      {
+        model: LeadsPlan,
+        attributes: ["plan_name", "plan_type", "show_credits", "deliverables", "total_lead"],
+        required: false,
+      },
+      {
+        model: LeadsCounter,
+        attributes: ["product_id"],
+        required: false,
+        include: [
+          {
+            model: Product,
+            attributes: ["product_name"],
+            required: false,
+          },
+        ],
+      },
+    ],
+    order: [["id", "DESC"]],
+    raw: true,
+    nest: true,
+  });
+
+  return results.map((row) => ({
+    id: row.id,
+    brand_id: row.brand_id,
+    vendor_id: row.vendor_id,
+    lead_plan_id: row.lead_plan_id,
+    total_lead: row.LeadsPlan?.total_lead || 0,
+    used_lead: row.used_lead,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    profile_visits: row.profile_visits || 0,
+    plan_name: row.LeadsPlan?.plan_name || null,
+    plan_type: row.LeadsPlan?.plan_type || null,
+    show_credits: row.LeadsPlan?.show_credits ?? null,
+    deliverables: row.LeadsPlan?.deliverables || null,
+    product_id: row.LeadsCounter?.product_id || null,
+    product_name: row.LeadsCounter?.Product?.product_name || null,
+  }));
 };

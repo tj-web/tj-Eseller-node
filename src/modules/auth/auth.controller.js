@@ -23,7 +23,7 @@ VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
 /* ======================================================
    LOGIN FUNCTION
-====================================================== */
+ ====================================================== */
 export const login = async (req, res, next) => {
   const { frmtype, username, userpassword, rememberme } = req.body;
 
@@ -43,7 +43,7 @@ export const login = async (req, res, next) => {
       throw new AppError("Invalid credentials", 400);
     }
 
-    if (user.Vendor.status === 0) {
+    if (user.Vendor?.status === 0) {
       throw new AppError("Account disabled", 403);
     }
 
@@ -71,9 +71,11 @@ export const login = async (req, res, next) => {
         id: user.vendor_id,
         email: user.email,
         name: `${user.Vendor?.first_name} ${user.Vendor?.last_name}`,
+        vendor_mode: user.Vendor?.vendor_mode ?? 0,
       })
     );
   } catch (error) {
+    console.error("Login Error:", error);
     if (error.statusCode === 400 || error.statusCode === 403) {
       return res
         .status(StatusCodes.BAD_REQUEST)
@@ -87,7 +89,7 @@ export const login = async (req, res, next) => {
 
 /* ======================================================
    SIGNUP FUNCTION
-====================================================== */
+ ====================================================== */
 export const signup = async (req, res, next) => {
   try {
     const result = await registerVendor(req.body);
@@ -108,7 +110,7 @@ export const signup = async (req, res, next) => {
 
 /* ======================================================
    FORGOT PASSWORD FUNCTION
-====================================================== */
+ ====================================================== */
 export const forgotPassword = async (req, res, next) => {
   const { email } = req.body;
 
@@ -154,7 +156,7 @@ export const resetPassword = async (req, res, next) => {
 
 /* ======================================================
    LOGOUT FUNCTION
-====================================================== */
+ ====================================================== */
 export const logOut = async (req, res, next) => {
   try {
     const refreshToken = req.cookies.refresh_token;
@@ -185,7 +187,7 @@ export const logOut = async (req, res, next) => {
 
 /* ======================================================
     CHANGE PASSWORD FUNCTION
-====================================================== */
+ ====================================================== */
 export const changePassword = async (req, res, next) => {
   const { old_password, new_password } = req.body;
 
@@ -232,13 +234,13 @@ export const verifyEmail = async (req, res, next) => {
 
 /* ======================================================
     OTP FUNCTION
-====================================================== */
+ ====================================================== */
 
 export const sendOtp = async (req, res, next) => {
-  const { phone_number } = req.body;
+  const { phone_number, dial_code } = req.body;
 
   try {
-    await sendOtpService(phone_number);
+    await sendOtpService(phone_number, dial_code);
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("OTP sent successfully"));
   } catch (error) {
@@ -254,14 +256,14 @@ export const sendOtp = async (req, res, next) => {
 };
 
 export const verifyOtp = async (req, res, next) => {
-  const { phone_number, otp } = req.body;
+  const { phone_number, otp, dial_code } = req.body;
 
   const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
 
   const deviceId = req.headers["x-device-id"] || null;
 
   try {
-    const result = await verifyOtpService(phone_number, otp, ip, deviceId);
+    const result = await verifyOtpService(phone_number, otp, ip, deviceId, dial_code);
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("access_token", result.accessToken, {
@@ -280,8 +282,12 @@ export const verifyOtp = async (req, res, next) => {
 
     return res
       .status(StatusCodes.SUCCESS)
-      .json(SystemResponse.success("Login successful via OTP", result.user));
+      .json(SystemResponse.success("Login successful via OTP", {
+        ...result.user,
+        vendor_mode: result.user.Vendor?.vendor_mode ?? 0
+      }));
   } catch (error) {
+    console.error("Verify OTP Error:", error);
     if (error.statusCode && error.statusCode !== 500) {
       return res
         .status(StatusCodes.BAD_REQUEST)

@@ -4,6 +4,8 @@ import Vendor from "../../../models/vendor.model.js";
 import VendorAuth from "../../../models/vendorAuth.model.js";
 import sequelize from "../../../db/connection.js";
 import { AppError } from "../../../utilis/appError.js";
+import { renderTemplate } from "../../../helpers/emailHelper.js";
+import { publishEmailToQueue } from "../../../config/rabbitmq.producer.js";
 
 
 export const sendVerificationEmail = async (
@@ -12,12 +14,18 @@ export const sendVerificationEmail = async (
   vendorId,
   transaction,
 ) => {
-  const link = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+  const link = `${process.env.HTTP_SCHEME}://${process.env.APP_URL}/V6/auth/verify-email?token=${token}`;
 
-  const body = `
-    <h3>Email Verification</h3>
-    <a href="${link}">Verify Email</a>
-  `;
+  const mainsiteUrl = process.env.MAINSITE_URL || "https://www.techjockey.com/";
+  const assetUrl = `${mainsiteUrl}assets/images/`;
+  const tjassetUrl = `${mainsiteUrl}assets/nw-wb/emailer_img/`;
+
+  const body = await renderTemplate("verify-email", {
+    assetUrl,
+    mainsiteUrl,
+    tjassetUrl,
+    verifyLink: link
+  });
 
   await EmailQueue.create(
     {
@@ -34,6 +42,14 @@ export const sendVerificationEmail = async (
     },
     { transaction },
   );
+
+  await publishEmailToQueue({
+    rawHtml: body,
+    subject: "Verify your email",
+    emailType: "email_verification",
+    to: email,
+    cc: "support@techjockey.com",
+  });
 };
 
 export const sendAdminNotification = async (
@@ -45,12 +61,13 @@ export const sendAdminNotification = async (
   vendorId,
   transaction,
 ) => {
-  const body = `
-    <h3>New Vendor Registration</h3>
-    <p>${first_name} ${last_name}</p>
-    <p>${email}</p>
-    <p>${dial_code} ${phone}</p>
-  `;
+  const body = await renderTemplate("admin-approval-request", {
+    vendorId,
+    first_name,
+    last_name,
+    email,
+    contact_number: `${dial_code} ${phone}`
+  });
 
   await EmailQueue.create(
     {
@@ -66,6 +83,13 @@ export const sendAdminNotification = async (
     },
     { transaction },
   );
+
+  await publishEmailToQueue({
+    rawHtml: body,
+    subject: "Vendor Registration",
+    emailType: "admin_verification",
+    to: process.env.ADMIN_EMAIL,
+  });
 };
 
 export const verifyEmailService = async (token) => {
@@ -145,6 +169,14 @@ export const queueEmail = async ({
       },
       transaction ? { transaction } : {}
     );
+
+    await publishEmailToQueue({
+      rawHtml: body,
+      subject,
+      emailType: type,
+      to,
+      cc,
+    });
 
     return true;
   } catch (error) {

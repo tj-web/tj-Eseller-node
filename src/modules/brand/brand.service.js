@@ -12,6 +12,8 @@ import { Op } from "sequelize";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import { mergeArray, toTitleCase } from "../../helpers/format.js";
 import { sendProductBrandUpdationEvents } from "../common/service/moengage/moengageApiService.js";
+import { findDifferences } from "../../General_Function/general_helper.js";
+import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
 
 VendorBrandRelation.belongsTo(Brand, {
   foreignKey: "tbl_brand_id",
@@ -37,7 +39,7 @@ BrandLocation.belongsTo(BrandCity, {
 /* =========================================
    CHECK BRAND NAME AVAILABILITY
 ========================================= */
-export const checkBrandNameService = async (brand_name, exclude_brand_id = null) => {
+export const checkBrandName = async (brand_name, exclude_brand_id = null) => {
   const whereClause = {
     brand_name: brand_name,
     is_deleted: 0,
@@ -55,7 +57,7 @@ export const checkBrandNameService = async (brand_name, exclude_brand_id = null)
 /* =========================================
    ADD BRAND CORE LOGIC
 ========================================= */
-export const addBrandService = async (data, vendorId, profileId) => {
+export const handleAddBrand = async (data, file, vendorId, profileId) => {
   const { brand_name, image, location, founded_on, founders, company_size, information, industry } =
     data;
 
@@ -63,7 +65,7 @@ export const addBrandService = async (data, vendorId, profileId) => {
 
   try {
     // 1. Validate Brand Name Collision using ORM
-    const isExists = await checkBrandNameService(brand_name);
+    const isExists = await checkBrandName(brand_name);
     if (isExists) {
       throw new AppError("Brand name already exists", 300);
     }
@@ -221,6 +223,41 @@ export const addBrandService = async (data, vendorId, profileId) => {
       }
     }
 
+    if (file) {
+      // Sanitize and build S3 filename that includes brand_id
+      const originalName = file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${brandId}_${originalName}`;
+
+      // Prepare upload object: ensure we pass the file buffer and proper originalname + key
+      const fileobj = {
+        ...file,
+        originalname: fileName,
+        key: `web/assets/images/techjockey/brands/${fileName}`,
+      };
+      await uploadFileToS3(fileobj);
+
+      // Persist image name in tbl_brand
+      await Brand.update({ image: fileName }, { where: { brand_id: brandId }, transaction });
+
+      // Insert vendor log entry for the image
+      await VendorLog.create({
+        item_id: brandId,
+        module: "brand",
+        action_performed: "insert",
+        action_by: profileId,
+        table_name: "tbl_brand",
+        column_name: "image",
+        p_key: "brand_id",
+        updated_column_value: fileName,
+        linked_attribute: "",
+        item_updated_id: 0,
+        reject_reason: "",
+        status: 1,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }, { transaction });
+    }
+
     // 6. Complete Transaction Context
     await transaction.commit();
 
@@ -251,13 +288,14 @@ export const addBrandService = async (data, vendorId, profileId) => {
 /* =========================================
    GET VENDOR BRANDS LIST
 ========================================= */
-export const getVendorBrandsService = async (params) => {
+export const getVendorBrands = async (params) => {
   const {
     vendor_id,
     orderby,
     order,
     srch_brand_name,
     srch_status,
+    brand_status,
     limit = 10,
     pagenumber = 1,
   } = params;
@@ -275,11 +313,16 @@ export const getVendorBrandsService = async (params) => {
     whereCondition.status = srch_status;
   }
 
+
   const brandWhere = {};
   if (srch_brand_name) {
     brandWhere.brand_name = {
       [sequelize.Sequelize.Op.like]: `%${srch_brand_name}%`,
     };
+  }
+  if (brand_status !== undefined && brand_status !== "") {
+    // Apply brand_status filter on the Brand include (tbl_brand.status)
+    brandWhere.status = parseInt(brand_status, 10);
   }
 
   let orderLogic = [["id", order && order.toUpperCase() === "ASC" ? "ASC" : "DESC"]]; // Default mapped
@@ -292,9 +335,9 @@ export const getVendorBrandsService = async (params) => {
     include: [
       {
         model: Brand,
-        required: !!srch_brand_name, // Validates INNER if filtering, LEFT if just listing
+        required: !!(srch_brand_name || brand_status), // INNER JOIN when searching by name or filtering by brand_status
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
-        attributes: ["brand_name", "description", "image", "status", "target_industry"],
+        attributes: ["brand_name", "description", "image", "status", "slug", "target_industry"],
       },
       {
         model: BrandInfo,
@@ -347,7 +390,7 @@ export const getVendorBrandsService = async (params) => {
 /* =========================================
    GET VENDOR BRANDS COUNT
 ========================================= */
-export const getVendorBrandsCountService = async (vendor_id, srch_brand_name = "") => {
+export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", brand_status = undefined) => {
   const whereCondition = {
     vendor_id: vendor_id,
     tbl_brand_id: { [Op.ne]: 0 },
@@ -359,8 +402,13 @@ export const getVendorBrandsCountService = async (vendor_id, srch_brand_name = "
       [Op.like]: `%${srch_brand_name}%`,
     };
   }
+  // Apply brand_status filter on Brand (tbl_brand.status) when provided
+  if (brand_status !== undefined && brand_status !== "") {
+    brandWhere.status = parseInt(brand_status, 10);
+  }
 
-  const rows = await VendorBrandRelation.findAll({
+  // 1) Relation counts (pending/approved/declined) filtered by Brand.status when brand_status provided
+  const relationRows = await VendorBrandRelation.findAll({
     attributes: [
       "status",
       [sequelize.fn("COUNT", sequelize.col("VendorBrandRelation.id")), "count"],
@@ -369,37 +417,84 @@ export const getVendorBrandsCountService = async (vendor_id, srch_brand_name = "
     include: [
       {
         model: Brand,
-        required: !!srch_brand_name,
+        required: !!(srch_brand_name || brand_status),
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
         attributes: [],
       },
     ],
     group: ["VendorBrandRelation.status"],
+    raw: true,
   });
 
-  const counts = { all: 0, pending: 0, approved: 0, declined: 0 };
-  for (const row of rows) {
-    const rawData = row.get({ plain: true });
+  const relationCounts = { all: 0, pending: 0, approved: 0, declined: 0 };
+  for (const rawData of relationRows) {
     const n = Number(rawData.count) || 0;
-    counts.all += n;
-    if (rawData.status === 0) counts.pending += n;
-    else if (rawData.status === 1) counts.approved += n;
-    else if (rawData.status === 2) counts.declined += n;
+    relationCounts.all += n;
+    if (rawData.status === 0) relationCounts.pending += n;
+    else if (rawData.status === 1) relationCounts.approved += n;
+    else if (rawData.status === 2) relationCounts.declined += n;
   }
-  return counts;
+
+  // 2) Brand-status counts (active/inactive/all) among brands related to this vendor (and matching search)
+  // Fetch brand ids for this vendor (apply srch_brand_name and brand_status if provided)
+  const relationFilter = {
+    vendor_id: vendor_id,
+    tbl_brand_id: { [Op.ne]: 0 },
+  };
+
+  const vendorRows = await VendorBrandRelation.findAll({
+    attributes: ["tbl_brand_id"],
+    where: relationFilter,
+    include: [
+      {
+        model: Brand,
+        required: !!(srch_brand_name || brand_status),
+        where: Object.keys(brandWhere).length ? brandWhere : undefined,
+        attributes: ["brand_id"],
+      },
+    ],
+    raw: true,
+  });
+
+  const brandIds = Array.from(new Set(vendorRows.map(r => r.tbl_brand_id).filter(Boolean)));
+
+  const brandStatusCounts = { all: 0, active: 0, inactive: 0 };
+  if (brandIds.length > 0) {
+    const brandRows = await Brand.findAll({
+      attributes: ["status", [sequelize.fn("COUNT", sequelize.col("brand_id")), "count"]],
+      where: {
+        brand_id: { [Op.in]: brandIds },
+      },
+      group: ["status"],
+      raw: true,
+    });
+
+    for (const b of brandRows) {
+      const n = Number(b.count) || 0;
+      brandStatusCounts.all += n;
+      if (b.status === 1) brandStatusCounts.active += n;
+      else brandStatusCounts.inactive += n;
+    }
+  }
+
+  // Return both counts so frontend can use relationCounts or brandStatusCounts as needed
+  return {
+    relationCounts,
+    brandStatusCounts,
+  };
 };
 
 /* =========================================
    GET FULL BRAND DETAILS BY ID (FOR EDIT)
 ========================================= */
-export const getBrandByIdService = async (vendor_id, brand_id) => {
+export const getBrandById = async (vendor_id, brand_id) => {
   const brand = await Brand.findOne({
     attributes: ["brand_name", "description", "image", "status"],
     where: { brand_id: brand_id },
     include: [
       {
         model: VendorBrandRelation,
-        required: false, // Strict requirement ensuring permissions organically
+        required: true, // Strict requirement ensuring permissions organically
         where: { vendor_id: vendor_id },
         attributes: ["status"],
       },
@@ -439,6 +534,7 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
     description: plainBrand.description,
     image: plainBrand.image,
     status: plainBrand.status,
+    brand_status: plainBrand.status,
     tbl_info_id: info.id || null,
     information: info.information,
     founded_on: info.founded_on,
@@ -452,8 +548,8 @@ export const getBrandByIdService = async (vendor_id, brand_id) => {
   };
 };
 
-export const viewBrandService = async (brand_id, vendor_id) => {
-  const data = await getBrandByIdService(vendor_id, brand_id);
+export const handleViewBrand = async (brand_id, vendor_id) => {
+  const data = await getBrandById(vendor_id, brand_id);
 
   if (!data) return false;
 
@@ -475,7 +571,7 @@ export const viewBrandService = async (brand_id, vendor_id) => {
 /* =========================================
    GET BRAND LOCATION
 ========================================= */
-export const getBrandLocationService = async (brand_id) => {
+export const getBrandLocation = async (brand_id) => {
   BrandLocation.belongsTo(BrandCity, {
     foreignKey: "location_id",
     targetKey: "city_id",
@@ -500,38 +596,80 @@ export const getBrandLocationService = async (brand_id) => {
   }));
 };
 
-/* =========================================
-   UPDATE BRAND LOGIC
-========================================= */
-export const updateBrandService = async (brand_id, updateData, transaction) => {
-  await Brand.update(
-    {
-      brand_name: updateData.brand_name,
-      ...(updateData.image !== null && { image: updateData.image }),
-    },
-    { where: { brand_id: brand_id }, transaction }
-  );
+export const handleUpdateBrand = async (brand_id, body, file, vendor_id, profile_id) => {
+  const transaction = await sequelize.transaction();
 
-  await BrandInfo.update(
-    {
-      location: updateData.location,
-      information: updateData.information,
-      founded_on: updateData.founded_on,
-      founders: updateData.founders,
-      company_size: updateData.company_size,
-      industry: updateData.industry,
-    },
-    { where: { tbl_brand_id: brand_id }, transaction }
-  );
+  try {
+    const brandDetails = await getBrandById(vendor_id, brand_id);
 
-  return true;
+    if (!brandDetails) {
+      throw new AppError("Brand not found", 404);
+    }
+
+    const { brand_name, information, location, industry, founded_on, founders, company_size } = body;
+
+    let imageName = null;
+    if (file) {
+      // Sanitize and build S3 filename that includes brand_id
+      const originalName = file.originalname.replace(/[^a-zA-Z0-9._]+/g, "");
+      const fileName = `${brand_id}_${originalName}`;
+      const fileobj = {
+        ...file,
+        originalname: fileName,
+        key: `web/assets/images/techjockey/brands/${fileName}`,
+      };
+      await uploadFileToS3(fileobj);
+      imageName = fileName;
+    }
+
+    const brandSave = {
+      brand_name,
+      location,
+      information,
+      industry,
+      founded_on,
+      founders,
+      company_size,
+      ...(imageName !== null && { image: imageName }),
+    };
+
+    const brandDiff = findDifferences(brandDetails, brandSave);
+
+    if (brandDiff && Object.keys(brandDiff).length > 0) {
+      const flatLogArr = Object.entries(brandDiff).map(([col, values]) => {
+        const isCore = col === "brand_name" || col === "image";
+        return {
+          item_id: brand_id,
+          module: "brand",
+          action_performed: "updated",
+          action_by: profile_id,
+          table_name: isCore ? "tbl_brand" : "tbl_brand_info",
+          column_name: col,
+          p_key: isCore ? "brand_id" : "tbl_brand_id",
+          updated_column_value: values.new !== null && values.new !== undefined ? values.new.toString() : "",
+          linked_attribute: "",
+          item_updated_id: brand_id,
+          reject_reason: "",
+          status: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+      });
+      await VendorLog.bulkCreate(flatLogArr, { transaction });
+    }
+
+    await transaction.commit();
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    throw error;
+  }
 };
 
 /* =========================================
    REQUEST BRAND LOGIC
 ========================================= */
 
-export const requestBrandService = async (brandIdsArray, vendorId) => {
+export const handleRequestBrand = async (brandIdsArray, vendorId) => {
   try {
     const mappedInsertions = brandIdsArray.map((brandId) => ({
       vendor_id: vendorId,
@@ -552,7 +690,7 @@ export const requestBrandService = async (brandIdsArray, vendorId) => {
 /* =========================================
    SEARCH GLOBAL BRANDS FOR REQUEST
 ========================================= */
-export const searchBrandsForRequestService = async (vendorId, searchStr = "") => {
+export const handleSearchBrandsForRequest = async (vendorId, searchStr = "") => {
   try {
     // 1. Get all brand IDs already associated with this vendor
     const existingRelations = await VendorBrandRelation.findAll({

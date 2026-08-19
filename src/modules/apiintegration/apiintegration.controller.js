@@ -1,39 +1,8 @@
-import VendorWebhookAuth from "../../models/vendorWebhookAuth.model.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
-import axios from "axios";
-import { handleCreateWebhook, handleverifyWebhook } from "./apiintegration.service.js";
-
-const mapCredentialsToColumns = (auth_type, credentials = {}) => {
-  switch (auth_type) {
-    case "Basic Auth":
-      return {
-        client_id: credentials.username || "",
-        client_secret: credentials.password || "",
-        send_basic_auth: 1,
-      };
-    case "API Key":
-      return {
-        client_id: "api_key",
-        client_secret: credentials.api_key || "",
-        send_basic_auth: 0,
-      };
-    case "Bearer Token":
-      return {
-        client_id: "bearer",
-        client_secret: credentials.bearer_token || "",
-        send_basic_auth: 0,
-      };
-    case "OAuth 2.0":
-      return {
-        client_id: credentials.client_id || "",
-        client_secret: credentials.client_secret || "",
-        send_basic_auth: 0,
-      };
-    default:
-      return { client_id: "", client_secret: "", send_basic_auth: 0 };
-  }
-};
+import { handleCreateWebhook, handleverifyWebhook, planSubscribeRequestService, handleUpdateLeadAction, handleGetLeadActionConfig, handleGetLeadStatusGuidReference, handleAddLeadRemark } from "./apiintegration.service.js";
+import sequelize from "../../db/connection.js";
+import { QueryTypes } from "sequelize";
 
 // export const createWebhook = async (req, res) => {
 //   try {
@@ -144,7 +113,6 @@ export const createWebhook = async (req, res) => {
       .status(StatusCodes.SUCCESS)
       .json(SystemResponse.success("Webhook saved successfully", data));
   } catch (error) {
-    console.log(error);
     return res
       .status(StatusCodes.BAD_REQUEST)
       .json(SystemResponse.internalServerError(error.message || "Failed to create webhook"));
@@ -153,12 +121,97 @@ export const createWebhook = async (req, res) => {
 
 export const verifyWebhook = async (req, res) => {
   try {
-    const result = await handleverifyWebhook(req.body.webhook_url);
+    const { vendor_id } = req.user;
+    
+    const result = await handleverifyWebhook({
+      vendor_id,
+      ...req.body
+    });
 
     return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message, result));
   } catch (error) {
     return res
       .status(StatusCodes.BAD_REQUEST)
-      .json(SystemResponse.badRequest(error.message || "Verification failed"));
+      .json(SystemResponse.badRequestError(error.message || "Verification failed"));
   }
 };
+
+export const apiIntegrationPlanRequest = async (req, res) => {
+  try {
+    const { vendor_id , profile_id } = req.user;
+
+    const result = await planSubscribeRequestService(
+      { profile_id, vendor_id },
+      req.body
+    );
+
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success(result.message, result));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to submit plan request"));
+  }
+};
+
+export const updateLeadAction = async (req, res) => {
+  try {
+    await handleUpdateLeadAction(req.headers, req.body);
+    return res.status(StatusCodes.SUCCESS).json({
+      status: true,
+      message: "Status marked Successfully.",
+      data: "",
+    });
+  } catch (error) {
+    return res.status(StatusCodes.SUCCESS).json({
+      status: false,
+      message: error.message || "Failed to update lead status",
+    });
+  }
+};
+
+export const getLeadActionConfig = async (req, res) => {
+  try {
+    const { vendor_id } = req.user;
+    const configData = await handleGetLeadActionConfig(vendor_id);
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Lead Action Config fetched successfully", configData));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to fetch lead action config"));
+  }
+};
+
+export const getLeadStatusGuidReference = async (req, res) => {
+  try {
+    const leadStatusData = await handleGetLeadStatusGuidReference();
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Lead status GUID reference fetched successfully", leadStatusData));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to fetch lead status GUID reference"));
+  }
+};
+
+export const addLeadRemark = async (req, res) => {
+  try {
+    await handleAddLeadRemark(req.headers, req.body);
+    return res.status(StatusCodes.SUCCESS).json({
+      status: true,
+      message: "Remark added Successfully.",
+      data: "",
+    });
+  } catch (error) {
+    return res.status(StatusCodes.SUCCESS).json({
+      status: false,
+      message: error.message || "Failed to add lead remark",
+    });
+  }
+};
+
+

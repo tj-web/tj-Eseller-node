@@ -22,7 +22,6 @@ export const uploadFile = async ({Key, Body, ContentType}) => {
     await s3.send(command);
 
     const fileUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com${Key}`;
-    console.log("File uploaded:", fileUrl);
     return fileUrl;
   } catch (error) {
     console.error(" Upload failed:", error);
