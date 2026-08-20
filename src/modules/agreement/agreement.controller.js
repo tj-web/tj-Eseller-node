@@ -7,6 +7,7 @@ import { refreshTokenResponse } from "../../utilis/tokenRefresh.js";
 import { AppError } from "../../utilis/appError.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 import StatusCodes from "../../utilis/statusCodes.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 import {
   getAgreementProductPlans,
   getDesignation,
@@ -118,6 +119,10 @@ export const agreementForm = async (req, res) => {
         if (updateResult) {
           await updateRecord("vendors", { id: vendor_id }, { vendor_mode: 2 });
           const decoded = await refreshTokenResponse(req, res);
+
+          // Fire engagement event for Onboarding Completion
+          engagementEvent.oemOnboardingComplete(req.user);
+
           return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Agreement Signed Successfully", { vendor_mode: decoded?.vendor_mode ?? 0 }));
         }
         else {

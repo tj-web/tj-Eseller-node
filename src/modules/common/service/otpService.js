@@ -5,6 +5,7 @@ import Otp from "../../../models/otp.model.js";
 import { findUserByPhone } from "./userService.js";
 import { AppError } from "../../../utilis/appError.js";
 import { createLoginHistory, generateAuthTokens } from "../../auth/auth.service.js";
+import engagementEvent from "../../../helpers/engagementEvent.js";
 
 /* =========================================
    SEND OTP
@@ -107,6 +108,9 @@ export const verifyOtpService = async (phone_number, otp, ip, deviceId, dial_cod
 
   /* Log login - Using 'native_auth' to match DB ENUM allowed values */
   await createLoginHistory(user, ip, deviceId, refreshToken, "native_auth");
+
+  /* Trigger MoEngage OEM Login Event */
+  await engagementEvent.oemLoginEvent(user, "Web");
 
   return {
     accessToken,

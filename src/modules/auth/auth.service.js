@@ -24,6 +24,7 @@ import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 export const handleResetPassword = async (token, newPassword) => {
   const record = await PasswordReset.findOne({
@@ -315,6 +316,17 @@ export const registerVendor = async (data) => {
     );
 
     await transaction.commit();
+
+    /* Trigger MoEngage OEM Signup Event */
+   await engagementEvent.oemSignupEvent({
+      id: vendorAuth.id,
+      vendor_id: vendor.id,
+      first_name,
+      last_name,
+      email: normalizedEmail,
+      dial_code,
+      phone: number,
+    }, "Web");
 
     return {
       message: "Signup successful. Verification email sent , check your email !",

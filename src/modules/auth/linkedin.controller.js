@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { findUserByEmail } from "../common/service/userService.js";
 import { generateAuthTokens, createLoginHistory } from "./auth.service.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 import {
   linkedinAccessToken,
   linkedinProfileInfo,
@@ -75,6 +76,9 @@ export const linkedinCallback = async (req, res) => {
     const { accessToken: jwtAccessToken, refreshToken } = generateAuthTokens(user);
 
     await createLoginHistory(user, ip, deviceId, refreshToken, "linkedin");
+
+    /* Trigger MoEngage OEM Login Event */
+    engagementEvent.oemLoginEvent(user, "Web");
 
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("access_token", jwtAccessToken, {

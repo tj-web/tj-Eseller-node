@@ -18,6 +18,7 @@ import {
   logoutService,
 } from "./auth.service.js";
 import LoginHistory from "../../models/loginHistory.model.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 VendorAuth.belongsTo(Vendor, { foreignKey: "vendor_id" });
 
@@ -51,6 +52,8 @@ export const login = async (req, res, next) => {
 
     await createLoginHistory(user, ip, deviceId, refreshToken);
 
+    /* Trigger MoEngage OEM Login Event */
+    await engagementEvent.oemLoginEvent(user, "Web");
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("access_token", accessToken, {
       httpOnly: true,

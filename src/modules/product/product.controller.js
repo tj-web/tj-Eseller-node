@@ -1,6 +1,7 @@
 import * as productService from "./product.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -135,6 +136,7 @@ export const basicDetails = async (req, res) => {
   try {
     const vendor_id = req.user.vendor_id;
     const product_id = req.params.product_id || null;
+    const isNewProduct = !product_id;
 
     const result = await productService.saveOrUpdateProductBasicDetails(
       vendor_id,
@@ -142,6 +144,21 @@ export const basicDetails = async (req, res) => {
       req.files,
       product_id,
     );
+
+    if (isNewProduct && result?.product_id) {
+      productService
+        .getProductDetail(result.product_id)
+        .then((productDetail) => {
+          engagementEvent.oemProfileCompleteStage1(req.user, {
+            product_id: result.product_id,
+            product_name: req.body?.product_name || productDetail?.product_name,
+            ...productDetail,
+          });
+        })
+        .catch((err) => {
+          console.error("Error fetching product detail for engagement event:", err);
+        });
+    }
 
     return res.status(StatusCodes.SUCCESS).json(
       SystemResponse.success("Product saved successfully", result)
