@@ -2505,11 +2505,10 @@ export const getLeadActions = async (lead) => {
         if (!r.subaction_name) {
             actionsMap[r.lead_action_name] = {
                 id: r.id,
-                lead_action_name: r.lead_action_name === r.status_name
-                    ? r.lead_action_name
-                    : ` - ${r.lead_action_name}`,
+                lead_action_name: r.lead_action_name,
                 isClickable: !isDisabled,
                 isSubAction: false,
+                isIndented: r.lead_action_name !== r.status_name,
                 isRemarkRequired: remarks.includes(r.id),
                 data: [],
             };
