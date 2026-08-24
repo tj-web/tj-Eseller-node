@@ -384,12 +384,12 @@ export const createLoginHistory = async (
       ip,
       device_id: deviceId,
       login_status: 1,
-      profile_id: user.id || user.Vendor?.id,
+      profile_id: user.id ,
       auth_token: refreshToken,
     });
 
     const now = new Date();
-    await VendorAuth.update({ last_login_date: now }, { where: { vendor_id: user.vendor_id } });
+    await VendorAuth.update({ last_login_date: now }, { where: { id: user.id } });
     await Vendor.update({ last_login_date: now }, { where: { id: user.vendor_id } });
 
     return record.id;

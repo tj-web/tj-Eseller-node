@@ -2,17 +2,7 @@ export const prepareOemPlansData = (plansData) => {
   const temp = {};
   const sort = { plan_status: [], used_lead: [] };
 
-  // Live date cutoff for leadinsight plans (defaults to today if not in .env)
-  const leadInsightLiveDate = process.env.LEAD_INSIGHT_LIVE_DATE || new Date().toISOString().split('T')[0];
-
   plansData.forEach((plan, key) => {
-    // Filter out old leadinsight plans based on the launch date
-    if (plan.plan_type === 'leadinsight') {
-      const planStartDate = new Date(plan.start_date).toISOString().split('T')[0];
-      if (planStartDate < leadInsightLiveDate) {
-        return; // Skip rendering this plan
-      }
-    }
 
     const order_id = plan.id;
 
