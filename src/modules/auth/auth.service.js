@@ -353,8 +353,6 @@ export const generateAuthTokens = (user) => {
   const payload = {
     vendor_id: user.vendor_id,
     profile_id: user.id,
-    v_name: user.Vendor?.first_name,
-    v_lname: user.Vendor?.last_name,
     v_email: user.email,
     vendor_mode: user.Vendor?.vendor_mode ?? 0,
   };

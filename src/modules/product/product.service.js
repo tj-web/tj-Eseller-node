@@ -1,5 +1,5 @@
 import sequelize from "../../db/connection.js";
-import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
+import { getUrl, uploadFileToS3 } from "../../utilis/s3Uploader.js";
 import sizeOf from "image-size";
 import { Op } from "sequelize";
 import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
@@ -23,6 +23,7 @@ import ProductScreenshot from "../../models/productScreenshot.model.js";
 import DescriptionGallery from "../../models/descriptionGallery.model.js";
 import ProductEnrichmentImage from "../../models/productEnrichmentImage.model.js";
 import ProductVideo from "../../models/productVideo.model.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 
 VendorBrandRelation.belongsTo(Brand, { foreignKey: 'tbl_brand_id', targetKey: 'brand_id' });
@@ -825,6 +826,100 @@ export const updateVendorLogs = async ({
   }
 };
 
+const stripHtml = (value = "") => String(value).replace(/<[^>]*>/g, "");
+
+const formatBooleanAvailability = (value) =>
+  value === "1" || value === 1 || value === true ? "Yes" : "No";
+
+const getBrandNameById = async (brandId) => {
+  if (!brandId) return "";
+
+  const brand = await Brand.findOne({
+    where: { brand_id: brandId },
+    attributes: ["brand_name"],
+    raw: true,
+  });
+
+  return brand?.brand_name || "";
+};
+
+const buildProductBasicUpdationAttributes = async ({
+  productData = {},
+  descriptionData = {},
+  imageFileName = "",
+  documentFileName = "",
+  changes = null,
+}) => {
+  const attributes = {};
+
+  const buildUploadedFileUrl = (key) => getUrl(key);
+
+  const applyAttribute = async (columnName, value) => {
+    if (value === undefined || value === null || value === "") return;
+
+    switch (columnName) {
+      case "product_name":
+        attributes["Product Name"] = value;
+        break;
+      case "website_url":
+        attributes["Website Url"] = value;
+        break;
+      case "overview":
+        attributes["Overview"] = stripHtml(value);
+        break;
+      case "trial_available":
+        attributes["Trial Available"] = formatBooleanAvailability(value);
+        break;
+      case "free_downld_available":
+        attributes["Free Download Available"] = formatBooleanAvailability(value);
+        break;
+      case "brand_id": {
+        const brandName = await getBrandNameById(value);
+        if (brandName) attributes["Brand Name"] = brandName;
+        break;
+      }
+      case "product_image":
+        attributes["Product Image"] = buildUploadedFileUrl(`web/assets/images/techjockey/products/${value}`);
+        break;
+      case "pricing_document":
+        attributes["Pricing Document"] = buildUploadedFileUrl(`web/assets/images/techjockey/products/pricing/${value}`);
+        break;
+      default:
+        break;
+    }
+  };
+
+  if (Array.isArray(changes)) {
+    for (const change of changes) {
+      await applyAttribute(change.column_name, change.updated_column_value);
+    }
+    return attributes;
+  }
+
+  await applyAttribute("product_name", productData.product_name);
+  await applyAttribute("website_url", productData.website_url);
+  await applyAttribute("overview", descriptionData.overview);
+  await applyAttribute("trial_available", productData.trial_available);
+  await applyAttribute("free_downld_available", productData.free_downld_available);
+  await applyAttribute("brand_id", productData.brand_id);
+  await applyAttribute("product_image", imageFileName);
+  await applyAttribute("pricing_document", documentFileName);
+
+  return attributes;
+};
+
+export const trackProductBasicUpdation = async (user, payload = {}) => {
+  try {
+    const attributes = await buildProductBasicUpdationAttributes(payload);
+
+    if (Object.keys(attributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, attributes);
+  } catch (error) {
+    console.error("Error tracking product basic updation event:", error);
+  }
+};
+
 const getActiveCategoryParentId = async (categoryId) => {
   const category = await Category.findOne({
     attributes: ["parent_id"],
@@ -906,7 +1001,8 @@ export const saveOrUpdateProductBasicDetails = async (
   vendor_id,
   post = {},
   files = {},
-  product_id = null
+  product_id = null,
+  user = null
 ) => {
   const isNewProduct = !product_id;
   const transaction = await startProductBasicDetailsTransaction();
@@ -1033,6 +1129,13 @@ export const saveOrUpdateProductBasicDetails = async (
 
     await transaction.commit();
 
+    await trackProductBasicUpdation(user, {
+      productData: save,
+      descriptionData: descriptionForLog,
+      imageFileName: uploadedImages[0]?.fileName || "",
+      documentFileName: uploadedDocuments[0]?.fileName || "",
+    });
+
     return {
       product_id: productId,
       images: uploadedImages,
@@ -1044,7 +1147,7 @@ export const saveOrUpdateProductBasicDetails = async (
   }
 };
 
-export const updateProductBasicDetails = async (vendor_id, product_id, post, files) => {
+export const updateProductBasicDetails = async (vendor_id, product_id, post, files, user = null) => {
   const existing = await geteditProductDetail(product_id);
   if (!existing) {
     const error = new Error("Product not found");
@@ -1160,6 +1263,11 @@ export const updateProductBasicDetails = async (vendor_id, product_id, post, fil
     }
 
     await transaction.commit();
+
+    if (changes.length > 0) {
+      await trackProductBasicUpdation(user, { changes });
+    }
+
     return { product_id };
   } catch (error) {
     if (transaction) await transaction.rollback();
@@ -1320,6 +1428,57 @@ const DEVICES = {
   1: "Desktop", 2: "Mobile"
 };
 
+const mapCsvValues = (csv, dictionary) => {
+  if (!csv) return "";
+
+  return String(csv)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => dictionary[value] || value)
+    .join(",");
+};
+
+const buildProductSpecificationUpdationAttributes = (fields = {}) => {
+  const attributes = {};
+
+  if (fields.deployment !== undefined) {
+    attributes["Deployment"] = mapCsvValues(fields.deployment, DEPLOYMENTS);
+  }
+
+  if (fields.device !== undefined) {
+    attributes["Device"] = mapCsvValues(fields.device, DEVICES);
+  }
+
+  if (fields.operating_system !== undefined) {
+    attributes["Operating System"] = mapCsvValues(fields.operating_system, OPERATING_SYSTEMS);
+  }
+
+  if (fields.organization_type !== undefined) {
+    attributes["Organization Type"] = mapCsvValues(fields.organization_type, ORGANIZATION_TYPES);
+  }
+
+  if (fields.languages !== undefined) {
+    attributes["Languages"] = fields.languages;
+  }
+
+  return Object.fromEntries(
+    Object.entries(attributes).filter(([_, value]) => value !== "")
+  );
+};
+
+export const trackProductSpecificationUpdation = async (user, fields = {}) => {
+  try {
+    const attributes = buildProductSpecificationUpdationAttributes(fields);
+
+    if (Object.keys(attributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, attributes);
+  } catch (error) {
+    console.error("Error tracking product specification updation event:", error);
+  }
+};
+
 export const getProductSpecificationDetails = async (product_id) => {
   try {
     const spec = await ProductSpecification.findOne({
@@ -1429,6 +1588,7 @@ export const saveOrUpdateProductSpecification = async (
   id,
   productData,
   vendor_id,
+  user = null,
 ) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
@@ -1493,6 +1653,9 @@ export const saveOrUpdateProductSpecification = async (
     });
 
     await transaction.commit();
+
+    await trackProductSpecificationUpdation(user, fieldsToLog);
+
     return {
       action: action_performed,
       item_id: product_id,
@@ -1507,7 +1670,7 @@ export const saveOrUpdateProductSpecification = async (
   }
 };
 
-export const updateProductSpecification = async (vendor_id, product_id, post) => {
+export const updateProductSpecification = async (vendor_id, product_id, post, user = null) => {
   const brandArr = await getVendorBrands(vendor_id);
   const isVendor = await isVendorProduct(product_id, brandArr);
 
@@ -1537,7 +1700,7 @@ export const updateProductSpecification = async (vendor_id, product_id, post) =>
   });
   const id = data?.id || null;
 
-  return await saveOrUpdateProductSpecification(id, productData, vendor_id);
+  return await saveOrUpdateProductSpecification(id, productData, vendor_id, user);
 };
 
 
@@ -1595,7 +1758,59 @@ export const getAllFeatures = async (search = null) => {
   }
 };
 
-export const saveOrUpdateProductFeature = async (id, post, vendor_id) => {
+const getFeatureNameById = async (featureId) => {
+  if (!featureId) return "";
+
+  const feature = await Feature.findOne({
+    where: { feature_id: featureId },
+    attributes: ["feature_name"],
+    raw: true,
+  });
+
+  return feature?.feature_name || String(featureId);
+};
+
+const buildProductFeatureUpdationAttributes = async (changes = []) => {
+  const attributes = {};
+
+  for (const change of changes) {
+    if (change.updated_column_value === undefined || change.updated_column_value === null) continue;
+
+    switch (change.column_name) {
+      case "description":
+        attributes["Description"] = change.updated_column_value;
+        break;
+      case "feature_display_name":
+        attributes["Feature Display Name"] = change.updated_column_value;
+        break;
+      case "section_id": {
+        const featureName = await getFeatureNameById(change.updated_column_value);
+        attributes["Feature Name"] = featureName;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(attributes).filter(([_, value]) => value !== "")
+  );
+};
+
+export const trackProductFeatureUpdation = async (user, changes = []) => {
+  try {
+    const attributes = await buildProductFeatureUpdationAttributes(changes);
+
+    if (Object.keys(attributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, attributes);
+  } catch (error) {
+    console.error("Error tracking product feature updation event:", error);
+  }
+};
+
+export const saveOrUpdateProductFeature = async (id, post, vendor_id, user = null) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
     const productId = post.product_id;
@@ -1646,6 +1861,8 @@ export const saveOrUpdateProductFeature = async (id, post, vendor_id) => {
       });
 
       await transaction.commit();
+      await trackProductFeatureUpdation(user, changes);
+
       return { action: "update", id };
     } else {
       // 2. NEW FEATURE: Check for duplicate approved feature
@@ -1680,6 +1897,8 @@ export const saveOrUpdateProductFeature = async (id, post, vendor_id) => {
       });
 
       await transaction.commit();
+      await trackProductFeatureUpdation(user, changes);
+
       return { action: "insert", id: 0 };
     }
   } catch (error) {
@@ -1689,7 +1908,7 @@ export const saveOrUpdateProductFeature = async (id, post, vendor_id) => {
   }
 };
 
-export const updateProductFeature = async (vendor_id, post) => {
+export const updateProductFeature = async (vendor_id, post, user = null) => {
   const product_id = post.product_id;
   const section_id = post.section_id;
 
@@ -1705,7 +1924,7 @@ export const updateProductFeature = async (vendor_id, post) => {
     id = data?.id || null;
   }
 
-  return await saveOrUpdateProductFeature(id, post, vendor_id);
+  return await saveOrUpdateProductFeature(id, post, vendor_id, user);
 };
 
 export const getFeaturesListForVendor = async (vendor_id, product_id, search = null) => {
@@ -1842,7 +2061,47 @@ const cleanFileName = (name) => {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").toLowerCase();
 };
 
-export const updateProductScreenshots = async (productId, vendorId, body, files) => {
+const buildProductScreenshotsUpdationAttributes = (changes = []) => {
+  const imgAlt = [];
+  const screenshotImage = [];
+
+  for (const change of changes) {
+    if (change.updated_column_value === undefined || change.updated_column_value === null || change.updated_column_value === "") {
+      continue;
+    }
+
+    if (change.column_name === "img_alt") {
+      imgAlt.push(change.updated_column_value);
+    }
+
+    if (change.column_name === "image") {
+      screenshotImage.push(getUrl(`web/assets/images/techjockey/products/screenshots/${change.updated_column_value}`));
+    }
+  }
+
+  return {
+    "Image Alt": imgAlt.join(","),
+    "Screenshot Image": screenshotImage.join(","),
+  };
+};
+
+export const trackProductScreenshotsUpdation = async (user, changes = []) => {
+  try {
+    const attributes = buildProductScreenshotsUpdationAttributes(changes);
+
+    const filteredAttributes = Object.fromEntries(
+      Object.entries(attributes).filter(([_, value]) => value !== "")
+    );
+
+    if (Object.keys(filteredAttributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, filteredAttributes);
+  } catch (error) {
+    console.error("Error tracking product screenshots updation event:", error);
+  }
+};
+
+export const updateProductScreenshots = async (productId, vendorId, body, files, user = null) => {
   // 1. Verify vendor ownership
   const brandArr = await getVendorBrands(vendorId);
   const isVendor = await isVendorProduct(productId, brandArr);
@@ -1904,10 +2163,14 @@ export const updateProductScreenshots = async (productId, vendorId, body, files)
     screenshotsData: screenshotsToProcess
   });
 
+  if (result.action !== "none") {
+    await trackProductScreenshotsUpdation(user, result.changes || []);
+  }
+
   return { result, screenshotsToProcess };
 };
 
-export const updateProductGallery = async (productId, vendorId, body, files) => {
+export const updateProductGallery = async (productId, vendorId, body, files, user = null) => {
   // 1. Verify vendor ownership
   const brandArr = await getVendorBrands(vendorId);
   const isVendor = await isVendorProduct(productId, brandArr);
@@ -1988,7 +2251,57 @@ export const updateProductGallery = async (productId, vendorId, body, files) => 
     galleryData: galleryToProcess
   });
 
+  if (result.action !== "none") {
+    await trackProductGalleryUpdation(user, result.changes || []);
+  }
+
   return { result, galleryToProcess };
+};
+
+const buildProductGalleryUpdationAttributes = (changes = []) => {
+  const galleryTitle = [];
+  const galleryDescription = [];
+  const galleryImage = [];
+
+  for (const change of changes) {
+    if (change.updated_column_value === undefined || change.updated_column_value === null || change.updated_column_value === "") {
+      continue;
+    }
+
+    if (change.column_name === "title" || change.column_name === "gallery_title") {
+      galleryTitle.push(change.updated_column_value);
+    }
+
+    if (change.column_name === "description" || change.column_name === "gallery_description") {
+      galleryDescription.push(change.updated_column_value);
+    }
+
+    if (change.column_name === "image" || change.column_name === "gallery_image") {
+      galleryImage.push(getUrl(`web/assets/images/techjockey/gallery/${change.updated_column_value}`));
+    }
+  }
+
+  return {
+    "Gallery Title": galleryTitle.join(","),
+    "Gallery Description": galleryDescription.join(","),
+    "Gallery Image": galleryImage.join(","),
+  };
+};
+
+export const trackProductGalleryUpdation = async (user, changes = []) => {
+  try {
+    const attributes = buildProductGalleryUpdationAttributes(changes);
+
+    const filteredAttributes = Object.fromEntries(
+      Object.entries(attributes).filter(([_, value]) => value !== "")
+    );
+
+    if (Object.keys(filteredAttributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, filteredAttributes);
+  } catch (error) {
+    console.error("Error tracking product gallery updation event:", error);
+  }
 };
 
 export const logProductGalleryRequest = async ({
@@ -2101,7 +2414,7 @@ export const logProductGalleryRequest = async ({
     });
 
     await transaction.commit();
-    return { action: "logged", count: changes.length };
+    return { action: "logged", count: changes.length, changes };
   } catch (error) {
     if (transaction) await transaction.rollback();
     console.error("Error in logProductGalleryRequest:", error);
@@ -2346,7 +2659,7 @@ export const logProductEnrichmentRequest = async ({
     });
 
     await transaction.commit();
-    return { action: "logged", count: changes.length };
+    return { action: "logged", count: changes.length, changes };
   } catch (error) {
     if (transaction) await transaction.rollback();
     console.error("Error in logProductEnrichmentRequest:", error);
@@ -2475,7 +2788,47 @@ export const logProductVideoRequest = async ({
   }
 };
 
-export const updateProductVideo = async (productId, vendorId, body) => {
+const buildProductVideoUpdationAttributes = (changes = []) => {
+  const videoTitle = [];
+  const videoUrl = [];
+
+  for (const change of changes) {
+    if (change.updated_column_value === undefined || change.updated_column_value === null || change.updated_column_value === "") {
+      continue;
+    }
+
+    if (change.column_name === "video_title") {
+      videoTitle.push(change.updated_column_value);
+    }
+
+    if (change.column_name === "video_url") {
+      videoUrl.push(change.updated_column_value);
+    }
+  }
+
+  return {
+    "Video Title": videoTitle.join(","),
+    "Video Url": videoUrl.join(","),
+  };
+};
+
+export const trackProductVideoUpdation = async (user, changes = []) => {
+  try {
+    const attributes = buildProductVideoUpdationAttributes(changes);
+
+    const filteredAttributes = Object.fromEntries(
+      Object.entries(attributes).filter(([_, value]) => value !== "")
+    );
+
+    if (Object.keys(filteredAttributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, filteredAttributes);
+  } catch (error) {
+    console.error("Error tracking product video updation event:", error);
+  }
+};
+
+export const updateProductVideo = async (productId, vendorId, body, user = null) => {
   const {
     video_id, 'video_id[]': videoIdArr,
     video_url, 'video_url[]': videoUrlArr,
@@ -2524,6 +2877,10 @@ export const updateProductVideo = async (productId, vendorId, body) => {
     videoData
   });
 
+  if (result.action !== "none") {
+    await trackProductVideoUpdation(user, result.changes || []);
+  }
+
   return { result, videoData };
 };
 
@@ -2549,7 +2906,41 @@ export const getVendorProductList = async (vendor_id, options = {}) => {
   return products;
 };
 
-export const updateProductEnrichment = async (productId, vendorId, body, files) => {
+const buildProductEnrichmentUpdationAttributes = (changes = []) => {
+  const enrichmentImage = [];
+
+  for (const change of changes) {
+    if (change.updated_column_value === undefined || change.updated_column_value === null || change.updated_column_value === "") {
+      continue;
+    }
+
+    if (change.column_name === "image" || change.column_name === "enrichment_image") {
+      enrichmentImage.push(getUrl(`web/assets/images/techjockey/gallery/${change.updated_column_value}`));
+    }
+  }
+
+  return {
+    "Enrichment Image": enrichmentImage.join(","),
+  };
+};
+
+export const trackProductEnrichmentUpdation = async (user, changes = []) => {
+  try {
+    const attributes = buildProductEnrichmentUpdationAttributes(changes);
+
+    const filteredAttributes = Object.fromEntries(
+      Object.entries(attributes).filter(([_, value]) => value !== "")
+    );
+
+    if (Object.keys(filteredAttributes).length === 0) return;
+
+    await engagementEvent.trackProductUpdationEvent(user, filteredAttributes);
+  } catch (error) {
+    console.error("Error tracking product enrichment updation event:", error);
+  }
+};
+
+export const updateProductEnrichment = async (productId, vendorId, body, files, user = null) => {
   const {
     id: ids, 'id[]': idsArr,
     type: types, 'type[]': typesArr,
@@ -2716,6 +3107,10 @@ export const updateProductEnrichment = async (productId, vendorId, body, files) 
     vendor_id: vendorId,
     enrichmentData: enrichmentToProcess
   });
+
+  if (result.action !== "none") {
+    await trackProductEnrichmentUpdation(user, result.changes || []);
+  }
 
   return { result, enrichmentToProcess };
 };

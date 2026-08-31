@@ -35,9 +35,9 @@ class MoengageService {
       const url = `${this.baseUrl}/${endpointType}/${this.appId}`;
       const authHeader = this._getAuthHeader();
 
-      if (this.debugLog) {
-        console.log(`[MoEngage Request] POST ${url}`, JSON.stringify(payload));
-      }
+      // if (this.debugLog) {
+      //   console.log(`[MoEngage Request] POST ${url}`, JSON.stringify(payload));
+      // }
 
       const response = await axios.post(url, payload, {
         headers: {
@@ -47,10 +47,10 @@ class MoengageService {
         },
         timeout: 5000, // 5s timeout to avoid blocking execution
       });
-      console.log(response);
-      if (this.debugLog) {
-        console.log(`[MoEngage Response]`, response.data);
-      }
+      // console.log(response);
+      // if (this.debugLog) {
+      //   console.log(`[MoEngage Response]`, response.data);
+      // }
 
       return response.data;
     } catch (error) {
@@ -114,6 +114,14 @@ class MoengageService {
     };
 
     return this._sendRequest('customer', payload);
+  }
+
+  /**
+   * Transition Tracking Method for Eseller
+   * @param {object} payload - Transition payload
+   */
+  async trackEsellerTransition(payload) {
+    return this._sendRequest('transition', payload);
   }
 }
 

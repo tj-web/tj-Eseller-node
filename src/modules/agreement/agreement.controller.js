@@ -120,8 +120,7 @@ export const agreementForm = async (req, res) => {
           await updateRecord("vendors", { id: vendor_id }, { vendor_mode: 2 });
           const decoded = await refreshTokenResponse(req, res);
 
-          // Fire engagement event for Onboarding Completion
-          engagementEvent.oemOnboardingComplete(req.user);
+          await engagementEvent.oemOnboardingComplete(req.user);
 
           return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Agreement Signed Successfully", { vendor_mode: decoded?.vendor_mode ?? 0 }));
         }

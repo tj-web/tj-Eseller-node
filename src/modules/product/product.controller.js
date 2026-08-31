@@ -1,7 +1,6 @@
 import * as productService from "./product.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
-import engagementEvent from "../../helpers/engagementEvent.js";
 
 export const brand_arr = async (req, res) => {
   try {
@@ -136,29 +135,14 @@ export const basicDetails = async (req, res) => {
   try {
     const vendor_id = req.user.vendor_id;
     const product_id = req.params.product_id || null;
-    const isNewProduct = !product_id;
 
     const result = await productService.saveOrUpdateProductBasicDetails(
       vendor_id,
       req.body,
       req.files,
       product_id,
+      req.user,
     );
-
-    if (isNewProduct && result?.product_id) {
-      productService
-        .getProductDetail(result.product_id)
-        .then((productDetail) => {
-          engagementEvent.oemProfileCompleteStage1(req.user, {
-            product_id: result.product_id,
-            product_name: req.body?.product_name || productDetail?.product_name,
-            ...productDetail,
-          });
-        })
-        .catch((err) => {
-          console.error("Error fetching product detail for engagement event:", err);
-        });
-    }
 
     return res.status(StatusCodes.SUCCESS).json(
       SystemResponse.success("Product saved successfully", result)
@@ -194,7 +178,8 @@ export const editBasicDetails = async (req, res) => {
       vendor_id,
       product_id,
       post,
-      req.files
+      req.files,
+      req.user
     );
 
     return res.status(StatusCodes.SUCCESS).json(
@@ -266,7 +251,8 @@ export const ProductSpecification = async (req, res) => {
     const result = await productService.updateProductSpecification(
       vendor_id,
       product_id,
-      req.body
+      req.body,
+      req.user
     );
 
     return res
@@ -290,7 +276,7 @@ export const saveProductFeature = async (req, res) => {
     const post = req.body;
     const vendor_id = req.user.vendor_id;
 
-    const result = await productService.updateProductFeature(vendor_id, post);
+    const result = await productService.updateProductFeature(vendor_id, post, req.user);
 
     if (result.action === "none") {
       return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
@@ -388,7 +374,8 @@ export const addScreenshots = async (req, res) => {
       product_id,
       vendor_id,
       req.body,
-      req.files
+      req.files,
+      req.user
     );
 
     if (result.action === "none") {
@@ -442,7 +429,8 @@ export const addGallery = async (req, res) => {
       product_id,
       vendor_id,
       req.body,
-      req.files
+      req.files,
+      req.user
     );
 
     // 5. Build event payload (comma separated strings) for response
@@ -524,7 +512,8 @@ export const addVideo = async (req, res) => {
     const { result, videoData } = await productService.updateProductVideo(
       product_id,
       vendor_id,
-      req.body
+      req.body,
+      req.user
     );
 
     if (result.action === "none") {
@@ -652,7 +641,8 @@ export const enrichment = async (req, res) => {
       product_id,
       vendor_id,
       req.body,
-      req.files
+      req.files,
+      req.user
     );
     if (result.action === "none") {
       return res

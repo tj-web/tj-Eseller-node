@@ -47,7 +47,7 @@ export const getLeadHistory = async (req, res, next) => {
 export const addRemarkReminder = async (req, res, next) => {
     try {
         const vendor_id = req.user.vendor_id;
-        const result = await leadActions.addRemarkReminder({ ...req.body, vendor_id, source: 'web' });
+        const result = await leadActions.addRemarkReminder(req.user, { ...req.body, vendor_id, source: 'web' });
         return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Remark/Reminder added successfully", result));
     } catch (error) {
         next(error);
@@ -56,9 +56,8 @@ export const addRemarkReminder = async (req, res, next) => {
 
 export const leadStatusHandler = async (req, res, next) => {
     try {
-        const vendor_id = req.user.vendor_id;
         const { lead_id } = req.query.lead_id ? req.query : req.body;
-        const result = await leadActions.leadStatusHandler(vendor_id, { ...req.body, lead_id });
+        const result = await leadActions.leadStatusHandler(req.user, { ...req.body, lead_id });
         return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead status updated successfully", result));
     } catch (error) {
         next(error);
@@ -119,8 +118,7 @@ export const rescheduleDemo = async (req, res, next) => {
 
 export const scheduleCallback = async (req, res, next) => {
     try {
-        const vendor_id = req.user.vendor_id;
-        const result = await leadActions.scheduleCallback(vendor_id, { ...req.body });
+        const result = await leadActions.scheduleCallback(req.user, { ...req.body });
         if (result.status) {
             return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message, result.data));
         } else {
@@ -154,9 +152,8 @@ export const getLeadInsights = async (req, res, next) => {
 
 export const unlockContact = async (req, res, next) => {
     try {
-        const vendor_id = req.user.vendor_id;
         const { lead_id } = req.query.lead_id ? req.query : req.body;
-        const result = await leadActions.unlockContact(vendor_id, lead_id);
+        const result = await leadActions.unlockContact(req.user, lead_id);
         return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Contact unlocked successfully", result));
     } catch (error) {
         next(error);
