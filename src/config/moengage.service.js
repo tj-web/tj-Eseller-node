@@ -35,22 +35,15 @@ class MoengageService {
       const url = `${this.baseUrl}/${endpointType}/${this.appId}`;
       const authHeader = this._getAuthHeader();
 
-      // if (this.debugLog) {
-      //   console.log(`[MoEngage Request] POST ${url}`, JSON.stringify(payload));
-      // }
-
       const response = await axios.post(url, payload, {
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache',
           'Authorization': authHeader,
         },
-        timeout: 5000, // 5s timeout to avoid blocking execution
+        timeout: 5000, 
       });
-      // console.log(response);
-      // if (this.debugLog) {
-      //   console.log(`[MoEngage Response]`, response.data);
-      // }
+      
 
       return response.data;
     } catch (error) {

@@ -2399,7 +2399,7 @@ export const unlockContact = async (user, lead_id) => {
                 type: 'contact_viewed'
             }
         });
-        console.log(`Contact viewed count for lead ${lead_id}: ${contactViewedCount}`);
+        
         if (contactViewedCount === 0) {
             await LeadHistory.create({
                 lead_id: lead_id,

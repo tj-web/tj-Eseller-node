@@ -10,11 +10,25 @@ export const hashPassword = (password) => {
   return crypto.createHash("md5").update(password).digest("hex");
 };
 
+const getAesKey = () => {
+  const secret = process.env.AES_SECRET_KEY;
+
+  if (!secret) {
+    throw new Error("AES_SECRET_KEY is missing in environment variables.");
+  }
+
+  return crypto.createHash("sha256").update(secret).digest();
+};
+
 export const encodeData = (data) => {
-  const key = Buffer.from("9sqrEgP2JlbAijGZMH1fssfx0Lc9744Y").slice(0, 16);
-  const iv = Buffer.from("9sqrEgP2JlbAijGZ");
-  const cipher = crypto.createCipheriv("aes-128-cbc", key, iv);
-  let encrypted = cipher.update(JSON.stringify(data), "utf8", "base64");
-  encrypted += cipher.final("base64");
-  return encodeURIComponent(encrypted);
-};
+  const key = getAesKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(JSON.stringify(data), "utf8"),
+    cipher.final(),
+  ]);
+
+  return encodeURIComponent(Buffer.concat([iv, encrypted]).toString("base64"));
+};
+

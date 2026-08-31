@@ -36,8 +36,6 @@ export const sendOtpService = async (phone_number, dial_code = "91") => {
   }
 
   const url = `${process.env.MAINSITE_URL}tjapi/send_otp`;
-  
-  console.log(`Sending OTP to DialCode: ${dCode}, Phone: ${pNumber} via ${url}`);
 
   const response = await fetch(url, {
     method: "POST",

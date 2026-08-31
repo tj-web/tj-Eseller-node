@@ -331,7 +331,6 @@ class EngagementEvent {
   async oemShowContact(user, leadData = {}) {
     try {
       if (!user) return;
-      console.log(user);
       const providerService = this.providerService;
       if (!providerService) return;
 
@@ -353,7 +352,7 @@ class EngagementEvent {
         redirect_uri: `${mainsiteUrl}/my_demos`,
         expiration_date: expirationDate,
       };
-      console.log("oemAutologinData", oemAutologinData);
+    
       const encodedData = encodeData(oemAutologinData);
       const longUrl = `${mainsiteUrl}/login/autoLogin/${encodedData}`;
       const vendorLoginLink = await getShortUrl(longUrl);
