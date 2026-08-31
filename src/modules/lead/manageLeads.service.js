@@ -31,6 +31,7 @@ import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
 import engagementEvent from "../../helpers/engagementEvent.js";
+import ProductAlternative from "../../models/productAlternative.model.js";
 
 const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
@@ -2704,11 +2705,35 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 .toArray();
         }
 
-        if (
-            (!relatedProducts || relatedProducts.length === 0)
-        ) {
+        const MAX_RECOMMENDED_PRODUCTS = 3;
 
-            const fallbackProducts = await TblLeads.findAll({
+        const addUniqueProducts = (map, items = [], idKey = 'product_id', nameKey = 'product_name') => {
+            items.forEach(item => {
+                const productId = item[idKey];
+                const productName = item[nameKey]?.trim();
+
+                if (
+                    !productId ||
+                    !productName ||
+                    String(productId) === String(lead.product_id) ||
+                    map.has(String(productId))
+                ) {
+                    return;
+                }
+
+                map.set(String(productId), {
+                    product_id: productId,
+                    product_name: productName,
+                    visits: item.visits ?? 0
+                });
+            });
+        };
+
+        const productsMap = new Map();
+        addUniqueProducts(productsMap, relatedProducts);
+
+        if (productsMap.size < MAX_RECOMMENDED_PRODUCTS) {
+            const siblingProducts = await TblLeads.findAll({
                 attributes: ['product_id', 'product_name'],
                 where: {
                     original_parent_id: lead.id
@@ -2716,39 +2741,38 @@ export const getLeadCompetiterInsights = async (vendor_id, lead_id) => {
                 raw: true
             });
 
-            if (fallbackProducts?.length) {
+            addUniqueProducts(productsMap, siblingProducts);
+        }
 
-                // Remove duplicates using product_id + product_name
-                const uniqueProductsMap = new Map();
+        if (productsMap.size < MAX_RECOMMENDED_PRODUCTS) {
+            const remainingSlots = MAX_RECOMMENDED_PRODUCTS - productsMap.size;
+            const excludedProductIds = [lead.product_id, ...productsMap.keys()];
 
-                fallbackProducts.forEach(item => {
+            const topAlternatives = await ProductAlternative.findAll({
+                attributes: ['alternate_product_id'],
+                where: {
+                    product_id: lead.product_id,
+                    alternate_product_id: { [Op.notIn]: excludedProductIds }
+                },
+                order: [['weightage', 'DESC'], ['sort_order', 'ASC']],
+                limit: remainingSlots,
+                raw: true
+            });
 
-                    const productId = item.product_id;
-                    const productName = item.product_name?.trim();
-
-                    if (
-                        productId &&
-                        productName &&
-                        String(productId) !== String(lead.product_id)
-                    ) {
-
-                        // Avoid duplicate product_id
-                        if (!uniqueProductsMap.has(String(productId))) {
-
-                            uniqueProductsMap.set(String(productId), {
-                                product_id: productId,
-                                product_name: productName,
-                                visits: 0
-                            });
-                        }
-                    }
+            if (topAlternatives.length) {
+                const alternateProducts = await TblProduct.findAll({
+                    attributes: ['product_id', 'product_name'],
+                    where: {
+                        product_id: { [Op.in]: topAlternatives.map(item => item.alternate_product_id) }
+                    },
+                    raw: true
                 });
 
-                relatedProducts = Array.from(uniqueProductsMap.values());
+                addUniqueProducts(productsMap, alternateProducts);
             }
         }
 
-        return relatedProducts || [];
+        return Array.from(productsMap.values()).slice(0, MAX_RECOMMENDED_PRODUCTS);
 
     } catch (error) {
 
