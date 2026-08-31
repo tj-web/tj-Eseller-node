@@ -18,6 +18,7 @@ import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import LeadsPlan from "../../models/leadsPlan.model.js";
 import { AppError } from "../../utilis/appError.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 // Define Associations
 VendorParticularMatrix.belongsTo(VendorParticular, { foreignKey: "particular_id" });
@@ -479,7 +480,7 @@ export const handleSaveReviewReply = async (vendor_id, profile_id, data) => {
     // --- SECURITY FIX: Verify Review Ownership ---
     const targetReview = await Review.findOne({
       where: { review_id },
-      attributes: ["product_id"],
+      attributes: ["product_id", "title", "name", "customer_id"],
     });
 
     if (!targetReview) {
@@ -504,18 +505,39 @@ export const handleSaveReviewReply = async (vendor_id, profile_id, data) => {
       updated_at: new Date(),
     };
 
+    let replyAction = 'New';
+    let finalReplyId = reply_id;
+
     if (reply_id) {
       // Update existing reply
       await ReviewReplies.update(replyData, {
         where: { id: reply_id, replied_by: vendor_id },
       });
-      return { status: true, message: "Reply updated successfully", reply_id };
+      replyAction = 'Updated';
     } else {
       // Create new reply
       replyData.created_at = new Date();
       const newReply = await ReviewReplies.create(replyData);
-      return { status: true, message: "Reply saved successfully", reply_id: newReply.id };
+      finalReplyId = newReply.id;
     }
+
+    // Trigger MoEngage Event
+    engagementEvent.sendReplyEvent(
+      { vendor_id, profile_id },
+      {
+        customer_name: targetReview.name,
+        review_title: targetReview.title,
+        reply_text: reply_text,
+        review_status: "Pending",
+        review_action: replyAction
+      }
+    );
+
+    return { 
+      status: true, 
+      message: replyAction === 'Updated' ? "Reply updated successfully" : "Reply saved successfully", 
+      reply_id: finalReplyId 
+    };
   } catch (error) {
     throw error;
   }

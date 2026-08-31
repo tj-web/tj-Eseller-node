@@ -30,6 +30,7 @@ import VendorBrandRelation from "../../models/vendorBrandRelation.model.js";
 import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
@@ -671,7 +672,7 @@ export const getLeadHistory = async (vendor_id, leadId) => {
 /**
  * Add remark or reminder with ownership verification.
  */
-export const addRemarkReminder = async (data) => {
+export const addRemarkReminder = async (user, data) => {
     const { vendor_id, lead_id, remark, is_reminder_set, reminder_date, reminder_hour, reminder_minute, reminder_type } = data;
 
     await verifyLeadOwnership(vendor_id, lead_id);
@@ -700,6 +701,13 @@ export const addRemarkReminder = async (data) => {
             source: 'eseller'
         });
 
+        /* trigger remark engagement event */
+        try {
+            await engagementEvent.sendRemarkEvent(user, { lead_id, remark, vendor_id });
+        } catch (eventErr) {
+            console.error("Engagement event error:", eventErr);
+        }
+
         return { status: true, message: 'Remark added successfully.' };
     }
 };
@@ -707,13 +715,15 @@ export const addRemarkReminder = async (data) => {
 /**
  * Handler for lead status updates with ownership verification.
  */
-export const leadStatusHandler = async (vendor_id, body) => {
+export const leadStatusHandler = async (user, body) => {
+    const vendor_id = user.vendor_id;
     const { lead_id, action, action_name } = body;
 
     if (!lead_id) throw new AppError('Lead Id is required', StatusCodes.BAD_REQUEST);
     await verifyLeadOwnership(vendor_id, lead_id);
 
     const response = await updateLeadStatusManual(
+        user,
         { lead_id, action, action_name },
         'web'
     );
@@ -728,7 +738,7 @@ export const leadStatusHandler = async (vendor_id, body) => {
 /**
  * Updates lead status manually.
  */
-export const updateLeadStatusManual = async (data, source = 'web') => {
+export const updateLeadStatusManual = async (user, data, source = 'web') => {
     if (!data.lead_id) return false;
 
     const previousLead = await TblLeads.findOne({
@@ -761,6 +771,13 @@ export const updateLeadStatusManual = async (data, source = 'web') => {
         remark: data.action_name || data.remark,
         source: 'eseller'
     });
+
+    /* trigger lead action engagement event */
+    try {
+        await engagementEvent.sendLeadActionEvent(user, { lead_id: data.lead_id });
+    } catch (eventErr) {
+        console.error("Engagement event error:", eventErr);
+    }
 
     return true;
 };
@@ -1046,7 +1063,8 @@ const triggerACD = async (data) => {
 /**
  * Schedules a callback or demo.
  */
-export const scheduleCallback = async (vendor_id, data) => {
+export const scheduleCallback = async (user, data) => {
+    const vendor_id = user.vendor_id;
     const { lead_id, date, hour, minute, action, agent_number } = data;
 
     const isWorkingHours = getWorkingHoursStatus();
@@ -1074,6 +1092,11 @@ export const scheduleCallback = async (vendor_id, data) => {
 
     const lead = await TblLeads.findOne({
         where: { id: lead_id, vendor_id: vendor_id },
+        attributes: [
+            'id', 'user_id', 'vendor_id', 'created_at', 'email', 'phone', 'dial_code',
+            'product_id', 'acd_uuid', 'name', 'product_name', 'brand_id', 'brand_name',
+            'category_id', 'software_category'
+        ],
         include: [
             {
                 model: TblRequestCallbacks,
@@ -1083,7 +1106,7 @@ export const scheduleCallback = async (vendor_id, data) => {
             {
                 model: TblProduct,
                 as: 'product',
-                attributes: ['lead_model_type'],
+                attributes: ['lead_model_type', 'slug'],
                 required: false
             }
         ]
@@ -1127,6 +1150,20 @@ export const scheduleCallback = async (vendor_id, data) => {
     };
 
     const acdResponse = await triggerACD(acdRequest);
+
+    if (acdResponse.status) {
+        try {
+            const callDataForEvent = {
+                ...lead.toJSON(),
+                acd_uuid: acdResponse?.data?.acd_uuid || lead.acd_uuid || '',
+                category_name: lead.software_category,
+                product_slug: lead.product?.slug
+            };
+            await engagementEvent.scheduleCallEvent(user, callDataForEvent);
+        } catch (eventErr) {
+            console.error("Engagement event error:", eventErr);
+        }
+    }
 
     if (action === 'GetFreeDemo') {
         await TblLeads.update(
@@ -2329,16 +2366,21 @@ function getAvgTimeMinute(beginDate, endDate) {
 /**
  * Unlocks contact with ownership verification.
  */
-export const unlockContact = async (vendor_id, lead_id) => {
+export const unlockContact = async (user, lead_id) => {
+    const vendor_id = user.vendor_id;
     await verifyLeadOwnership(vendor_id, lead_id);
 
     const leadInfo = await TblLeads.findOne({
         where: { id: lead_id },
-        attributes: ['id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone', 'dial_code', 'is_show_contact', 'product_id'],
+        attributes: [
+            'id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone', 
+            'dial_code', 'is_show_contact', 'product_id', 'name', 'product_name', 
+            'brand_id', 'brand_name', 'category_id', 'software_category'
+        ],
         include: [{
             model: TblProduct,
             as: 'product',
-            attributes: ['lead_model_type']
+            attributes: ['lead_model_type', 'slug']
         }]
     });
 
@@ -2357,7 +2399,7 @@ export const unlockContact = async (vendor_id, lead_id) => {
                 type: 'contact_viewed'
             }
         });
-
+        
         if (contactViewedCount === 0) {
             await LeadHistory.create({
                 lead_id: lead_id,
@@ -2378,6 +2420,17 @@ export const unlockContact = async (vendor_id, lead_id) => {
                 }
             } catch (mongoErr) {
                 // Ignored
+            }
+
+            try {
+                const leadDataForEvent = {
+                    ...leadInfo.toJSON(),
+                    category_name: leadInfo.software_category,
+                    product_slug: leadInfo.product?.slug
+                };
+                await engagementEvent.oemShowContact(user, leadDataForEvent);
+            } catch (eventErr) {
+                console.error("Engagement event error:", eventErr);
             }
 
             try {
