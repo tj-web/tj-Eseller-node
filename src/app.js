@@ -16,6 +16,7 @@ import authRoutes from "./modules/auth/auth.routes.js";
 import leadsRoutes from "./modules/lead/manageLeads.routes.js";
 import salesRoutes from "./modules/sales/sales.route.js";
 import apiIntegrationRoutes from "./modules/apiintegration/apiintegration.route.js";
+import oemDashboardRoutes from "./modules/oemDashboard/oemDashboard.routes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
 import { vendorModeMiddleware } from "./middlewares/vendorModeMiddleware.js";
@@ -59,6 +60,7 @@ app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/leads`, authenticate, vendorModeMiddleware, leadsRoutes);
 app.use(`${API_PREFIX}/sales`, authenticate, vendorModeMiddleware, salesRoutes);
 app.use(`${API_PREFIX}/apiintegration`, authenticate, vendorModeMiddleware, apiIntegrationRoutes);
+app.use(`${API_PREFIX}/oem-dashboard`, authenticate, vendorModeMiddleware, oemDashboardRoutes);
 
 // Authentication is applied to specific routes within authRoutes if needed
 
