@@ -846,8 +846,8 @@ export const getLeadDetails = async (vendor_id, leadId) => {
     const insightPermission = await getVendorInsightPermission(vendor_id);
     const has_recent_submission = await hasRecentSubmission(vendor_id);
     const currentDate = new Date().toISOString().split('T')[0];
-    let is_lead_insight_allowed = 0;
-    if (insightPermission.allowed && leadJson.product_id) {
+    let is_lead_insight_allowed =  0;
+    if (insightPermission.allowed && leadJson.product_id && lead.lead_model_type === 1) {
         const resultCount = await sequelize.query(`
             SELECT COUNT(1) as count 
             FROM oms_pi_details opd
@@ -863,7 +863,7 @@ export const getLeadDetails = async (vendor_id, leadId) => {
         });
         is_lead_insight_allowed = resultCount[0]?.count > 0 ? 1 : 0;
     }
-    if (is_lead_insight_allowed === 0 && has_recent_submission) {
+    if (is_lead_insight_allowed === 0 && has_recent_submission && lead.lead_model_type === 1) {
         is_lead_insight_allowed = 2;
     }
 
@@ -1459,6 +1459,15 @@ const getOrganizationData = async (domain) => {
 };
 
 /**
+ * Strips characters outside printable ASCII/Latin-1 (e.g. CJK, Cyrillic, emoji) from
+ * Apollo-sourced text so it doesn't break on tbl_companies_employees' column charset.
+ */
+const sanitizeEmployeeText = (value) => {
+    if (value === null || value === undefined) return value;
+    return String(value).replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim() || null;
+};
+
+/**
  * Fetches employee list from Apollo.
  */
 const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => {
@@ -1514,12 +1523,12 @@ const getEmployeeList = async (domain, category_id, lead_id, companyDetails) => 
             } else {
                 await CompaniesEmployees.create({
                     company_id: companyDetails.company_id || null,
-                    emp_name: employee.emp_name || "",
+                    emp_name: sanitizeEmployeeText(employee.emp_name) || "",
                     emp_email: employee?.emp_email || "",
                     linkedin_id: employee.linkedin_url || "",
                     twitter_id: employee.twitter_id || "",
                     photo: employee.photo || "",
-                    designation: employee.designation || "",
+                    designation: sanitizeEmployeeText(employee.designation) || "",
                     apollo_people_id: employee.apollo_people_id || "",
                     mapped_categories: category_id ? String(category_id) : null,
                     created_at: createdAt || null
@@ -1655,7 +1664,7 @@ const getEmployeeEmails = async (apollo_people_ids) => {
                 const updatePayload = {};
                 const fullName = empData.name || (empData.first_name && empData.last_name ? `${empData.first_name} ${empData.last_name}`.trim() : null);
                 if (fullName) {
-                    updatePayload.emp_name = fullName;
+                    updatePayload.emp_name = sanitizeEmployeeText(fullName);
                 }
                 if (empData.email) {
                     updatePayload.emp_email = empData.email;
@@ -1979,13 +1988,13 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
     try {
         const full_access_plan_id = eligiblePlanIds;
 
-        const vendor = await Vendor.findByPk(vendor_id, {
-            attributes: ['lead_insight_display']
-        });
+        // const vendor = await Vendor.findByPk(vendor_id, {
+        //     attributes: ['lead_insight_display']
+        // });
 
-        if (!vendor || vendor.lead_insight_display != 1) {
-            return null;
-        }
+        // if (!vendor || vendor.lead_insight_display != 1) {
+        //     return null;
+        // }
 
         await verifyLeadOwnership(vendor_id, lead_id);
 
