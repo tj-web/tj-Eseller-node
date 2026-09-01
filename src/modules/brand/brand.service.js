@@ -35,6 +35,25 @@ BrandLocation.belongsTo(BrandCity, {
   targetKey: "city_id",
 });
 
+const getEffectiveBrandStatus = (brand) =>
+  Number(brand?.status) === 1 && Number(brand?.show_status) === 1 ? 1 : 0;
+
+const applyEffectiveBrandStatusFilter = (where, brand_status) => {
+  if (brand_status === undefined || brand_status === "") return;
+
+  const normalizedStatus = parseInt(brand_status, 10);
+  if (normalizedStatus === 1) {
+    where.status = 1;
+    where.show_status = 1;
+    return;
+  }
+
+  where[Op.or] = [
+    { status: { [Op.ne]: 1 } },
+    { show_status: { [Op.ne]: 1 } },
+  ];
+};
+
 /* =========================================
    CHECK BRAND NAME AVAILABILITY
 ========================================= */
@@ -335,10 +354,7 @@ export const getVendorBrands = async (params) => {
       [sequelize.Sequelize.Op.like]: `%${srch_brand_name}%`,
     };
   }
-  if (brand_status !== undefined && brand_status !== "") {
-    // Apply brand_status filter on the Brand include (tbl_brand.status)
-    brandWhere.status = parseInt(brand_status, 10);
-  }
+  applyEffectiveBrandStatusFilter(brandWhere, brand_status);
 
   let orderLogic = [["id", order && order.toUpperCase() === "ASC" ? "ASC" : "DESC"]]; // Default mapped
   if (orderby === "s_id") orderLogic = [[Brand, "brand_id", order || "DESC"]];
@@ -352,7 +368,7 @@ export const getVendorBrands = async (params) => {
         model: Brand,
         required: !!(srch_brand_name || brand_status), // INNER JOIN when searching by name or filtering by brand_status
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
-        attributes: ["brand_name", "description", "image", "status", "slug", "target_industry"],
+        attributes: ["brand_name", "description", "image", "status", "show_status", "slug", "target_industry"],
       },
       {
         model: BrandInfo,
@@ -384,6 +400,7 @@ export const getVendorBrands = async (params) => {
         where: {
           brand_id: { [Op.in]: brandIds },
           product_id: { [Op.ne]: 0 },
+          vendor_id: vendor_id,
         },
         group: ["brand_id"],
         raw: true,
@@ -398,6 +415,12 @@ export const getVendorBrands = async (params) => {
       row.setDataValue("total_leads", l ? l.count : 0);
     });
   }
+
+  rows.forEach((row) => {
+    const effectiveBrandStatus = getEffectiveBrandStatus(row.Brand);
+    row.setDataValue("brand_status", effectiveBrandStatus);
+    row.Brand?.setDataValue("brand_status", effectiveBrandStatus);
+  });
 
   return rows;
 };
@@ -417,10 +440,7 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
       [Op.like]: `%${srch_brand_name}%`,
     };
   }
-  // Apply brand_status filter on Brand (tbl_brand.status) when provided
-  if (brand_status !== undefined && brand_status !== "") {
-    brandWhere.status = parseInt(brand_status, 10);
-  }
+  applyEffectiveBrandStatusFilter(brandWhere, brand_status);
 
   // 1) Relation counts (pending/approved/declined) filtered by Brand.status when brand_status provided
   const relationRows = await VendorBrandRelation.findAll({
@@ -476,18 +496,18 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
   const brandStatusCounts = { all: 0, active: 0, inactive: 0 };
   if (brandIds.length > 0) {
     const brandRows = await Brand.findAll({
-      attributes: ["status", [sequelize.fn("COUNT", sequelize.col("brand_id")), "count"]],
+      attributes: ["status", "show_status", [sequelize.fn("COUNT", sequelize.col("brand_id")), "count"]],
       where: {
         brand_id: { [Op.in]: brandIds },
       },
-      group: ["status"],
+      group: ["status", "show_status"],
       raw: true,
     });
 
     for (const b of brandRows) {
       const n = Number(b.count) || 0;
       brandStatusCounts.all += n;
-      if (b.status === 1) brandStatusCounts.active += n;
+      if (getEffectiveBrandStatus(b) === 1) brandStatusCounts.active += n;
       else brandStatusCounts.inactive += n;
     }
   }
@@ -504,7 +524,7 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
 ========================================= */
 export const getBrandById = async (vendor_id, brand_id) => {
   const brand = await Brand.findOne({
-    attributes: ["brand_name", "description", "image", "status"],
+    attributes: ["brand_name", "description", "image", "status", "show_status"],
     where: { brand_id: brand_id },
     include: [
       {
@@ -549,7 +569,8 @@ export const getBrandById = async (vendor_id, brand_id) => {
     description: plainBrand.description,
     image: plainBrand.image,
     status: plainBrand.status,
-    brand_status: plainBrand.status,
+    show_status: plainBrand.show_status,
+    brand_status: getEffectiveBrandStatus(plainBrand),
     tbl_info_id: info.id || null,
     information: info.information,
     founded_on: info.founded_on,
@@ -755,6 +776,7 @@ export const handleSearchBrandsForRequest = async (vendorId, searchStr = "") => 
       ],
       where: {
         status: 1,
+        show_status: 1,
         is_deleted: 0,
         brand_name: {
           [Op.like]: `%${searchStr}%`,

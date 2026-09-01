@@ -52,6 +52,24 @@ ProductFeature.belongsTo(Feature, {
   targetKey: "feature_id",
 });
 
+const getEffectiveProductStatus = (product) =>
+  Number(product?.status) === 1 && Number(product?.show_status) === 1 ? 1 : 0;
+
+const applyEffectiveProductStatusFilter = (where, srch_status) => {
+  if (srch_status === undefined || srch_status === "" || srch_status === "all") return;
+
+  const normalizedStatus = parseInt(srch_status, 10);
+  if (normalizedStatus === 1) {
+    where.status = 1;
+    where.show_status = 1;
+    return;
+  }
+
+  where[Op.or] = [
+    { status: { [Op.ne]: 1 } },
+    { show_status: { [Op.ne]: 1 } },
+  ];
+};
 
 export const isVendorProduct = async (productId, brandArr) => {
   try {
@@ -178,8 +196,7 @@ export const getProductList = async (
       sortColumn = "product_id";
       order = "desc";
   }
-
-  // Build where conditions
+  
   const whereConditions = {
     is_deleted: 0,
     brand_id: { [Op.in]: brand_arr }
@@ -189,12 +206,10 @@ export const getProductList = async (
     whereConditions.product_name = { [Op.like]: `%${search_filter.srch_product_name}%` };
   }
 
-  if (search_filter.srch_status) {
-    whereConditions.status = parseInt(search_filter.srch_status, 10);
-  }
+  applyEffectiveProductStatusFilter(whereConditions, search_filter.srch_status);
 
   const results = await Product.findAndCountAll({
-    attributes: ['product_id', 'product_name', 'status', 'slug'],
+    attributes: ['product_id', 'product_name', 'status', 'show_status', 'slug'],
     where: whereConditions,
     include: [
       {
@@ -226,7 +241,9 @@ export const getProductList = async (
     product_id: row.product_id,
     product_name: row.product_name,
     slug: row.slug,
-    status: row.status,
+    status: getEffectiveProductStatus(row),
+    product_status: row.status,
+    show_status: row.show_status,
     brand_name: row.Brand?.brand_name || null,
     image: row.ProductImages ? (Array.isArray(row.ProductImages) ? row.ProductImages[0]?.image : row.ProductImages.image) : (row.ProductImages?.image || null)
     // Note: If using hasMany, row.ProductImages will be an array if nest:true.
@@ -294,10 +311,11 @@ export const getVendorProductsCount = async (brand_arr, srch_product_name = "") 
   const rows = await Product.findAll({
     attributes: [
       "status",
+      "show_status",
       [sequelize.fn("COUNT", sequelize.col("product_id")), "count"],
     ],
     where: whereConditions,
-    group: ["status"],
+    group: ["status", "show_status"],
     raw: true,
   });
 
@@ -305,7 +323,7 @@ export const getVendorProductsCount = async (brand_arr, srch_product_name = "") 
   for (const row of rows) {
     const n = Number(row.count) || 0;
     counts.all += n;
-    if (row.status === 1) counts.active += n;
+    if (getEffectiveProductStatus(row) === 1) counts.active += n;
     else counts.inactive += n;
   }
 
@@ -1316,7 +1334,9 @@ export const getProductDetail = async (product_id) => {
     // 4. Combine and return formatted data
     return {
       product_name: product.product_name,
-      status: product.status,
+      status: getEffectiveProductStatus(product),
+      product_status: product.status,
+      show_status: product.show_status,
       brand_id: product.brand_id,
       website_url: product.website_url,
       overview: product.ProductDescription?.overview,
