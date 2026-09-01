@@ -94,3 +94,30 @@ export const createVendorDetails = async (data, transaction) => {
 export const createVendorLeads = async (data, transaction) => {
   return await VendorsLeads.create(data, { transaction });
 };
+
+/* ================================
+   FIND USER BY ID (PROFILE ID)
+================================ */
+export const findUserByProfileId = async (profileId) => {
+  return await VendorAuth.findOne({
+    where: {
+      id: profileId,
+      is_deleted: 0,
+    },
+    include: [{ model: Vendor }],
+  });
+};
+
+/* ================================
+   FIND USER BY VENDOR ID
+================================ */
+export const findUserByVendorId = async (vendorId) => {
+  return await VendorAuth.findOne({
+    where: {
+      vendor_id: vendorId,
+      is_deleted: 0,
+    },
+    include: [{ model: Vendor }],
+  });
+};
+

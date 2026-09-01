@@ -24,6 +24,7 @@ import { AppError } from "../../utilis/appError.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
 import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 export const handleResetPassword = async (token, newPassword) => {
   const record = await PasswordReset.findOne({
@@ -316,6 +317,17 @@ export const registerVendor = async (data) => {
 
     await transaction.commit();
 
+    /* Trigger MoEngage OEM Signup Event */
+   await engagementEvent.oemSignupEvent({
+      id: vendorAuth.id,
+      vendor_id: vendor.id,
+      first_name,
+      last_name,
+      email: normalizedEmail,
+      dial_code,
+      phone: number,
+    }, "Web");
+
     return {
       message: "Signup successful. Verification email sent , check your email !",
       vendor_id: vendor.id,
@@ -341,8 +353,6 @@ export const generateAuthTokens = (user) => {
   const payload = {
     vendor_id: user.vendor_id,
     profile_id: user.id,
-    v_name: user.Vendor?.first_name,
-    v_lname: user.Vendor?.last_name,
     v_email: user.email,
     vendor_mode: user.Vendor?.vendor_mode ?? 0,
   };
@@ -372,12 +382,12 @@ export const createLoginHistory = async (
       ip,
       device_id: deviceId,
       login_status: 1,
-      profile_id: user.id || user.Vendor?.id,
+      profile_id: user.id ,
       auth_token: refreshToken,
     });
 
     const now = new Date();
-    await VendorAuth.update({ last_login_date: now }, { where: { vendor_id: user.vendor_id } });
+    await VendorAuth.update({ last_login_date: now }, { where: { id: user.id } });
     await Vendor.update({ last_login_date: now }, { where: { id: user.vendor_id } });
 
     return record.id;

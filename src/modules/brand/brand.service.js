@@ -11,6 +11,8 @@ import { AppError } from "../../utilis/appError.js";
 import { Op } from "sequelize";
 import { findDifferences } from "../../General_Function/general_helper.js";
 import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
+import VendorAuth from "../../models/vendorAuth.model.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 VendorBrandRelation.belongsTo(Brand, {
   foreignKey: "tbl_brand_id",
@@ -257,6 +259,36 @@ export const handleAddBrand = async (data, file, vendorId, profileId) => {
 
     // 6. Complete Transaction Context
     await transaction.commit();
+
+    try {
+      const adminDetails = await VendorAuth.findOne({
+        where: { vendor_id: vendorId, is_admin: 1, id: { [Op.ne]: profileId } },
+        attributes: ["id"]
+      });
+      const profileIds = [profileId];
+      if (adminDetails && adminDetails.id) {
+        profileIds.push(adminDetails.id);
+      }
+
+      const eventData = {
+        "Brand Name": brand_name,
+        "Location": location || "",
+        "Founded On": founded_on || "",
+        "Founders": founders || "",
+        "Company Size": company_size || "",
+        "Information": information || "",
+        "Industry": industry || "",
+        "Brand Image": file ? file.originalname : ""
+      };
+
+      await engagementEvent.sendProductBrandUpdationEvents({
+        profile_ids: profileIds,
+        event_name: "Brand Information Submitted",
+        data: eventData
+      });
+    } catch (trackErr) {
+      console.error("[Tracking Error] Failed to send brand addition MoEngage event:", trackErr);
+    }
 
     return {
       message: "Brand Saved Successfully.",
@@ -642,6 +674,37 @@ export const handleUpdateBrand = async (brand_id, body, file, vendor_id, profile
     }
 
     await transaction.commit();
+
+    try {
+      if (brandDiff && Object.keys(brandDiff).length > 0) {
+        const adminDetails = await VendorAuth.findOne({
+          where: { vendor_id: vendor_id, is_admin: 1, id: { [Op.ne]: profile_id } },
+          attributes: ["id"]
+        });
+        const profileIds = [profile_id];
+        if (adminDetails && adminDetails.id) {
+          profileIds.push(adminDetails.id);
+        }
+
+        const eventData = {};
+        if (brandDiff.brand_name) eventData["Brand Name"] = brandDiff.brand_name.new;
+        if (brandDiff.location) eventData["Location"] = brandDiff.location.new;
+        if (brandDiff.information) eventData["Information"] = brandDiff.information.new;
+        if (brandDiff.industry) eventData["Industry"] = brandDiff.industry.new;
+        if (brandDiff.founded_on) eventData["Founded On"] = brandDiff.founded_on.new;
+        if (brandDiff.founders) eventData["Founders"] = brandDiff.founders.new;
+        if (brandDiff.company_size) eventData["Company Size"] = brandDiff.company_size.new;
+        if (imageName) eventData["Brand Image"] = imageName;
+
+        await engagementEvent.sendProductBrandUpdationEvents({
+          profile_ids: profileIds,
+          event_name: "Brand Information Submitted",
+          data: eventData
+        });
+      }
+    } catch (trackErr) {
+      console.error("[Tracking Error] Failed to send brand update MoEngage event:", trackErr);
+    }
   } catch (error) {
     if (transaction) await transaction.rollback();
     throw error;

@@ -1,6 +1,6 @@
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
-import { handleCreateWebhook, handleverifyWebhook, planSubscribeRequestService } from "./apiintegration.service.js";
+import { handleCreateWebhook, handleverifyWebhook, planSubscribeRequestService, handleUpdateLeadAction, handleGetLeadActionConfig, handleGetLeadStatusGuidReference, handleAddLeadRemark } from "./apiintegration.service.js";
 import sequelize from "../../db/connection.js";
 import { QueryTypes } from "sequelize";
 
@@ -154,3 +154,64 @@ export const apiIntegrationPlanRequest = async (req, res) => {
       .json(SystemResponse.badRequestError(error.message || "Failed to submit plan request"));
   }
 };
+
+export const updateLeadAction = async (req, res) => {
+  try {
+    await handleUpdateLeadAction(req.headers, req.body);
+    return res.status(StatusCodes.SUCCESS).json({
+      status: true,
+      message: "Status marked Successfully.",
+      data: "",
+    });
+  } catch (error) {
+    return res.status(StatusCodes.SUCCESS).json({
+      status: false,
+      message: error.message || "Failed to update lead status",
+    });
+  }
+};
+
+export const getLeadActionConfig = async (req, res) => {
+  try {
+    const { vendor_id } = req.user;
+    const configData = await handleGetLeadActionConfig(vendor_id);
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Lead Action Config fetched successfully", configData));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to fetch lead action config"));
+  }
+};
+
+export const getLeadStatusGuidReference = async (req, res) => {
+  try {
+    const leadStatusData = await handleGetLeadStatusGuidReference();
+    return res
+      .status(StatusCodes.SUCCESS)
+      .json(SystemResponse.success("Lead status GUID reference fetched successfully", leadStatusData));
+  } catch (error) {
+    return res
+      .status(StatusCodes.BAD_REQUEST)
+      .json(SystemResponse.badRequestError(error.message || "Failed to fetch lead status GUID reference"));
+  }
+};
+
+export const addLeadRemark = async (req, res) => {
+  try {
+    await handleAddLeadRemark(req.headers, req.body);
+    return res.status(StatusCodes.SUCCESS).json({
+      status: true,
+      message: "Remark added Successfully.",
+      data: "",
+    });
+  } catch (error) {
+    return res.status(StatusCodes.SUCCESS).json({
+      status: false,
+      message: error.message || "Failed to add lead remark",
+    });
+  }
+};
+
+

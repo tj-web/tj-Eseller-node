@@ -30,6 +30,14 @@ const OmsPiDetail = sequelize.define(
       type: DataTypes.STRING(191),
       allowNull: true,
     },
+    category_id: {
+      type: DataTypes.INTEGER(11),
+      allowNull: true,
+    },
+    category_name: {
+      type: DataTypes.STRING(191),
+      allowNull: true,
+    },
     hsn_code: {
       type: DataTypes.STRING(191),
       allowNull: true,
@@ -258,6 +266,11 @@ const OmsPiDetail = sequelize.define(
       type: DataTypes.INTEGER(11),
       allowNull: true,
     },
+    full_payment: {
+      type: DataTypes.TINYINT(4),
+      allowNull: true,
+      defaultValue: 0,
+    },
     renewal_opp_id: {
       type: DataTypes.INTEGER(11),
       allowNull: true,
@@ -276,6 +289,19 @@ const OmsPiDetail = sequelize.define(
     },
     profile_visits: {
       type: DataTypes.STRING(191),
+      allowNull: true,
+    },
+    blog_addon: {
+      type: DataTypes.TINYINT(1),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    blog_start_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+    blog_end_date: {
+      type: DataTypes.DATEONLY,
       allowNull: true,
     },
     created_at: {

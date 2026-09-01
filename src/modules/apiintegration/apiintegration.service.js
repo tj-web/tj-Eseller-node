@@ -1,6 +1,6 @@
 import axios from "axios";
 import sequelize from "../../db/connection.js";
-import { QueryTypes, fn, col, literal } from "sequelize";
+import { QueryTypes, fn, col, literal, Op } from "sequelize";
 import VendorWebhookAuth from "../../models/vendorWebhookAuth.model.js";
 import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorLeadsTeam from "../../models/vendorLeadsTeam.model.js";
@@ -12,6 +12,10 @@ import VendorTeams from "../../models/vendorTeams.model.js";
 import VendorUserTeam from "../../models/vendorUserTeam.model.js";
 import { AppError } from "../../utilis/appError.js";
 import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
+import TblLeads from "../../models/leads.model.js";
+import LeadStatus from "../../models/leadStatus.model.js";
+import LeadHistory from "../../models/leadHistory.model.js";
+import mongoose from "mongoose";
 
 // Define Associations needed for planSubscribeRequestService
 VendorAuth.hasOne(VendorDetails, {
@@ -453,3 +457,256 @@ export const planSubscribeRequestService = async (authData, postData) => {
     throw error;
   }
 };
+
+export const handleUpdateLeadAction = async (headers, body) => {
+  const { vendor_id, lead_guid, lead_status_guid } = body;
+
+  // 1. Validate all 3 fields are present and non-empty
+  if (
+    !vendor_id ||
+    String(vendor_id).trim() === "" ||
+    !lead_guid ||
+    String(lead_guid).trim() === "" ||
+    !lead_status_guid ||
+    String(lead_status_guid).trim() === ""
+  ) {
+    throw new Error("vendor_id, lead_guid, and lead_status_guid are required");
+  }
+
+  // 2. Verify auth token
+  const authHeader = headers.authorization;
+  if (!authHeader) {
+    throw new Error("Invalid Token.");
+  }
+  const tokenParts = authHeader.split(" ");
+  const providedToken = tokenParts[tokenParts.length - 1];
+
+  const authRecord = await VendorWebhookAuth.findOne({
+    where: { vendor_id: vendor_id }
+  });
+  if (!authRecord || authRecord.status !== 1) {
+    throw new Error("Webhook setup is not active. Please complete and activate your webhook integration first.");
+  }
+
+  const expectedToken = Buffer.from(authRecord.client_id + ":" + authRecord.client_secret).toString("base64");
+  if (providedToken !== expectedToken) {
+    throw new Error("Invalid Token.");
+  }
+
+  // 3. Fetch current lead
+  const currentLead = await TblLeads.findOne({
+    attributes: ["id", "lead_action", "acd_uuid", "vendor_id"],
+    where: {
+      lead_guid: lead_guid,
+      vendor_id: vendor_id
+    }
+  });
+  if (!currentLead) {
+    throw new Error("Incorrect Lead ID");
+  }
+
+  // 4. Fetch new status
+  const newStatus = await LeadStatus.findOne({
+    attributes: ["id", "status_id", "lead_action_name", "status_name"],
+    where: {
+      lead_status_guid: lead_status_guid
+    }
+  });
+  if (!newStatus) {
+    throw new Error("Incorrect Lead Status");
+  }
+
+  // 5. If new status id === current lead_action → throw "Trying to update existing Lead Action"
+  if (newStatus.id === currentLead.lead_action) {
+    throw new Error("Trying to update existing Lead Action");
+  }
+
+  let oldActionName = "";
+  const transaction = await sequelize.transaction();
+  try {
+    // 6. Update tbl_leads
+    await TblLeads.update(
+      {
+        lead_action: newStatus.id,
+        status: newStatus.status_id,
+        crm_status: newStatus.id
+      },
+      {
+        where: { id: currentLead.id },
+        transaction
+      }
+    );
+
+    // 7. Fetch previous action name
+    if (currentLead.lead_action) {
+      const oldStatus = await LeadStatus.findOne({
+        attributes: ["lead_action_name", "status_name"],
+        where: { id: currentLead.lead_action }
+      });
+      if (oldStatus) {
+        oldActionName = oldStatus.lead_action_name || oldStatus.status_name || "";
+      }
+    }
+
+    const newActionName = newStatus.lead_action_name || newStatus.status_name || "";
+
+    // 9. Insert into tbl_leads_history
+    await LeadHistory.create(
+      {
+        lead_id: currentLead.id,
+        acd_uuid: currentLead.acd_uuid || "",
+        type: "action",
+        remark: newActionName,
+        source: "crm"
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+  } catch (dbError) {
+    await transaction.rollback();
+    throw dbError;
+  }
+
+  const newActionNameResolved = newStatus.lead_action_name || newStatus.status_name || "";
+
+  // 10. Dump to MongoDB tracks collection
+  try {
+    const db = mongoose.connection?.db;
+    if (db) {
+      await db.collection("tracks").insertOne({
+        lead_id: currentLead.id,
+        feed_action: "lead_status",
+        feed_activity: "Lead Status Changed By OEM.",
+        changes: [
+          {
+            fieldName: "lead_status",
+            valueBefore: {
+              id: currentLead.lead_action || 0,
+              name: oldActionName || ""
+            },
+            valueAfter: {
+              id: newStatus.id,
+              name: newActionNameResolved
+            }
+          }
+        ],
+        created_at: new Date()
+      });
+    }
+  } catch (mongoErr) {
+    console.error("Error inserting to MongoDB tracks:", mongoErr);
+  }
+
+  return true;
+};
+
+export const handleGetLeadActionConfig = async (vendor_id) => {
+  const authRecord = await VendorWebhookAuth.findOne({
+    where: { vendor_id: vendor_id },
+    attributes: ["status"]
+  });
+
+  if (!authRecord || authRecord.status !== 1) {
+    throw new Error("Webhook setup is not active. Please complete and activate your webhook integration first.");
+  }
+
+  return {
+    is_webhook_active: true
+  };
+};
+
+export const handleGetLeadStatusGuidReference = async () => {
+  return LeadStatus.findAll({
+    attributes: [
+      "id",
+      [col("status_name"), "parent_status"],
+      [
+        literal("CASE WHEN `subaction_name` IS NOT NULL THEN `subaction_name` ELSE `lead_action_name` END"),
+        "sub_status",
+      ],
+      "lead_status_guid",
+    ],
+    where: {
+      status_name: { [Op.ne]: "new" },
+      source: { [Op.in]: [1, 2] },
+      status: 1,
+    },
+    order: [["id", "ASC"]],
+    raw: true,
+  });
+};
+
+export const handleAddLeadRemark = async (headers, body) => {
+  const { vendor_id, lead_guid, remark } = body;
+
+  // 1. Validation & Edge Cases
+  if (!vendor_id || String(vendor_id).trim() === "") {
+    throw new Error("Vendor Id field is required.");
+  }
+  if (!lead_guid || String(lead_guid).trim() === "") {
+    throw new Error("Lead GUID is required");
+  }
+  if (!remark || String(remark).trim() === "") {
+    throw new Error("Lead remark required");
+  }
+
+  // Sanitize remark: Remove any carriage return (\r) characters
+  const sanitizedRemark = String(remark).replace(/\r/g, "");
+
+  // Length check: Validate remark length does not exceed 200 characters
+  if (sanitizedRemark.length > 200) {
+    throw new Error("Remark must be upto 200 characters only.");
+  }
+
+  // 2. Authentication & Authorization
+  const authHeader = headers.authorization;
+  if (!authHeader) {
+    throw new Error("Invalid Token.");
+  }
+  const tokenParts = authHeader.split(" ");
+  const providedToken = tokenParts[tokenParts.length - 1];
+
+  const authRecord = await VendorWebhookAuth.findOne({
+    where: { vendor_id: vendor_id }
+  });
+  if (!authRecord) {
+    throw new Error("Not Authorized.");
+  }
+  if (authRecord.status !== 1) {
+    throw new Error("Webhook setup is not active. Please complete and activate your webhook integration first.");
+  }
+
+  const expectedToken = Buffer.from(`${authRecord.client_id}:${authRecord.client_secret}`).toString("base64");
+  if (providedToken !== expectedToken) {
+    throw new Error("Invalid Token.");
+  }
+
+  // 3. Query tbl_leads
+  const currentLead = await TblLeads.findOne({
+    attributes: ["id", "acd_uuid"],
+    where: {
+      lead_guid: lead_guid,
+      vendor_id: vendor_id
+    }
+  });
+  if (!currentLead) {
+    throw new Error("Incorrect Lead ID");
+  }
+
+  // 4. Insert into tbl_leads_history
+  await LeadHistory.create({
+    lead_id: currentLead.id,
+    acd_uuid: currentLead.acd_uuid || "",
+    type: "remark",
+    additional_info: null,
+    remark: sanitizedRemark,
+    source: "oem_api"
+  });
+
+  return true;
+};
+
+
+
+

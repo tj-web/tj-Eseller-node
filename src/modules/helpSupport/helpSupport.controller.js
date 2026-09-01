@@ -1,6 +1,7 @@
 import { insertVendorHelpQuery } from "./helpSupport.service.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 export const addHelpSupportQuery = async (req, res, next) => {
   try {
@@ -9,6 +10,12 @@ export const addHelpSupportQuery = async (req, res, next) => {
 
     const insertId = await insertVendorHelpQuery({
       vendor_id,
+      name,
+      email,
+      query,
+    });
+
+    await engagementEvent.oemContactUsEvent(req.user, {
       name,
       email,
       query,

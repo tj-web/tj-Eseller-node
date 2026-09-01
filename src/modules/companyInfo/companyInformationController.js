@@ -10,6 +10,7 @@ import {
 import { uploadFileToS3 } from "../../utilis/s3Uploader.js";
 import StatusCodes from "../../utilis/statusCodes.js";
 import SystemResponse from "../../utilis/systemResponse.js";
+import engagementEvent from "../../helpers/engagementEvent.js";
 
 export const getCompanyInfo = async (req, res) => {
   try {
@@ -118,6 +119,21 @@ export const saveAccountInfo = async (req, res) => {
       await updateVendorDetails(vendor_id, formData);
     } else if (form_type === "billng_info_from" || form_type === "bank_detail_from") {
       await updateVendorDetails(vendor_id, formData);
+    }
+
+    // Sync updated vendor profile with the active engagement provider
+    const updatedVendor = await getVendorData({ profile_id });
+    if (updatedVendor) {
+      const oem_address = await getVendorCountryStateCity({
+        country: updatedVendor.country,
+        state: updatedVendor.state,
+        city: updatedVendor.city,
+      });
+      updatedVendor.country_name = oem_address.country_name;
+      updatedVendor.state_name = oem_address.state_name;
+      updatedVendor.city_name = oem_address.city_name;
+
+      engagementEvent.updateEsellerProfile(updatedVendor);
     }
 
     return res

@@ -141,6 +141,7 @@ export const basicDetails = async (req, res) => {
       req.body,
       req.files,
       product_id,
+      req.user,
     );
 
     return res.status(StatusCodes.SUCCESS).json(
@@ -177,7 +178,8 @@ export const editBasicDetails = async (req, res) => {
       vendor_id,
       product_id,
       post,
-      req.files
+      req.files,
+      req.user
     );
 
     return res.status(StatusCodes.SUCCESS).json(
@@ -249,7 +251,8 @@ export const ProductSpecification = async (req, res) => {
     const result = await productService.updateProductSpecification(
       vendor_id,
       product_id,
-      req.body
+      req.body,
+      req.user
     );
 
     return res
@@ -273,7 +276,7 @@ export const saveProductFeature = async (req, res) => {
     const post = req.body;
     const vendor_id = req.user.vendor_id;
 
-    const result = await productService.updateProductFeature(vendor_id, post);
+    const result = await productService.updateProductFeature(vendor_id, post, req.user);
 
     if (result.action === "none") {
       return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message));
@@ -371,7 +374,8 @@ export const addScreenshots = async (req, res) => {
       product_id,
       vendor_id,
       req.body,
-      req.files
+      req.files,
+      req.user
     );
 
     if (result.action === "none") {
@@ -425,7 +429,8 @@ export const addGallery = async (req, res) => {
       product_id,
       vendor_id,
       req.body,
-      req.files
+      req.files,
+      req.user
     );
 
     // 5. Build event payload (comma separated strings) for response
@@ -507,7 +512,8 @@ export const addVideo = async (req, res) => {
     const { result, videoData } = await productService.updateProductVideo(
       product_id,
       vendor_id,
-      req.body
+      req.body,
+      req.user
     );
 
     if (result.action === "none") {
@@ -635,7 +641,8 @@ export const enrichment = async (req, res) => {
       product_id,
       vendor_id,
       req.body,
-      req.files
+      req.files,
+      req.user
     );
     if (result.action === "none") {
       return res
