@@ -2861,12 +2861,37 @@ export const getCustomerRelatedGuuids = async (customerId) => {
 };
 
 /**
- * Get map data (leads grouped by state or city)
+ * Get map data (leads grouped by state or city).
+ * `filters` (all optional, backward compatible): date_from, date_to,
+ * product_id, plan_scope ('current' scopes to leads created inside a
+ * currently-active plan's own date window for that product - tbl_leads has
+ * no reliable oms_pi_id to join on, it's NULL on every row in this dataset).
  */
-export const getMapData = async (vendor_id, type) => {
+export const getMapData = async (vendor_id, type, filters = {}) => {
     try {
+        const { date_from, date_to, product_id, plan_scope } = filters;
+        const needsPlanScope = plan_scope === "current";
+
+        const currentPlanExists = `
+            EXISTS (
+                SELECT 1 FROM oms_pi_details d
+                JOIN oms_pi_products p ON p.pi_id = d.id
+                WHERE d.vendor_id = l.vendor_id
+                  AND p.product_id = l.product_id
+                  AND d.pi_status = 3
+                  AND CURDATE() BETWEEN d.start_date AND d.end_date
+                  AND l.created_at BETWEEN d.start_date AND d.end_date
+            )
+        `;
+
+        const extraWhere = [
+            date_from && date_to ? "AND l.created_at BETWEEN :date_from AND :date_to_end" : "",
+            product_id ? "AND l.product_id = :product_id" : "",
+            needsPlanScope ? `AND ${currentPlanExists}` : "",
+        ].join("\n");
+
         let query = "";
-        
+
         if (type === 'state') {
             query = `
                 SELECT l.state as name, COUNT(*) as value
@@ -2877,6 +2902,7 @@ export const getMapData = async (vendor_id, type) => {
                   AND l.state IS NOT NULL
                   AND l.state != ''
                   AND (l.lead_visibility = 1 OR (l.lead_visibility = 0 AND l.is_trashed = 1))
+                  ${extraWhere}
                 GROUP BY l.state
             `;
         } else if (type === 'city') {
@@ -2891,12 +2917,18 @@ export const getMapData = async (vendor_id, type) => {
                   AND l.state IS NOT NULL
                   AND l.state != ''
                   AND (l.lead_visibility = 1 OR (l.lead_visibility = 0 AND l.is_trashed = 1))
+                  ${extraWhere}
                 GROUP BY l.state, l.city
             `;
         }
 
         const results = await sequelize.query(query, {
-            replacements: { vendor_id },
+            replacements: {
+                vendor_id,
+                product_id,
+                date_from,
+                date_to_end: date_to ? `${date_to} 23:59:59` : undefined,
+            },
             type: QueryTypes.SELECT
         });
 
