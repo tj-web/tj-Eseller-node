@@ -1192,8 +1192,7 @@ export const scheduleCallback = async (user, data) => {
 
     return {
         status: acdResponse.status,
-        message: acdResponse.status ? (acdResponse.message || 'Callback scheduled successfully') : (acdResponse.message || 'Failed to trigger call'),
-        data: acdResponse.data
+        message: acdResponse.status ? (acdResponse.message || 'Callback scheduled successfully') : (acdResponse.message || 'Failed to trigger call')
     };
 };
 
