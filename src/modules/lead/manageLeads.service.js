@@ -846,7 +846,7 @@ export const getLeadDetails = async (vendor_id, leadId) => {
     const insightPermission = await getVendorInsightPermission(vendor_id);
     const has_recent_submission = await hasRecentSubmission(vendor_id);
     const currentDate = new Date().toISOString().split('T')[0];
-    let is_lead_insight_allowed =  0;
+    let is_lead_insight_allowed = 0;
     if (insightPermission.allowed && leadJson.product_id && lead.lead_model_type === 1) {
         const resultCount = await sequelize.query(`
             SELECT COUNT(1) as count 
@@ -1333,7 +1333,7 @@ export const fetchLeadInsightsData = async (lead_id, vendor_id) => {
     }
 
     await TblLeads.update(
-        { company_id: organization.data.company_id},
+        { company_id: organization.data.company_id },
         { where: { id: lead_id } }
     );
 
@@ -1736,11 +1736,12 @@ export const getLeadInsightPlanDetails = async (vendor_id) => {
 };
 
 export const hasRecentSubmission = async (vendor_id) => {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const count = await VendorLeadInsightInterest.count({
         where: {
             vendor_id: vendor_id,
             submitted_at: {
-                [Op.gte]: new Date(new Date().setDate(new Date().getDate() - 14))
+                [Op.gte]: twentyFourHoursAgo
             }
         }
     });
@@ -1998,7 +1999,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         await verifyLeadOwnership(vendor_id, lead_id);
 
         let lead = await TblLeads.findByPk(lead_id, {
-            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed']
+            attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed', 'lead_model_type']
         });
         if (!lead) return null;
 
@@ -2046,7 +2047,7 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
             await fetchLeadInsightsData(lead_id, vendor_id);
             // Re-fetch lead since fetchLeadInsightsData might have updated company_id and leadinsight
             lead = await TblLeads.findByPk(lead_id, {
-                attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed']
+                attributes: ['id', 'user_id', 'customer_id', 'email', 'company_id', 'category_id', 'software_category', 'product_id', 'product_name', 'oms_pi_id', 'credit_used', 'status', 'lead_action', 'source', 'created_at', 'city', 'state', 'is_contact_viewed', 'lead_model_type']
             });
             if (!lead) return null;
         }
@@ -2219,17 +2220,20 @@ export const getLeadInsights = async (vendor_id, lead_id) => {
         result.customer_activity_details = activityResult.customer_activity_details || {};
         result.activity = activityResult.activity || [];
 
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-        const recentRequest = await VendorLeadInsightInterest.findOne({
-            where: {
-                vendor_id: vendor_id,
-                submitted_at: {
-                    [Op.gte]: twoDaysAgo
-                }
-            }
-        });
-        result.has_recent_submission = !!recentRequest;
+        result.has_recent_submission = await hasRecentSubmission(vendor_id);
+
+        if (Number(lead.lead_model_type) !== 1) {
+            result.activity = [];
+            result.customer_activity_details = {};
+            result.customer_company_information = {};
+            result.top_five_key_people = [];
+            result.company_id = null;
+            result.name = "********";
+            result.team_size = "********";
+            result.website = "********";
+            result.linkedin = "********";
+            result.logo_url = null;
+        }
 
         return result;
     } catch (error) {
@@ -2304,12 +2308,16 @@ export const unlockLeadInsights = async (vendor_id, data) => {
             updated_at: createdAtStr
         });
 
-        await publishEmailToQueue({
-          rawHtml: emailBody,
-          subject: `New Interest in Unlock Lead Insights from ${company}`,
-          emailType: "lead_insight_interest",
-          to: toEmail,
-        });
+        try {
+            await publishEmailToQueue({
+                rawHtml: emailBody,
+                subject: `New Interest in Unlock Lead Insights from ${company}`,
+                emailType: "lead_insight_interest",
+                to: toEmail,
+            });
+        } catch (queueError) {
+            console.warn("RabbitMQ publish skipped or unavailable:", queueError.message);
+        }
 
         return { status: true, message: 'Thank you for your interest! Our team will contact you shortly.' };
     } catch (err) {
@@ -2382,8 +2390,8 @@ export const unlockContact = async (user, lead_id) => {
     const leadInfo = await TblLeads.findOne({
         where: { id: lead_id },
         attributes: [
-            'id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone', 
-            'dial_code', 'is_show_contact', 'product_id', 'name', 'product_name', 
+            'id', 'vendor_id', 'created_at', 'is_contact_viewed', 'email', 'phone',
+            'dial_code', 'is_show_contact', 'product_id', 'name', 'product_name',
             'brand_id', 'brand_name', 'category_id', 'software_category'
         ],
         include: [{
@@ -2408,7 +2416,7 @@ export const unlockContact = async (user, lead_id) => {
                 type: 'contact_viewed'
             }
         });
-        
+
         if (contactViewedCount === 0) {
             await LeadHistory.create({
                 lead_id: lead_id,
