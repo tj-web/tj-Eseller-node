@@ -6,7 +6,6 @@ import TblProduct from "../../models/product.model.js";
 import LeadStatus from "../../models/leadStatus.model.js";
 import LeadHistory from "../../models/leadHistory.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
-import EmailQueue from "../../models/emailQueue.model.js";
 import sequelize from "../../db/connection.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
 import { getDeterministicBuyerActivityTimeline } from "../../helpers/buyerActivityHelper.js";
@@ -2292,17 +2291,6 @@ export const unlockLeadInsights = async (vendor_id, data) => {
             }]
         });
         const toEmail = vendorRec?.manager?.adminusers_email || 'Aniruddha_chaturvedi@techjockey.com';
-
-        await EmailQueue.create({
-            to: toEmail,
-            subject: `New Interest in Unlock Lead Insights from ${company}`,
-            body: emailBody,
-            type: 'lead_insight_interest',
-            app: 'eseller',
-            priority: 0,
-            created_at: createdAtStr,
-            updated_at: createdAtStr
-        });
 
         await publishEmailToQueue({
           rawHtml: emailBody,

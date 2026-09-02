@@ -1,4 +1,3 @@
-import EmailQueue from "../../../models/emailQueue.model.js";
 import crypto from "crypto";
 import Vendor from "../../../models/vendor.model.js";
 import VendorAuth from "../../../models/vendorAuth.model.js";
@@ -27,22 +26,6 @@ export const sendVerificationEmail = async (
     verifyLink: link
   });
 
-  await EmailQueue.create(
-    {
-      to: email,
-      cc: "support@techjockey.com",
-      subject: "Verify your email",
-      body,
-      type: "email_verification",
-      app: "eseller",
-      table_column: "vendor_id",
-      column_value: vendorId,
-      created_at: new Date(),
-      updated_at: new Date(),
-    },
-    { transaction },
-  );
-
   await publishEmailToQueue({
     rawHtml: body,
     subject: "Verify your email",
@@ -68,21 +51,6 @@ export const sendAdminNotification = async (
     email,
     contact_number: `${dial_code} ${phone}`
   });
-
-  await EmailQueue.create(
-    {
-      to: process.env.ADMIN_EMAIL,
-      subject: "Vendor Registration",
-      body,
-      type: "admin_verification",
-      app: "eseller",
-      table_column: "vendor_id",
-      column_value: vendorId,
-      created_at: new Date(),
-      updated_at: new Date(),
-    },
-    { transaction },
-  );
 
   await publishEmailToQueue({
     rawHtml: body,
@@ -154,22 +122,6 @@ export const queueEmail = async ({
   transaction = null,
 }) => {
   try {
-    await EmailQueue.create(
-      {
-        to,
-        cc,
-        subject,
-        body,
-        type,
-        app,
-        table_column,
-        column_value,
-        created_at: new Date(),
-        updated_at: new Date(),
-      },
-      transaction ? { transaction } : {}
-    );
-
     await publishEmailToQueue({
       rawHtml: body,
       subject,
