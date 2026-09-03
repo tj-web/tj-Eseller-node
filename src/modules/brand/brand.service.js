@@ -341,6 +341,13 @@ export const getVendorBrands = async (params) => {
   const whereCondition = {
     vendor_id: vendor_id,
     tbl_brand_id: { [sequelize.Sequelize.Op.ne]: 0 },
+    [Op.or]: [
+      { status: 1 },
+      {
+        "$Brand.added_by$": "vendor",
+        "$Brand.added_by_id$": vendor_id,
+      },
+    ],
   };
 
   if (srch_status !== undefined && srch_status !== "") {
