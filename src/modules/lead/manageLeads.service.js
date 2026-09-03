@@ -36,7 +36,7 @@ const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
 const CALL_CONN_MAX_DAYS = 45;
 const CALL_MISS_MAX_DAYS = 10;
-const eligiblePlanIds = [46, 47, 48];
+const eligiblePlanIds = [46, 47, 48, 51, 52];
 
 const getWorkingHoursStatus = () => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
