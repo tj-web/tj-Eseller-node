@@ -5,7 +5,6 @@ import VendorWebhookAuth from "../../models/vendorWebhookAuth.model.js";
 import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorLeadsTeam from "../../models/vendorLeadsTeam.model.js";
 import VendorAgentRemarkReminder from "../../models/vendorAgentRemarkReminder.model.js";
-import EmailQueue from "../../models/emailQueue.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import VendorTeams from "../../models/vendorTeams.model.js";
@@ -425,21 +424,6 @@ export const planSubscribeRequestService = async (authData, postData) => {
       <p><strong>Message:</strong> ${message || ""}</p>
       <p><strong>Preferred Callback Time:</strong> ${reminder_date} ${hour}:${minute}</p>
     `;
-
-    await EmailQueue.create(
-      {
-        to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
-        cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
-        subject: "New Paid Plan Request - API Integration",
-        body: emailBody,
-        type: "plan_subscribe_request",
-        app: "eseller",
-        priority: 0,
-        created_at: new Date(),
-        updated_at: new Date(),
-      },
-      { transaction }
-    );
 
     await transaction.commit();
     await publishEmailToQueue({

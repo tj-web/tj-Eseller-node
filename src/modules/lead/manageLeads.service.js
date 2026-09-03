@@ -6,7 +6,6 @@ import TblProduct from "../../models/product.model.js";
 import LeadStatus from "../../models/leadStatus.model.js";
 import LeadHistory from "../../models/leadHistory.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
-import EmailQueue from "../../models/emailQueue.model.js";
 import sequelize from "../../db/connection.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
 import { getDeterministicBuyerActivityTimeline } from "../../helpers/buyerActivityHelper.js";
@@ -37,7 +36,7 @@ const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
 const CALL_CONN_MAX_DAYS = 45;
 const CALL_MISS_MAX_DAYS = 10;
-const eligiblePlanIds = [46, 47, 48];
+const eligiblePlanIds = [46, 47, 48, 51, 52];
 
 const getWorkingHoursStatus = () => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
@@ -2295,18 +2294,8 @@ export const unlockLeadInsights = async (vendor_id, data) => {
                 attributes: ['adminusers_email']
             }]
         });
-        const toEmail = vendorRec?.manager?.adminusers_email || 'Aniruddha_chaturvedi@techjockey.com';
-
-        await EmailQueue.create({
-            to: toEmail,
-            subject: `New Interest in Unlock Lead Insights from ${company}`,
-            body: emailBody,
-            type: 'lead_insight_interest',
-            app: 'eseller',
-            priority: 0,
-            created_at: createdAtStr,
-            updated_at: createdAtStr
-        });
+        const defaultEmail = process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || '';
+        const toEmail = vendorRec?.manager?.adminusers_email || defaultEmail.split(',')[0]?.trim();
 
         try {
             await publishEmailToQueue({

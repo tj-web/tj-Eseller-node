@@ -15,8 +15,6 @@ import { sendVerificationEmail, sendAdminNotification } from "../common/service/
 import { renderTemplate } from "../../helpers/emailHelper.js";
 import validator from "validator";
 import Vendor from "../../models/vendor.model.js";
-import Otp from "../../models/otp.model.js";
-import EmailQueue from "../../models/emailQueue.model.js";
 import PasswordReset from "../../models/passwordReset.model.js";
 import LoginHistory from "../../models/loginHistory.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
@@ -139,19 +137,6 @@ export const handleForgotPassword = async (email) => {
     resetLink,
     mainsiteUrl,
     tjassetUrl,
-  });
-
-  await EmailQueue.create({
-    to: normalizedEmail,
-    subject: "Reset Password",
-    body: emailBody,
-    type: "forget_password",
-    app: "eseller",
-    priority: 0,
-    status: 0,
-    attempts: 0,
-    created_at: new Date(),
-    updated_at: new Date(),
   });
 
   await publishEmailToQueue({

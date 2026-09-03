@@ -13,7 +13,6 @@ import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorAnalytics from "../../models/vendorAnalytics.model.js";
 import VendorDetail from "../../models/vendorDetail.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
-import EmailQueue from "../../models/emailQueue.model.js";
 import OmsPiDetail from "../../models/omsPiDetail.model.js";
 import LeadsPlan from "../../models/leadsPlan.model.js";
 import { AppError } from "../../utilis/appError.js";
@@ -693,23 +692,18 @@ export const handleSendReviewEmail = async (vendor_id, data) => {
       }
     );
 
-    // 2. Prepare Email Queue records
-    const emailQueueRecords = to_emails.map((email) => {
-      return {
-        from_email: "noreply@techjockey.com",
-        to: email.trim(),
-        subject: subject || `Write a Review For ${product_name}`,
-        body: htmlBody,
-        type: "write_review",
-        app: "eseller",
-        priority: 0,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-    });
-
-    // 3. Batch Insert
-    await EmailQueue.bulkCreate(emailQueueRecords);
+    for (const email of to_emails) {
+      try {
+        await publishEmailToQueue({
+          rawHtml: htmlBody,
+          subject: subject || `Write a Review For ${product_name}`,
+          emailType: "write_review",
+          to: email.trim(),
+        });
+      } catch (error) {
+        console.error(`Failed to publish review email to queue for ${email}:`, error);
+      }
+    }
 
     return { status: true, message: `Review requests queued for ${to_emails.length} recipients.` };
   } catch (error) {

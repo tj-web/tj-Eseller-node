@@ -3,7 +3,6 @@ import sequelize from "../../db/connection.js";
 import VendorsLeads from "../../models/vendorLead.model.js";
 import VendorLeadsTeam from "../../models/vendorLeadsTeam.model.js";
 import VendorAgentRemarkReminder from "../../models/vendorAgentRemarkReminder.model.js";
-import EmailQueue from "../../models/emailQueue.model.js";
 import VendorAuth from "../../models/vendorAuth.model.js";
 import VendorDetails from "../../models/vendorDetail.model.js";
 import VendorTeams from "../../models/vendorTeams.model.js";
@@ -168,21 +167,6 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
       emailSubject = `New Paid Plan Request from ${page_name}`;
     }
 
-    await EmailQueue.create(
-      {
-        to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
-        cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
-        subject: emailSubject,
-        body: emailBody,
-        type: "plan_subscribe_request",
-        app: "eseller",
-        priority: 0,
-        created_at: new Date(),
-        updated_at: new Date(),
-      },
-      { transaction }
-    );
-
     await transaction.commit();
 
     await publishEmailToQueue({
@@ -192,28 +176,6 @@ export const handlePlanSubscribeRequest = async (authData, postData) => {
       to: process.env.REQUEST_CALLBACK_TO_MANAGER_IDS || "support@techjockey.com",
       cc: process.env.REQUEST_CALLBACK_CC_MANAGER_IDS || "",
     });
-
-    //  Insert to MongoDB 'tracks' collection if from dashboard/product analytics
-    // if (page_name) {
-    //   try {
-    //     const db = mongoose.connection?.db;
-    //     if (db) {
-    //       await db.collection("tracks").insertOne({
-    //         type: "eseller_request_callback",
-    //         page_name: page_name,
-    //         module: module_name || "",
-    //         schedule_time: reminder_datetime,
-    //         profile_id: profile_id,
-    //         name: `${vendorData.first_name} ${vendorData.last_name}`,
-    //         email: vendorData.email,
-    //         phone_no: vendorData.phone || vendorData.dial_code + " " + vendorData.phone,
-    //         created_at: new Date(),
-    //       });
-    //     }
-    //   } catch (mongoErr) {
-    //     console.error("Error inserting to MongoDB tracks:", mongoErr);
-    //   }
-    // }
 
     return {
       message: "Subscribe Request Sent Successfully",
