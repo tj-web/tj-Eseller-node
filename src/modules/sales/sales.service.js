@@ -207,7 +207,6 @@ export const getOemPlans = async (vendor_id) => {
     ],
     where: {
       vendor_id: vendor_id,
-      pi_status: 3,
     },
     include: [
       {

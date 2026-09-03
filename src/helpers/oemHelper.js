@@ -18,8 +18,8 @@ export const prepareOemPlansData = (plansData) => {
         ...plan,
         products: product.product_id ? [product] : [],
         plan_status:
-          plan.end_date >= new Date().toISOString().split('T')[0] &&
-          plan.used_lead <= plan.total_lead
+          plan.pi_status === 3 &&
+          plan.end_date >= new Date().toISOString().split('T')[0]
             ? 1
             : 0,
         start_end_date: `${formatDate(plan.start_date)} - ${formatDate(
