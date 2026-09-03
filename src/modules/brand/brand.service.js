@@ -439,6 +439,13 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
   const whereCondition = {
     vendor_id: vendor_id,
     tbl_brand_id: { [Op.ne]: 0 },
+    [Op.or]: [
+      { status: 1 },
+      {
+        "$Brand.added_by$": "vendor",
+        "$Brand.added_by_id$": vendor_id,
+      },
+    ],
   };
 
   const brandWhere = {};
@@ -482,6 +489,13 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
   const relationFilter = {
     vendor_id: vendor_id,
     tbl_brand_id: { [Op.ne]: 0 },
+    [Op.or]: [
+      { status: 1 },
+      {
+        "$Brand.added_by$": "vendor",
+        "$Brand.added_by_id$": vendor_id,
+      },
+    ],
   };
 
   const vendorRows = await VendorBrandRelation.findAll({
