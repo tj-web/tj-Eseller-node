@@ -70,7 +70,7 @@ const valiDateCredentials = (auth_type, credColumns) => {
   }
 };
 
-const VALID_API_PLAN_IDS = []; // Manually add valid plan IDs here
+const VALID_API_PLAN_IDS = [46, 47,48]; // Manually add valid plan IDs here
 
 const checkIfVendorHasApiPlan = async (vendor_id) => {
   const query = `
