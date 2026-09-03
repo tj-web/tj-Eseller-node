@@ -18,6 +18,7 @@ import LeadsPlan from "../../models/leadsPlan.model.js";
 import { AppError } from "../../utilis/appError.js";
 import { renderTemplate } from "../../helpers/emailHelper.js";
 import engagementEvent from "../../helpers/engagementEvent.js";
+import { publishEmailToQueue } from "../../config/rabbitmq.producer.js";
 
 // Define Associations
 VendorParticularMatrix.belongsTo(VendorParticular, { foreignKey: "particular_id" });
