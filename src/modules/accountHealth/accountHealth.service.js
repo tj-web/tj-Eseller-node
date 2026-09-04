@@ -107,45 +107,31 @@ export const handleGetHealthScore = async (vendor_id) => {
     };
 
     if (productIds.length > 0) {
-      const reviewsData = await sequelize.query(
-        "SELECT * FROM avg_prod_rating_view WHERE product_id IN (:productIds)",
-        {
-          replacements: { productIds },
-          type: QueryTypes.SELECT,
-        }
-      );
+      const ratingAgg = await Review.findOne({
+        where: { product_id: { [Op.in]: productIds }, status: 1, is_deleted: 0 },
+        attributes: [
+          [fn("COUNT", col("review_id")), "total"],
+          [fn("AVG", col("rating")), "rating"],
+          [fn("AVG", col("ease_use_rating")), "ease"],
+          [fn("AVG", col("value_money_rating")), "value"],
+          [fn("AVG", col("features_rating")), "features"],
+          [fn("AVG", col("support_rating")), "support"],
+          [fn("AVG", col("software_recomm")), "recomm"],
+        ],
+        raw: true,
+      });
 
-      if (reviewsData.length > 0) {
-        let totalWeight = 0;
-        let weightedRating = 0;
-        let weightedEase = 0;
-        let weightedValue = 0;
-        let weightedFeatures = 0;
-        let weightedSupport = 0;
-        let weightedRecomm = 0;
-
-        reviewsData.forEach((row) => {
-          const count = parseInt(row.total_reviews) || 0;
-          totalWeight += count;
-          weightedRating += (parseFloat(row.rating_average) || 0) * count;
-          weightedEase += (parseFloat(row.avg_ease_use_rating) || 0) * count;
-          weightedValue += (parseFloat(row.avg_value_money_rating) || 0) * count;
-          weightedFeatures += (parseFloat(row.avg_features_rating) || 0) * count;
-          weightedSupport += (parseFloat(row.avg_support_rating) || 0) * count;
-          weightedRecomm += (parseFloat(row.avg_soft_recomm) || 0) * count;
-        });
-
-        if (totalWeight > 0) {
-          summaryStats = {
-            total_reviews: totalWeight,
-            avg_rating: weightedRating / totalWeight,
-            avg_ease_use_rating: weightedEase / totalWeight,
-            avg_value_money_rating: weightedValue / totalWeight,
-            avg_features_rating: weightedFeatures / totalWeight,
-            avg_support_rating: weightedSupport / totalWeight,
-            avg_soft_recomm: weightedRecomm / totalWeight,
-          };
-        }
+      const totalWeight = parseInt(ratingAgg?.total) || 0;
+      if (totalWeight > 0) {
+        summaryStats = {
+          total_reviews: totalWeight,
+          avg_rating: parseFloat(ratingAgg.rating) || 0,
+          avg_ease_use_rating: parseFloat(ratingAgg.ease) || 0,
+          avg_value_money_rating: parseFloat(ratingAgg.value) || 0,
+          avg_features_rating: parseFloat(ratingAgg.features) || 0,
+          avg_support_rating: parseFloat(ratingAgg.support) || 0,
+          avg_soft_recomm: parseFloat(ratingAgg.recomm) || 0,
+        };
       }
     }
 
