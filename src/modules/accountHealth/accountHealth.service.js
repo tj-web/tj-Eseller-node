@@ -271,39 +271,33 @@ export const getReviewsData = async (vendor_id, query) => {
       if (star >= 1 && star <= 5) starDistribution[star] = parseInt(s.count);
     });
 
-    // Sub-ratings weighted average from View
-    const reviewsData = await sequelize.query(
-      "SELECT * FROM avg_prod_rating_view WHERE product_id IN (:productIds)",
-      {
-        replacements: { productIds },
-        type: QueryTypes.SELECT,
-      }
-    );
+    // Sub-ratings average directly from Review rows
+    const ratingAgg = await Review.findOne({
+      where: whereClause,
+      attributes: [
+        [fn("COUNT", col("review_id")), "total"],
+        [fn("AVG", col("rating")), "rating"],
+        [fn("AVG", col("ease_use_rating")), "ease"],
+        [fn("AVG", col("value_money_rating")), "value"],
+        [fn("AVG", col("features_rating")), "features"],
+        [fn("AVG", col("support_rating")), "support"],
+        [fn("AVG", col("software_recomm")), "recomm"],
+      ],
+      raw: true,
+    });
 
+    const tw = parseInt(ratingAgg?.total) || 0;
     let summary = { total: 0, rating: 0, ease: 0, value: 0, features: 0, support: 0, recomm: 0 };
-    if (reviewsData.length > 0) {
-      let tw = 0;
-      reviewsData.forEach((r) => {
-        const c = parseInt(r.total_reviews) || 0;
-        tw += c;
-        summary.rating += (parseFloat(r.rating_average) || 0) * c;
-        summary.ease += (parseFloat(r.avg_ease_use_rating) || 0) * c;
-        summary.value += (parseFloat(r.avg_value_money_rating) || 0) * c;
-        summary.features += (parseFloat(r.avg_features_rating) || 0) * c;
-        summary.support += (parseFloat(r.avg_support_rating) || 0) * c;
-        summary.recomm += (parseFloat(r.avg_soft_recomm) || 0) * c;
-      });
-      if (tw > 0) {
-        summary = {
-          total: tw,
-          rating: parseFloat((summary.rating / tw).toFixed(1)),
-          ease: parseFloat((summary.ease / tw).toFixed(1)),
-          value: parseFloat((summary.value / tw).toFixed(1)),
-          features: parseFloat((summary.features / tw).toFixed(1)),
-          support: parseFloat((summary.support / tw).toFixed(1)),
-          recomm: parseFloat((summary.recomm / tw).toFixed(1)),
-        };
-      }
+    if (tw > 0) {
+      summary = {
+        total: tw,
+        rating: parseFloat((parseFloat(ratingAgg.rating) || 0).toFixed(1)),
+        ease: parseFloat((parseFloat(ratingAgg.ease) || 0).toFixed(1)),
+        value: parseFloat((parseFloat(ratingAgg.value) || 0).toFixed(1)),
+        features: parseFloat((parseFloat(ratingAgg.features) || 0).toFixed(1)),
+        support: parseFloat((parseFloat(ratingAgg.support) || 0).toFixed(1)),
+        recomm: parseFloat((parseFloat(ratingAgg.recomm) || 0).toFixed(1)),
+      };
     }
 
     // 2. Fetch Additional Metadata (Company & Product List)
