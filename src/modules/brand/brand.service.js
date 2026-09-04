@@ -374,7 +374,7 @@ export const getVendorBrands = async (params) => {
       {
         model: Brand,
         required: !!(srch_brand_name || brand_status), // INNER JOIN when searching by name or filtering by brand_status
-        where: Object.keys(brandWhere).length ? brandWhere : undefined,
+        where: Reflect.ownKeys(brandWhere).length ? brandWhere : undefined,
         attributes: ["brand_name", "description", "image", "status", "show_status", "slug", "target_industry"],
       },
       {
@@ -467,7 +467,7 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
       {
         model: Brand,
         required: !!(srch_brand_name || brand_status),
-        where: Object.keys(brandWhere).length ? brandWhere : undefined,
+        where: Reflect.ownKeys(brandWhere).length ? brandWhere : undefined,
         attributes: [],
       },
     ],
@@ -505,7 +505,7 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
       {
         model: Brand,
         required: !!(srch_brand_name || brand_status),
-        where: Object.keys(brandWhere).length ? brandWhere : undefined,
+        where: Reflect.ownKeys(brandWhere).length ? brandWhere : undefined,
         attributes: ["brand_id"],
       },
     ],
