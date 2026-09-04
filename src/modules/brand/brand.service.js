@@ -485,7 +485,7 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
   }
 
   // 2) Brand-status counts (active/inactive/all) among brands related to this vendor (and matching search)
-  // Fetch brand ids for this vendor (apply srch_brand_name and brand_status if provided)
+  // Count VendorBrandRelation rows directly (not deduped by brand) so this matches getVendorBrands' row count.
   const relationFilter = {
     vendor_id: vendor_id,
     tbl_brand_id: { [Op.ne]: 0 },
@@ -498,39 +498,31 @@ export const getVendorBrandsCount = async (vendor_id, srch_brand_name = "", bran
     ],
   };
 
-  const vendorRows = await VendorBrandRelation.findAll({
-    attributes: ["tbl_brand_id"],
+  const brandStatusRows = await VendorBrandRelation.findAll({
+    attributes: [
+      [sequelize.col("Brand.status"), "status"],
+      [sequelize.col("Brand.show_status"), "show_status"],
+      [sequelize.fn("COUNT", sequelize.col("VendorBrandRelation.id")), "count"],
+    ],
     where: relationFilter,
     include: [
       {
         model: Brand,
-        required: !!(srch_brand_name || brand_status),
+        required: true,
         where: Object.keys(brandWhere).length ? brandWhere : undefined,
-        attributes: ["brand_id"],
+        attributes: [],
       },
     ],
+    group: ["Brand.status", "Brand.show_status"],
     raw: true,
   });
 
-  const brandIds = Array.from(new Set(vendorRows.map(r => r.tbl_brand_id).filter(Boolean)));
-
   const brandStatusCounts = { all: 0, active: 0, inactive: 0 };
-  if (brandIds.length > 0) {
-    const brandRows = await Brand.findAll({
-      attributes: ["status", "show_status", [sequelize.fn("COUNT", sequelize.col("brand_id")), "count"]],
-      where: {
-        brand_id: { [Op.in]: brandIds },
-      },
-      group: ["status", "show_status"],
-      raw: true,
-    });
-
-    for (const b of brandRows) {
-      const n = Number(b.count) || 0;
-      brandStatusCounts.all += n;
-      if (getEffectiveBrandStatus(b) === 1) brandStatusCounts.active += n;
-      else brandStatusCounts.inactive += n;
-    }
+  for (const b of brandStatusRows) {
+    const n = Number(b.count) || 0;
+    brandStatusCounts.all += n;
+    if (getEffectiveBrandStatus(b) === 1) brandStatusCounts.active += n;
+    else brandStatusCounts.inactive += n;
   }
 
   // Return both counts so frontend can use relationCounts or brandStatusCounts as needed
