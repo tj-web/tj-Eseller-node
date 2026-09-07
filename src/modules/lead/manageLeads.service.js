@@ -144,12 +144,11 @@ const getVendorInsightPermission = async (vendor_id) => {
         attributes: ['lead_insight_display']
     });
 
-    if (!vendor || vendor.lead_insight_display != 1) {
-        return { allowed: false, productIds: [] };
-    }
+    // if (!vendor || vendor.lead_insight_display != 1) {
+    //     return { allowed: false, productIds: [] };
+    // }
 
     const currentDate = new Date().toISOString().split('T')[0];
-
     const activePlans = await OmsPiDetail.findAll({
         attributes: ['id', 'pi_status', 'end_date', 'lead_plan_id'],
         where: {
