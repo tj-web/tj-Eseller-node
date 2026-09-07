@@ -112,30 +112,34 @@ export const handleCreateWebhook = async ({
   if (!webhook_url || !auth_type) {
     throw new Error("webhook_url and auth_type are required");
   }
+  let existing = await VendorWebhookAuth.findOne({ where: { vendor_id } });
   const credColumns = mapCredentialsToColumns(auth_type, credentials);
+  if (existing && !credColumns.client_secret) {
+    credColumns.client_secret = existing.client_secret;
+  }
 
   valiDateCredentials(auth_type, credColumns);
 
-  // 1. ENFORCE TEST BEFORE ACTIVATE & CONFIG UPDATES
-  // The vendor must have a successfully tested config in the DB matching exactly what they are trying to save.
-  const existing = await VendorWebhookAuth.findOne({ where: { vendor_id } });
+  // 1. VERIFY WEBHOOK FIRST BEFORE SAVING
+  const verifyResult = await handleverifyWebhook({
+    vendor_id,
+    webhook_url,
+    auth_type,
+    credentials,
+    fields,
+  });
 
-  if (
-    !existing ||
-    existing.request_url !== webhook_url ||
-    existing.auth !== auth_type ||
-    existing.client_id !== credColumns.client_id ||
-    existing.client_secret !== credColumns.client_secret
-  ) {
-    throw new Error("Configuration mismatch or untested. Please click 'Test Connection' successfully before activating.");
+  if (!verifyResult || !verifyResult.ok) {
+    throw new Error(
+      verifyResult?.message ||
+        "Webhook verification failed. Please test your connection first."
+    );
   }
 
-  // 2. Check if vendor has a valid plan to set status to 1
+  // 2. Check if vendor has a valid plan
   const isValidPlan = await checkIfVendorHasApiPlan(vendor_id);
-  const status = isValidPlan ? 1 : 0;
 
-  // 3. Block request if vendor already submitted one in the last 2 days
-  let already_requested = false;
+  // 3. If vendor has NO valid plan, DO NOT insert into vendor_webhook_auth table!
   if (!isValidPlan) {
     const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     const recentOpportunity = await sequelize.query(`
@@ -150,9 +154,20 @@ export const handleCreateWebhook = async ({
       type: QueryTypes.SELECT
     });
 
-    if (recentOpportunity.length > 0) {
-      already_requested = true;
-    }
+    const already_requested = recentOpportunity.length > 0;
+
+    return {
+      webhook_url,
+      auth_type,
+      status: 0,
+      already_requested,
+      has_valid_plan: false,
+    };
+  }
+
+  // 4. Vendor HAS a valid plan -> insert/update vendor_webhook_auth with status 1
+  if (!existing) {
+    existing = await VendorWebhookAuth.findOne({ where: { vendor_id } });
   }
 
   const payload = {
@@ -164,7 +179,7 @@ export const handleCreateWebhook = async ({
     http_action: "POST",
     format: JSON.stringify(Array.isArray(fields) ? fields : []),
     default_format: 1,
-    status: status,
+    status: 1,
   };
 
   let responseData;
@@ -177,8 +192,9 @@ export const handleCreateWebhook = async ({
   return {
     webhook_url: responseData.request_url,
     auth_type: responseData.auth,
-    status: responseData.status,
-    already_requested,
+    status: 1,
+    already_requested: false,
+    has_valid_plan: true,
   };
 };
 
@@ -218,7 +234,18 @@ export const handleverifyWebhook = async ({ vendor_id, webhook_url, auth_type, c
   }
 
   try {
-    const { headers, auth } = buildAuthRequestConfig(auth_type, credentials);
+    const creds = { ...credentials };
+    if (vendor_id && (!creds.password && !creds.api_key && !creds.bearer_token && !creds.client_secret)) {
+      const existing = await VendorWebhookAuth.findOne({ where: { vendor_id } });
+      if (existing && existing.client_secret) {
+        if (auth_type === "Basic Auth") creds.password = existing.client_secret;
+        if (auth_type === "API Key") creds.api_key = existing.client_secret;
+        if (auth_type === "Bearer Token") creds.bearer_token = existing.client_secret;
+        if (auth_type === "OAuth 2.0") creds.client_secret = existing.client_secret;
+      }
+    }
+
+    const { headers, auth } = buildAuthRequestConfig(auth_type, creds);
 
     const response = await axios.post(
       webhook_url,
@@ -248,12 +275,12 @@ export const handleverifyWebhook = async ({ vendor_id, webhook_url, auth_type, c
         status: 0,
       };
 
-      const existing = await VendorWebhookAuth.findOne({ where: { vendor_id } });
-      if (existing) {
-        await existing.update(payload);
-      } else {
-        await VendorWebhookAuth.create(payload);
-      }
+      // const existing = await VendorWebhookAuth.findOne({ where: { vendor_id } });
+      // if (existing) {
+      //   await existing.update(payload);
+      // } else {
+      //   await VendorWebhookAuth.create(payload);
+      // }
     }
 
     return {
@@ -588,15 +615,25 @@ export const handleUpdateLeadAction = async (headers, body) => {
 export const handleGetLeadActionConfig = async (vendor_id) => {
   const authRecord = await VendorWebhookAuth.findOne({
     where: { vendor_id: vendor_id },
-    attributes: ["status"]
   });
 
-  if (!authRecord || authRecord.status !== 1) {
-    throw new Error("Webhook setup is not active. Please complete and activate your webhook integration first.");
+  if (!authRecord) {
+    return {
+      is_webhook_active: false,
+      data: null,
+    };
+  }
+
+  const isValidPlan = await checkIfVendorHasApiPlan(vendor_id);
+
+  const data = authRecord.toJSON ? authRecord.toJSON() : { ...authRecord };
+  if (data) {
+    data.client_secret = "";
   }
 
   return {
-    is_webhook_active: true
+    is_webhook_active: authRecord.status === 1 && isValidPlan,
+    data,
   };
 };
 
