@@ -1271,7 +1271,7 @@ export const updateProductBasicDetails = async (vendor_id, product_id, post, fil
     if (changes.length > 0) {
       await updateVendorLogs({
         item_id: product_id,
-        profile_id: vendor_id,
+        profile_id: user.profile_id,
         module: "product",
         action_performed: "updated",
         status: 0,
@@ -1873,7 +1873,7 @@ export const saveOrUpdateProductFeature = async (id, post, vendor_id, user = nul
       // Save to VendorLog (updateVendorLogs handles dedupe if status=0 exists)
       await updateVendorLogs({
         item_id: productId,
-        profile_id: vendor_id,
+        profile_id: user.profile_id,
         module: "product",
         action_performed: "updated",
         changes,
@@ -1909,7 +1909,7 @@ export const saveOrUpdateProductFeature = async (id, post, vendor_id, user = nul
 
       await updateVendorLogs({
         item_id: productId,
-        profile_id: vendor_id,
+        profile_id: user.profile_id,
         module: "product",
         action_performed: "updated",
         changes,
