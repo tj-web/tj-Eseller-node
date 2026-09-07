@@ -149,7 +149,6 @@ const getVendorInsightPermission = async (vendor_id) => {
     // }
 
     const currentDate = new Date().toISOString().split('T')[0];
-
     const activePlans = await OmsPiDetail.findAll({
         attributes: ['id', 'pi_status', 'end_date', 'lead_plan_id'],
         where: {
