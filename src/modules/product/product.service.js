@@ -640,7 +640,7 @@ export const updateProductPricingDocument = async (productId, pricingDocument) =
 
 export const logProductSaveToVendorLogs = async ({
   product_id,
-  vendor_id,
+  profile_id,
   productData,
   imageFileName,
   documentFileName,
@@ -722,7 +722,7 @@ export const logProductSaveToVendorLogs = async ({
         item_id: product_id,
         module: "product",
         action_performed,
-        action_by: vendor_id,
+        action_by: profile_id,
         table_name: field.table,
         column_name: field.column,
         p_key,
@@ -1134,7 +1134,7 @@ export const saveOrUpdateProductBasicDetails = async (
 
     await logProductSaveToVendorLogs({
       product_id: productId,
-      vendor_id,
+      profile_id: user.profile_id,
       productData: save,
       imageFileName: uploadedImages[0]?.fileName || null,
       documentFileName: uploadedDocuments[0]?.fileName || null,
@@ -1565,7 +1565,7 @@ const defaultCols = {
 
 const createProductSpecificationVendorLogs = async ({
   product_id,
-  vendor_id,
+  profile_id,
   action_performed,
   fields,
   item_updated_id = 0,
@@ -1583,7 +1583,7 @@ const createProductSpecificationVendorLogs = async ({
       item_id: product_id,
       module: "product",
       action_performed,
-      action_by: vendor_id,
+      action_by: profile_id,
       table_name: "tbl_product_specification",
       column_name,
       p_key,
@@ -1665,7 +1665,7 @@ export const saveOrUpdateProductSpecification = async (
     const action_performed = "updated";
     const logs = await createProductSpecificationVendorLogs({
       product_id,
-      vendor_id,
+      profile_id: user.profile_id,
       action_performed,
       fields: fieldsToLog,
       item_updated_id,
@@ -1981,7 +1981,8 @@ export const getProductScreenshots = async (product_id) => {
 export const logProductScreenshotsRequest = async ({
   productId,
   vendor_id,
-  screenshotsData
+  screenshotsData,
+  profile_id
 }) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
@@ -2061,7 +2062,7 @@ export const logProductScreenshotsRequest = async ({
     // 2. Save to VendorLog
     await updateVendorLogs({
       item_id: productId,
-      profile_id: vendor_id,
+      profile_id,
       module: "product",
       action_performed: "updated",
       changes,
@@ -2180,7 +2181,8 @@ export const updateProductScreenshots = async (productId, vendorId, body, files,
   const result = await logProductScreenshotsRequest({
     productId,
     vendor_id: vendorId,
-    screenshotsData: screenshotsToProcess
+    screenshotsData: screenshotsToProcess,
+    profile_id: user.profile_id
   });
 
   if (result.action !== "none") {
@@ -2268,7 +2270,8 @@ export const updateProductGallery = async (productId, vendorId, body, files, use
   const result = await logProductGalleryRequest({
     productId,
     vendor_id: vendorId,
-    galleryData: galleryToProcess
+    galleryData: galleryToProcess,
+    profile_id: user.profile_id
   });
 
   if (result.action !== "none") {
@@ -2327,7 +2330,8 @@ export const trackProductGalleryUpdation = async (user, changes = []) => {
 export const logProductGalleryRequest = async ({
   productId,
   vendor_id,
-  galleryData
+  galleryData,
+  profile_id
 }) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
@@ -2426,7 +2430,7 @@ export const logProductGalleryRequest = async ({
     // Save to VendorLog
     await updateVendorLogs({
       item_id: productId,
-      profile_id: vendor_id,
+      profile_id,
       module: "product",
       action_performed: "updated",
       changes,
@@ -2594,7 +2598,8 @@ export const getProductEnrichmentImages = async (productId) => {
 export const logProductEnrichmentRequest = async ({
   productId,
   vendor_id,
-  enrichmentData
+  enrichmentData,
+  profile_id
 }) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
@@ -2671,7 +2676,7 @@ export const logProductEnrichmentRequest = async ({
     // 2. Save to VendorLog
     await updateVendorLogs({
       item_id: productId,
-      profile_id: vendor_id,
+      profile_id,
       module: "product",
       action_performed: "updated",
       changes,
@@ -2713,7 +2718,8 @@ export const getProductVideos = async (productId) => {
 export const logProductVideoRequest = async ({
   productId,
   vendor_id,
-  videoData
+  videoData,
+  profile_id
 }) => {
   const transaction = await VendorLog.sequelize.transaction();
   try {
@@ -2792,7 +2798,7 @@ export const logProductVideoRequest = async ({
     // 2. Save to VendorLog
     await updateVendorLogs({
       item_id: productId,
-      profile_id: vendor_id,
+      profile_id,
       module: "product",
       action_performed: "updated",
       changes,
@@ -2894,7 +2900,8 @@ export const updateProductVideo = async (productId, vendorId, body, user = null)
   const result = await logProductVideoRequest({
     productId,
     vendor_id: vendorId,
-    videoData
+    videoData,
+    profile_id: user.profile_id
   });
 
   if (result.action !== "none") {
@@ -3125,7 +3132,8 @@ export const updateProductEnrichment = async (productId, vendorId, body, files, 
   const result = await logProductEnrichmentRequest({
     productId,
     vendor_id: vendorId,
-    enrichmentData: enrichmentToProcess
+    enrichmentData: enrichmentToProcess,
+    profile_id: user.profile_id
   });
 
   if (result.action !== "none") {
