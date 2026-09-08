@@ -100,23 +100,23 @@ router.post(
   productController.addScreenshots
 );
 // Gallery
-router.get("/gallery", validateVendorOwnership, validateProductIdQuery, productController.getGalleryImages);
-router.post(
-  "/addgallery",
-  upload.any(),
-  validateAddGalleryBody,
-  validateVendorOwnership,
-  productController.addGallery
-);
+// router.get("/gallery", validateVendorOwnership, validateProductIdQuery, productController.getGalleryImages);
+// router.post(
+//   "/addgallery",
+//   upload.any(),
+//   validateAddGalleryBody,
+//   validateVendorOwnership,
+//   productController.addGallery
+// );
 router.get("/videos", validateVendorOwnership, validateProductIdQuery, productController.getProductVideos);
 router.post("/addvideos", validateAddVideoBody, validateVendorOwnership, productController.addVideo);
-router.get("/enrichment", validateVendorOwnership, validateProductIdQuery, productController.getEnrichment);
-router.post(
-  "/enrichment",
-  upload.any(),
-  validateAddEnrichmentBody,
-  validateVendorOwnership,
-  productController.enrichment
-);
+// router.get("/enrichment", validateVendorOwnership, validateProductIdQuery, productController.getEnrichment);
+// router.post(
+//   "/enrichment",
+//   upload.any(),
+//   validateAddEnrichmentBody,
+//   validateVendorOwnership,
+//   productController.enrichment
+// );
 
 export default router;
