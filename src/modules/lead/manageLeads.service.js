@@ -36,7 +36,7 @@ const ACD_START_TIME = "08:00 AM";
 const ACD_END_TIME = "10:00 PM";
 const CALL_CONN_MAX_DAYS = 45;
 const CALL_MISS_MAX_DAYS = 10;
-const eligiblePlanIds = [46, 47, 48, 51, 52];
+const eligiblePlanIds = [ 46, 47, 48, 51, 52];
 
 const getWorkingHoursStatus = () => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
@@ -669,45 +669,195 @@ export const getLeadHistory = async (vendor_id, leadId) => {
 };
 
 /**
- * Add remark or reminder with ownership verification.
+ * Helper to format date: 'l, j F, Y, g:i a'
+ * e.g. "Thursday, 10 September, 2026, 2:30 pm"
+ */
+const formatReminderDate = (dateInput) => {
+    try {
+        const d = new Date(dateInput);
+        if (isNaN(d.getTime())) return dateInput;
+
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        const dayName = days[d.getDay()];
+        const dayOfMonth = d.getDate();
+        const monthName = months[d.getMonth()];
+        const year = d.getFullYear();
+
+        let hours = d.getHours();
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'pm' : 'am';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+
+        return `${dayName}, ${dayOfMonth} ${monthName}, ${year}, ${hours}:${minutes} ${ampm}`;
+    } catch (e) {
+        return dateInput;
+    }
+};
+
+/**
+ * Add remark or reminder (validation, ACD trigger, LeadHistory logging, MoEngage tracking).
  */
 export const addRemarkReminder = async (user, data) => {
-    const { vendor_id, lead_id, remark, is_reminder_set, reminder_date, reminder_hour, reminder_minute, reminder_type } = data;
+    const vendor_id = user?.vendor_id || data.vendor_id;
+    const { lead_id, is_reminder_set, reminder_type } = data;
 
-    await verifyLeadOwnership(vendor_id, lead_id);
+    // 1. Validation
+    if (!lead_id) {
+        throw new AppError("Lead Id is required", StatusCodes.BAD_REQUEST);
+    }
 
-    if (is_reminder_set == 1) {
-        const scheduledTime = `${reminder_date} ${reminder_hour}:${reminder_minute}:00`;
+    if (is_reminder_set === undefined || is_reminder_set === null || is_reminder_set === '') {
+        throw new AppError("Is Reminder is required", StatusCodes.BAD_REQUEST);
+    }
 
-        await LeadHistory.create({
-            lead_id,
-            acd_uuid: data.acd_uuid || '',
-            type: 'reminder',
-            additional_info: reminder_type,
-            remark: remark || `${reminder_type} Reminder`,
-            scheduled_time: scheduledTime,
-            source: 'eseller'
-        });
+    let cleanRemark = data.remark !== undefined && data.remark !== null ? String(data.remark).replace(/\r/g, '') : '';
+    if (cleanRemark.length > 200) {
+        throw new AppError("Remark must be upto 200 characters only.", StatusCodes.BAD_REQUEST);
+    }
 
-        return { status: true, message: 'Hey, your Reminder is set for ' + scheduledTime };
-    } else {
-        await LeadHistory.create({
-            lead_id,
-            acd_uuid: data.acd_uuid || '',
-            type: 'remark',
-            additional_info: reminder_type,
-            remark: remark,
-            source: 'eseller'
-        });
+    // 2. Lead Lookup & Ownership verification
+    const lead = await TblLeads.findOne({
+        where: { id: lead_id, vendor_id: vendor_id },
+        attributes: [
+            'id', 'user_id', 'customer_id', 'vendor_id', 'name', 'email', 'phone',
+            'dial_code', 'product_id', 'acd_uuid', 'lead_type', 'status', 'lead_action',
+            'software_category', 'product_name', 'brand_id', 'brand_name', 'category_id', 'company_id'
+        ]
+    });
+    if (!lead) {
+        throw new AppError("Unauthorized: Lead does not belong to vendor", StatusCodes.FORBIDDEN);
+    }
 
-        /* trigger remark engagement event */
-        try {
-            await engagementEvent.sendRemarkEvent(user, { lead_id, remark, vendor_id });
-        } catch (eventErr) {
-            console.error("Engagement event error:", eventErr);
+    // 3. Branch: Setting a Reminder (is_reminder_set == 1)
+    if (Number(is_reminder_set) === 1) {
+        const reminder_date = data.reminder_date;
+        if (!reminder_date) {
+            throw new AppError("Reminder date is required", StatusCodes.BAD_REQUEST);
         }
 
-        return { status: true, message: 'Remark added successfully.' };
+        let hour = data.reminder_hour;
+        let minute = data.reminder_minute;
+
+        if (data.reminder_time) {
+            let parsedTime = data.reminder_time;
+            if (typeof parsedTime === 'string') {
+                try {
+                    parsedTime = JSON.parse(parsedTime);
+                } catch (e) {
+                    if (parsedTime.includes(':')) {
+                        parsedTime = parsedTime.split(':');
+                    }
+                }
+            }
+            if (Array.isArray(parsedTime) && parsedTime.length >= 2) {
+                hour = parsedTime[0];
+                minute = parsedTime[1];
+            }
+        }
+
+        if (hour === undefined || hour === null || hour === '' || minute === undefined || minute === null || minute === '') {
+            throw new AppError("Reminder time required", StatusCodes.BAD_REQUEST);
+        }
+
+        const numMin = parseInt(minute, 10);
+        const formattedMinute = numMin < 10 ? `0${numMin}` : `${numMin}`;
+        const numHour = parseInt(hour, 10);
+        const formattedHour = String(numHour);
+
+        // Construct ACD Request payload
+        const acdRequest = {
+            user_id: lead.customer_id || lead.user_id,
+            name: lead.name,
+            email: lead.email,
+            phone: lead.phone,
+            dial_code: lead.dial_code || '91',
+            product_id: lead.product_id,
+            acd_uuid: lead.acd_uuid || '',
+            lead_id: lead.id,
+            source: (data.source === 'app' || data.source === 'eseller_app') ? 'eseller_app' : 'eseller',
+            campaign: 'EsellerAddReminder',
+            acd_start_date: reminder_date,
+            acd_hour: formattedHour,
+            acd_minute: formattedMinute,
+            priority: 'agent'
+        };
+
+        const acdResponse = await triggerACD(acdRequest);
+
+        if (acdResponse && acdResponse.status) {
+            const finalRemark = cleanRemark.trim() !== ''
+                ? cleanRemark
+                : (reminder_type ? `${reminder_type} Reminder` : 'Added Reminder');
+
+            const rawScheduled = acdResponse.message && !isNaN(new Date(acdResponse.message).getTime())
+                ? acdResponse.message
+                : `${reminder_date} ${formattedHour.padStart(2, '0')}:${formattedMinute}:00`;
+
+            const scheduledDateObj = new Date(rawScheduled);
+            const scheduledTime = !isNaN(scheduledDateObj.getTime())
+                ? scheduledDateObj.toISOString().slice(0, 19).replace('T', ' ')
+                : `${reminder_date} ${formattedHour.padStart(2, '0')}:${formattedMinute}:00`;
+
+            // Insert into tbl_leads_history with NEW acd_uuid from dialer response
+            await LeadHistory.create({
+                lead_id: lead.id,
+                acd_uuid: acdResponse.data?.acd_uuid || lead.acd_uuid || '',
+                type: 'reminder',
+                additional_info: reminder_type || null,
+                remark: finalRemark,
+                scheduled_time: scheduledTime,
+                source: 'eseller'
+            });
+
+            // Dispatch engagement tracking event
+            try {
+                await engagementEvent.sendReminderEvent(
+                    user,
+                    { ...data, lead_id: lead.id, vendor_id },
+                    acdResponse.data || {}
+                );
+            } catch (eventErr) {
+                console.error("Engagement reminder event error:", eventErr);
+            }
+
+            const formattedDateMsg = formatReminderDate(rawScheduled);
+            return {
+                status: true,
+                message: 'Hey, your Reminder is set for ' + formattedDateMsg
+            };
+        } else {
+            return {
+                status: false,
+                message: acdResponse?.message || 'Failed to schedule reminder call'
+            };
+        }
+    } else {
+        // 4. Branch: Adding a Remark (is_reminder_set == 0)
+        // Insert into tbl_leads_history with existing acd_uuid from tbl_leads
+        await LeadHistory.create({
+            lead_id: lead.id,
+            acd_uuid: lead.acd_uuid || '',
+            type: 'remark',
+            additional_info: reminder_type || null,
+            remark: cleanRemark,
+            scheduled_time: null,
+            source: 'eseller'
+        });
+
+        // Dispatch engagement tracking event
+        try {
+            await engagementEvent.sendRemarkEvent(user, { lead_id: lead.id, remark: cleanRemark, vendor_id });
+        } catch (eventErr) {
+            console.error("Engagement remark event error:", eventErr);
+        }
+
+        return {
+            status: true,
+            message: 'Remark added successfully.'
+        };
     }
 };
 
@@ -1038,10 +1188,12 @@ export const rescheduleDemo = async (vendor_id, data) => {
 /**
  * Triggers ACD call via main site API
  */
-const triggerACD = async (data) => {
+async function triggerACD(data) {
     try {
         const mainsiteUrl = process.env.MAINSITE_URL || 'https://www.techjockey.com/';
-        const authKey = 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJlc2VsbGVyaHViLmNvbSIsImF1ZCI6IkVzZWxsZXIgSHViIiwiaWF0IjoxNjExMTIyNTg2LCJuYmYiOjE2MTExMjI1ODYsImV4cCI6MTY0MjY1ODU4NiwiZGF0YSI6eyJlbWFpbCI6Im1heWFua2R1cmdhcGFsMTdAZ21haWwuY29tIn19.7G4AXMtzvk5QiOUTbyQkWH1nxWSsjcKkTUbcPYWZQjw';
+        const authKey = data.source === 'eseller_app'
+            ? 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJlc2VsbGVyaHViLmNvbSIsImF1ZCI6IkVzZWxsZXIgSHViIiwiaWF0IjoxNjExMDY1NTg1LCJuYmYiOjE2MTEwNjU1ODUsImV4cCI6MTY0MjYwMTU4NSwiZGF0YSI6eyJlbWFpbCI6Im1heWFua2R1cmdhcGFsMTdAZ21haWwuY29tIn19.20DQWUX7onNVSm-l3CVFQ5aF6VRmfaEK_CPofq8C0as'
+            : 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJlc2VsbGVyaHViLmNvbSIsImF1ZCI6IkVzZWxsZXIgSHViIiwiaWF0IjoxNjExMTIyNTg2LCJuYmYiOjE2MTExMjI1ODYsImV4cCI6MTY0MjY1ODU4NiwiZGF0YSI6eyJlbWFpbCI6Im1heWFua2R1cmdhcGFsMTdAZ21haWwuY29tIn19.7G4AXMtzvk5QiOUTbyQkWH1nxWSsjcKkTUbcPYWZQjw';
 
         const response = await fetch(`${mainsiteUrl}schedule-acd`, {
             method: 'POST',
@@ -1057,7 +1209,7 @@ const triggerACD = async (data) => {
     } catch (err) {
         return { status: false, message: err.message };
     }
-};
+}
 
 /**
  * Schedules a callback or demo.
@@ -1069,24 +1221,6 @@ export const scheduleCallback = async (user, data) => {
     const isWorkingHours = getWorkingHoursStatus();
     if (!isWorkingHours) {
         throw new AppError(`We are unable to process your request. Our working hours are from ${ACD_START_TIME} to ${ACD_END_TIME}`, StatusCodes.BAD_REQUEST);
-    }
-
-    // Plan eligibility check — vendor must have an active plan (46, 47, or 48) to make calls
-    const currentDate = new Date().toISOString().split('T')[0];
-    const activePlan = await OmsPiDetail.findOne({
-        attributes: ['id'],
-        where: {
-            vendor_id: vendor_id,
-            pi_status: 3,
-            lead_plan_id: { [Op.in]: eligiblePlanIds },
-            [Op.or]: [
-                { end_date: null },
-                { end_date: { [Op.gte]: currentDate } }
-            ]
-        }
-    });
-    if (!activePlan) {
-        throw new AppError("You do not have an active plan to make calls. Please upgrade your plan to access this feature.", StatusCodes.FORBIDDEN);
     }
 
     const lead = await TblLeads.findOne({
@@ -1131,7 +1265,7 @@ export const scheduleCallback = async (user, data) => {
     }
 
     const acdRequest = {
-        user_id: lead.user_id,
+        user_id: lead.customer_id || lead.user_id,
         name: lead.name,
         email: lead.email,
         phone: lead.phone,
