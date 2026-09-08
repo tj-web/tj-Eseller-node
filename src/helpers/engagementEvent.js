@@ -476,6 +476,114 @@ class EngagementEvent {
   }
 
   /**
+   * Fires OEM Reminder Call Event
+   * @param {object} user - VendorAuth / decoded token object / req.user
+   * @param {object} postData - Object containing lead_id and optional vendor_id
+   * @param {object} reminderData - Object returned from ACD schedule API
+   */
+  async sendReminderEvent(user, postData = {}, reminderData = {}) {
+    try {
+      if (!user) return;
+
+      const providerService = this.providerService;
+      if (!providerService) return;
+
+      const resolved = await this._resolveVendorDetails(user);
+      if (!resolved || !resolved.profileId) return;
+
+      const leadId = postData.lead_id || postData.id;
+      const leadInfo = await TblLeads.findOne({ where: { id: leadId } });
+      if (!leadInfo) return;
+
+      const productId = reminderData?.product_id || leadInfo.product_id;
+      let productInfo = null;
+      if (productId) {
+        productInfo = await TblProduct.findOne({ where: { product_id: productId } });
+      }
+
+      const brandId = leadInfo.brand_id || productInfo?.brand_id;
+      let brandInfo = null;
+      if (brandId) {
+        brandInfo = await Brand.findOne({ where: { brand_id: brandId } });
+      }
+
+      const categoryId = leadInfo.category_id || productInfo?.category_id;
+      let categoryInfo = null;
+      if (categoryId) {
+        categoryInfo = await Category.findOne({ where: { category_id: categoryId } });
+      }
+
+      const mainsiteUrl = (process.env.MAINSITE_URL || "https://www.techjockey.com").replace(/\/$/, "");
+
+      const expirationDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+        .toISOString()
+        .replace("T", " ")
+        .substring(0, 19);
+
+      const oemAutologinData = {
+        profile_id: resolved.profileId,
+        vendor_id: resolved.vendorId,
+        email: resolved.email,
+        action: { name: "acd", params: {} },
+        redirect_uri: `${mainsiteUrl}/my_demos`,
+        expiration_date: expirationDate,
+      };
+
+      const encodedOemData = encodeData(oemAutologinData);
+      const vendorLongUrl = `${mainsiteUrl}/login/autoLogin/${encodedOemData}`;
+      const vendorLoginLink = await getShortUrl(vendorLongUrl);
+      const vendorLoginSlug = vendorLoginLink.replace("https://tj.link/", "");
+
+      // Customer autologin link
+      const userCustomerId = reminderData?.user_id || leadInfo.customer_id || leadInfo.user_id;
+      const userData = {
+        customer_id: userCustomerId,
+        email: reminderData?.email || leadInfo.email,
+        action: { name: "my_demo", params: { type: "new" } },
+        redirect_uri: `${mainsiteUrl}/account/my_calls`,
+      };
+      const encodedUserData = encodeData(userData);
+      const customerLongUrl = `${mainsiteUrl}/account/autoLogin/${encodedUserData}`;
+      const customerLoginLink = await getShortUrl(customerLongUrl);
+      const customerLoginSlug = customerLoginLink.replace("https://tj.link/", "");
+
+      const productName = productInfo?.product_name || leadInfo.product_name || "";
+      const shortProdName = productName.length > 30 ? productName.substring(0, 27) + ".." : productName;
+
+      const attributes = {
+        "Lead Id": leadInfo.id,
+        "Acd UUID": reminderData?.acd_uuid || leadInfo.acd_uuid || "",
+        "Customer Name": reminderData?.name || leadInfo.name || "",
+        "Customer Email": reminderData?.email || leadInfo.email || "",
+        "Customer Contact": reminderData?.contact_number || reminderData?.phone || leadInfo.phone || "",
+        "Product Id": productId || "",
+        "Product Name": shortProdName,
+        "Product Slug": productInfo?.slug || "",
+        "Brand Id": brandInfo?.brand_id || leadInfo.brand_id || "",
+        "Brand Name": brandInfo?.brand_name || leadInfo.brand_name || "",
+        "Brand Slug": brandInfo?.slug || "",
+        "Category Id": categoryInfo?.category_id || leadInfo.category_id || "",
+        "Category Name": categoryInfo?.category_name || leadInfo.software_category || "",
+        "Category Slug": categoryInfo?.slug || "",
+        "Date": reminderData?.start_date || reminderData?.acd_start_date || (postData.reminder_date ? `${postData.reminder_date} ${postData.reminder_hour || '00'}:${postData.reminder_minute || '00'}:00` : ""),
+        "Source": reminderData?.source || "eseller",
+        "Lead Type": reminderData?.lead_type || leadInfo.lead_type || "",
+        "Lead Status": leadInfo.status || "",
+        "Lead Action": leadInfo.lead_action || "",
+        "Lead Model Type": productInfo?.lead_model_type || leadInfo.lead_model_type || "",
+        "Customer Login Link": customerLoginLink,
+        "Customer Login Slug": customerLoginSlug,
+        "Vendor Login Link": vendorLoginLink,
+        "Vendor Login Slug": vendorLoginSlug,
+      };
+
+      return await providerService.trackEsellerEvent(resolved.profileId, "OEM Reminder call", attributes);
+    } catch (error) {
+      console.error("[Engagement Event Error] Failed to process sendReminderEvent:", error);
+    }
+  }
+
+  /**
    * Fires Lead Action Event
    * @param {object} user - VendorAuth / decoded token object / req.user
    * @param {object} data - Object containing lead_id
