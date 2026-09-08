@@ -36,7 +36,10 @@ export const getDemos = async (req, res, next) => {
 export const getLeadHistory = async (req, res, next) => {
     try {
         const vendor_id = req.user.vendor_id;
-        const lead_id = req.query.lead_id;
+        const lead_id = req.query.lead_id ;
+        if (!lead_id) {
+            throw new AppError("Lead Id is required", StatusCodes.BAD_REQUEST);
+        }
         const result = await leadActions.getLeadHistory(vendor_id, lead_id);
         return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Lead history fetched successfully", result));
     } catch (error) {
@@ -47,12 +50,18 @@ export const getLeadHistory = async (req, res, next) => {
 export const addRemarkReminder = async (req, res, next) => {
     try {
         const vendor_id = req.user.vendor_id;
-        const result = await leadActions.addRemarkReminder(req.user, { ...req.body, vendor_id, source: 'web' });
-        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success("Remark/Reminder added successfully", result));
+        const source = (req.body.source === 'app' || req.body.source === 'eseller_app') ? 'eseller_app' : 'eseller';
+        const result = await leadActions.addRemarkReminder(req.user, { ...req.body, vendor_id, source });
+        if (result && result.status === false) {
+            return res.status(StatusCodes.BAD_REQUEST).json(SystemResponse.badRequestError(result.message || "Failed to set reminder"));
+        }
+        return res.status(StatusCodes.SUCCESS).json(SystemResponse.success(result.message || "Remark/Reminder added successfully", result));
     } catch (error) {
         next(error);
     }
 };
+
+export const addRemarksReminders = addRemarkReminder;
 
 export const leadStatusHandler = async (req, res, next) => {
     try {
